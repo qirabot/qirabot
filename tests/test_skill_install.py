@@ -81,7 +81,9 @@ def test_reinstall_other_version_upgrades_without_force(home):
     result = _invoke(["install", "codex"])
     assert result.exit_code == 0, result.output
     assert "Upgrading v0.0.1" in result.output
-    assert (dest / "SKILL.md").read_text() != "stale"
+    # Explicit UTF-8: the installed SKILL.md contains non-ASCII, and a bare
+    # read_text() follows the locale (GBK on Chinese Windows) and raises.
+    assert (dest / "SKILL.md").read_text(encoding="utf-8") != "stale"
     assert json.loads((dest / ".qirabot-skill.json").read_text())["version"] == VERSION
 
 

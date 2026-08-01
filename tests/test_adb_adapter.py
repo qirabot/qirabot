@@ -19,7 +19,9 @@ from qirabot.adb import AdbDevice, _which_adb
 from qirabot.exceptions import QirabotError
 
 
-def proc(stdout: bytes = b"", rc: int = 0, stderr: bytes = b"") -> subprocess.CompletedProcess[bytes]:
+def proc(
+    stdout: bytes = b"", rc: int = 0, stderr: bytes = b""
+) -> subprocess.CompletedProcess[bytes]:
     return subprocess.CompletedProcess(["adb"], rc, stdout=stdout, stderr=stderr)
 
 
@@ -111,9 +113,7 @@ def resolving_device(monkeypatch, devices_output: str, serial: str | None = None
 
 class TestSerialResolution:
     def test_single_device_auto_picked(self, monkeypatch):
-        dev = resolving_device(
-            monkeypatch, "List of devices attached\nemulator-5554\tdevice\n"
-        )
+        dev = resolving_device(monkeypatch, "List of devices attached\nemulator-5554\tdevice\n")
         assert dev.serial == "emulator-5554"
 
     def test_no_devices(self, monkeypatch):
@@ -141,9 +141,7 @@ class TestSerialResolution:
         assert ei.value.code == "adb.unauthorized"
 
     def test_offline(self, monkeypatch):
-        dev = resolving_device(
-            monkeypatch, "List of devices attached\nemulator-5554\toffline\n"
-        )
+        dev = resolving_device(monkeypatch, "List of devices attached\nemulator-5554\toffline\n")
         with pytest.raises(QirabotError) as ei:
             _ = dev.serial
         assert ei.value.code == "adb.offline"
@@ -218,6 +216,33 @@ class TestAdbAdapter:
         with pytest.raises(QirabotError) as ei:
             adapter.screenshot()
         assert ei.value.code == "adb.screencap_empty"
+        assert len(attempts) == 3
+
+    def test_screenshot_truncated_retries_then_succeeds(self, monkeypatch):
+        # exec-out cut mid-transfer hands back a half PNG with exit code 0;
+        # the adapter must treat it like an empty frame and recapture.
+        png = tiny_png(4, 8)
+        frames = [png[: len(png) // 2], png]
+        dev, _ = scripted_device(monkeypatch)
+        monkeypatch.setattr(dev, "screencap", lambda: frames.pop(0))
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        adapter = AdbAdapter(dev)
+        from qirabot.adapters.base import ScreenshotConfig
+
+        out = adapter.screenshot(ScreenshotConfig(format="png"))
+        assert out == png
+
+    def test_screenshot_truncated_retries_then_raises(self, monkeypatch):
+        png = tiny_png(4, 8)
+        attempts = []
+        dev, _ = scripted_device(monkeypatch)
+        monkeypatch.setattr(dev, "screencap", lambda: attempts.append(1) or png[: len(png) // 2])
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        adapter = AdbAdapter(dev)
+        with pytest.raises(QirabotError) as ei:
+            adapter.screenshot()
+        assert ei.value.code == "adb.screencap_empty"
+        assert "truncated" in str(ei.value)
         assert len(attempts) == 3
 
     def test_device_info_falls_back_to_wm_size_override(self, monkeypatch):
@@ -301,9 +326,7 @@ class TestScrollGeometry:
 
     def test_scroll_at_uses_element_anchor(self, monkeypatch):
         adapter, calls = self.make(monkeypatch)
-        adapter._scroll_action(
-            "scroll_at", {"direction": "up", "amount": 300, "x": 200, "y": 400}
-        )
+        adapter._scroll_action("scroll_at", {"direction": "up", "amount": 300, "x": 200, "y": 400})
         assert self.swipes(calls) == [(200, 400, 200, 700)]
 
     def test_scroll_zero_amount_defaults_to_60pct_span(self, monkeypatch):
@@ -337,7 +360,7 @@ class TestScrollGeometry:
 class TestTypeText:
     def test_ascii_typeable_gate(self):
         assert _ascii_typeable("hello world")
-        assert _ascii_typeable("a&b;c\"d$e`f")
+        assert _ascii_typeable('a&b;c"d$e`f')
         assert not _ascii_typeable("100%")  # % routes to IME
         assert not _ascii_typeable("你好")
         assert not _ascii_typeable("line\nbreak")
@@ -394,14 +417,10 @@ class TestImePath:
 
         # close() restores the saved keyboard
         adapter.close()
-        assert shell_calls(calls)[-1] == (
-            "ime set com.google.android.inputmethod.latin/.LatinIME"
-        )
+        assert shell_calls(calls)[-1] == ("ime set com.google.android.inputmethod.latin/.LatinIME")
 
     def test_ime_setup_runs_once(self, monkeypatch):
-        dev, calls = scripted_device(
-            monkeypatch, {"shell ime list -s -a": self.IME.encode()}
-        )
+        dev, calls = scripted_device(monkeypatch, {"shell ime list -s -a": self.IME.encode()})
         monkeypatch.setattr("time.sleep", lambda s: None)
         adapter = AdbAdapter(dev)
         adapter.type_focused("第一")

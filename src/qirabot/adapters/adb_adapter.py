@@ -38,11 +38,7 @@ def _ascii_typeable(text: str) -> bool:
     ``%`` is excluded because `input text` expands %s (and OEMs vary on other
     %-sequences); control chars (\\n, \\t) never survive the input pipeline.
     """
-    return (
-        text.isascii()
-        and "%" not in text
-        and all(ch == " " or ch.isprintable() for ch in text)
-    )
+    return text.isascii() and "%" not in text and all(ch == " " or ch.isprintable() for ch in text)
 
 
 def _shell_single_quote(arg: str) -> str:
@@ -99,24 +95,33 @@ class AdbAdapter(DeviceAdapter):
 
     def screenshot(self, config: ScreenshotConfig | None = None) -> bytes:
         cfg = config or ScreenshotConfig()
+        from PIL import Image
+
         # screencap can transiently return nothing (device busy, screen off
-        # transition); retry a couple of times before failing the step.
+        # transition) or a truncated stream (exec-out cut mid-transfer — flaky
+        # USB / WiFi adb — with exit code 0); retry a couple of times before
+        # failing the step. Only a full pixel decode proves the frame is whole,
+        # so decode here and reuse the result below.
         png = b""
+        img: Image.Image | None = None
         for attempt in range(3):
             png = self._device.screencap()
             if png:
-                break
+                try:
+                    img = Image.open(io.BytesIO(png))
+                    img.load()
+                    break
+                except OSError:
+                    img = None
             time.sleep(0.15)
-        if not png:
+        if img is None:
             raise QirabotError(
-                "adb screencap returned no data after 3 attempts",
+                "adb screencap returned no usable frame after 3 attempts "
+                + ("(output was truncated or undecodable)" if png else "(no data)"),
                 code="adb.screencap_empty",
             )
-        from PIL import Image
-
-        # Lazy header probe (no pixel decode) for the size cache; screencap
-        # always returns an upright frame, so no rotation fixups are needed.
-        img: Image.Image = Image.open(io.BytesIO(png))
+        # screencap always returns an upright frame, so no rotation fixups
+        # are needed for the size cache.
         self._last_size = (img.width, img.height)
         if cfg.format == "png":
             return png
@@ -154,9 +159,7 @@ class AdbAdapter(DeviceAdapter):
         self._device.shell(f"input swipe {ix} {iy} {ix} {iy} {ms}")
 
     def drag(self, from_x: float, from_y: float, to_x: float, to_y: float) -> None:
-        self._device.shell(
-            f"input swipe {int(from_x)} {int(from_y)} {int(to_x)} {int(to_y)} 500"
-        )
+        self._device.shell(f"input swipe {int(from_x)} {int(from_y)} {int(to_x)} {int(to_y)} 500")
 
     # ---- scrolling (geometry mirrors the retired airtest adapter) ------------
 
@@ -185,9 +188,7 @@ class AdbAdapter(DeviceAdapter):
             cx, cy = info.width / 2.0, info.height / 2.0
         self._swipe(cx, cy, str(params.get("direction", "down")), pixels, info)
 
-    def _swipe(
-        self, cx: float, cy: float, direction: str, pixels: int, info: DeviceInfo
-    ) -> None:
+    def _swipe(self, cx: float, cy: float, direction: str, pixels: int, info: DeviceInfo) -> None:
         w, h = info.width, info.height
         span = h if direction in ("up", "down") else w
         if pixels <= 0:

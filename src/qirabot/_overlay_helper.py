@@ -560,8 +560,23 @@ def _run_windows() -> int:
     root.attributes("-alpha", 0.88)  # also makes the window WS_EX_LAYERED,
     # which WDA_EXCLUDEFROMCAPTURE requires
     root.configure(bg=BG)
+
+    # The process is per-monitor DPI aware (above), so window geometry is in
+    # physical pixels — but Tk still sizes point-based fonts by the real DPI.
+    # At 150% scaling the text renders 1.5x taller while a fixed 340x96 box
+    # does not, and the body lines fall off the bottom edge. Scale every
+    # hand-tuned pixel dimension by the same pixels-per-inch factor Tk uses
+    # for the fonts, so text and box grow together.
+    try:
+        scale = max(1.0, root.winfo_fpixels("1i") / 96.0)
+    except Exception:
+        scale = 1.0
+
+    def px(v: int) -> int:
+        return round(v * scale)
+
     top = tk.Frame(root, bg=BG)
-    top.pack(fill="x", padx=12, pady=(8, 0))
+    top.pack(fill="x", padx=px(12), pady=(px(8), 0))
     status = tk.Label(top, text="", bg=BG, fg="white", font=("Segoe UI", 10, "bold"))
     status.pack(side="left")
     clock = tk.Label(top, text="", bg=BG, fg="#999999", font=("Consolas", 9))
@@ -572,16 +587,16 @@ def _run_windows() -> int:
         top, text="qirabot", bg=BG, fg="white",
         font=("Segoe UI", 10, "bold"), anchor="w",
     )
-    title.pack(side="left", fill="x", expand=True, padx=(6, 6))
+    title.pack(side="left", fill="x", expand=True, padx=(px(6), px(6)))
     body = tk.Label(
         root, text="", bg=BG, fg="white", font=("Segoe UI", 10),
-        justify="left", anchor="nw", wraplength=_WIDTH - 24,
+        justify="left", anchor="nw", wraplength=px(_WIDTH - 24),
     )
-    body.pack(fill="both", expand=True, padx=12, pady=(2, 8))
+    body.pack(fill="both", expand=True, padx=px(12), pady=(px(2), px(8)))
     # Extra bottom margin keeps the window clear of the taskbar.
-    x = root.winfo_screenwidth() - _WIDTH - _MARGIN
-    y = root.winfo_screenheight() - _HEIGHT - _MARGIN - 48
-    root.geometry(f"{_WIDTH}x{_HEIGHT}+{x}+{y}")
+    x = root.winfo_screenwidth() - px(_WIDTH) - px(_MARGIN)
+    y = root.winfo_screenheight() - px(_HEIGHT) - px(_MARGIN) - px(48)
+    root.geometry(f"{px(_WIDTH)}x{px(_HEIGHT)}+{x}+{y}")
     root.update_idletasks()
 
     user32 = _win_dll("user32")
@@ -705,11 +720,11 @@ def _run_windows() -> int:
         pill.configure(bg=_EDGE_COLOR)
         pill_label = tk.Label(
             pill, text="", bg=BG, fg="white",
-            font=("Segoe UI", 11, "bold"), padx=14, pady=6,
+            font=("Segoe UI", 11, "bold"), padx=px(14), pady=px(6),
         )
-        pill_label.pack(padx=2, pady=2)
+        pill_label.pack(padx=px(2), pady=px(2))
         pill.update_idletasks()
-        pill.geometry(f"+{(sw - pill.winfo_reqwidth()) // 2}+10")
+        pill.geometry(f"+{(sw - pill.winfo_reqwidth()) // 2}+{px(10)}")
         if _shield(pill, require_exclude=True):
             hint_win, hint_label = pill, pill_label
         else:
@@ -760,7 +775,7 @@ def _run_windows() -> int:
         # correctly where a character-count budget could not.
         width = title.winfo_width()
         if width <= 1:  # first message can arrive before layout has run
-            width = _WIDTH - 110  # status + clock + paddings
+            width = px(_WIDTH - 110)  # status + clock + paddings
         if title_font.measure(text) <= width:
             return text
         while text and title_font.measure(text + "…") > width:

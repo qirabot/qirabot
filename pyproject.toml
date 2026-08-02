@@ -29,6 +29,9 @@ dependencies = [
     "Pillow>=10.0",
     "click>=8.1",
     "rich>=13.0",
+    # ADC (service-account / gcloud / metadata-server) auth for the local
+    # decision engine's Vertex providers.
+    "google-auth>=2.30",
     # The progress overlay window, on by default in the CLI — macOS needs
     # AppKit for it (Windows uses stdlib tkinter, other platforms no-op).
     "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
@@ -113,6 +116,8 @@ module = [
     "pyautogui",
     "pyperclip",
     "AppKit",
+    "google.auth.*",
+    "google.auth",
 ]
 ignore_missing_imports = true
 

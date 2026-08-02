@@ -46,6 +46,9 @@ Qirabot 是一个**基于视觉的 GUI 自动化** Python SDK 与 CLI。它不�
 语言描述的元素,返回坐标由客户端执行操作。因此它能覆盖传统框架无法触及的
 界面——canvas 渲染的 UI、原生手机 App、桌面应用,以及完整的 3D 游戏。
 
+决策引擎在 SDK 内本地运行:截图直接从你的机器发往你自己在 Google Vertex
+AI 上配置的模型端点——没有 Qirabot 账号、没有 API key、没有中间服务器。
+
 ```python
 from qirabot import Qirabot
 

@@ -18,9 +18,10 @@ visible rect (GPU-composited windows safe — fullscreen capture would otherwise
 go black on most games), and ``record_audio=True`` auto-detects a loopback
 device.
 
-Set ``QIRA_API_KEY`` and ``QIRA_GAME_EXE`` in a ``.env`` next to this script,
-adjust the constants below for your game, and run elevated so input reaches
-admin-protected game windows:
+Auth is Google Cloud ADC (``gcloud auth application-default login`` once).
+Set ``QIRA_GAME_EXE`` (and optionally ``QIRA_MODEL`` / ``QIRA_VERTEX_PROJECT``)
+in a ``.env`` next to this script, adjust the constants below for your game,
+and run elevated so input reaches admin-protected game windows:
 
     .venv\\Scripts\\python.exe windows_unity_game.py
 """

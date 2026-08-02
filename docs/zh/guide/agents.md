@@ -26,7 +26,7 @@ Claude Code 的 plugin marketplace 形式:
 显式调用 `/qirabot:qirabot`。skill 包含:
 
 - **preflight 脚本** —— 在编写任何代码之前校验 Python 环境、后端依赖和
-  API key,每一项失败的检查都附带确切的修复命令。
+  Google Cloud 凭据(ADC),每一项失败的检查都附带确切的修复命令。
 - **精简版 SDK + CLI 参考** —— agent 依照经过防漂移校验的准确 API 面
   编写代码。
 - **起步模板** —— 浏览器、Android(adb)、iOS(WDA 与 Appium)、自带

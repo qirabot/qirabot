@@ -104,7 +104,8 @@ result = bot.ai(target, "Add the cheapest item to the cart and check out",
 print(result.success, result.output)
 ```
 
-`bot.ai` runs the perceive → decide → act loop server-side and self-heals when
+`bot.ai` runs the perceive → decide → act loop locally in the SDK —
+screenshots go straight to your own Vertex AI model — and self-heals when
 a step misfires. **Keep the task string a concise goal, not a step-by-step
 script** — over-specifying ("click Search, then type X, then…") fights the
 model, locks in a brittle path, and burns steps; write what success looks
@@ -156,8 +157,8 @@ screenshots (unless `report=False`). Pick the signal by who acts on it:
   itself, and can claim victory after clicking the wrong button.
 - **The script must branch** (CI gate, skip-if-logged-in) →
   `bot.verify(target, "...")` — an independent vision call returning `bool`.
-  The bool must drive something; otherwise it's a billed call whose answer the
-  screenshot already gives for free.
+  The bool must drive something; otherwise it's an extra model call (token
+  cost) whose answer the screenshot already gives for free.
 - **The script needs a value** (price, username, status) →
   `bot.extract(target, "...")`. Scope the phrase — an ambiguous locate can
   grab a look-alike element — and cross-check against the screenshot.
@@ -187,9 +188,10 @@ screen (desktop/browser); for Android/iOS record the **device** screen via
   user's identity (posting, purchasing, deleting): read first, report exactly
   what you're about to do, get the user's go-ahead, then act — as separate
   steps.
-- Costs real tokens per AI call. Pick the cheapest `model=` that fits (e.g. a
-  flash-class model, stepping up to a pro-class one only
-  when needed). Long human-in-the-loop waits (QR/OTP) poll with billed calls —
-  raise the `wait_for` interval or poll the live driver free (see REFERENCE).
+- Costs real tokens per AI call — on your own Vertex AI project (there is no
+  Qirabot account or per-step fee). Pick the cheapest `model=` that fits (e.g.
+  a flash-class model, stepping up to a pro-class one only when needed). Long
+  human-in-the-loop waits (QR/OTP) poll with model calls — raise the
+  `wait_for` interval or poll the live driver free (see REFERENCE).
 - Always `bot.close()` (or the `with` form) — it finalizes the task and writes
   the report, even on error.

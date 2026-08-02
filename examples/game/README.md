@@ -26,8 +26,12 @@ window by class name (Unity → `UnityWndClass`, Unreal → `UnrealWindow`, etc.
 
 ## Run
 
+Auth is Google Cloud ADC — run `gcloud auth application-default login` once
+(or set `GOOGLE_APPLICATION_CREDENTIALS`); pick a model via `QIRA_MODEL` or
+`Qirabot(model=...)`.
+
 ```cmd
-copy .env.example .env       :: then edit QIRA_API_KEY + QIRA_GAME_EXE
+copy .env.example .env       :: then edit QIRA_GAME_EXE (+ QIRA_MODEL / QIRA_VERTEX_PROJECT if needed)
 .venv\Scripts\python.exe windows_unity_game.py
 ```
 

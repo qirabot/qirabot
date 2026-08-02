@@ -40,13 +40,11 @@ qirabot desktop "..." --hwnd 132456
 # 为本次运行挂载领域知识——游戏规则、业务术语(合计 32KB)
 qirabot browser "在商城买 10 瓶体力药水" -k game-rules.md -k gm-policy.md
 
-# 环境自检——装了什么、缺什么、服务器是否可达
+# 环境自检——Python、Google Cloud 凭据(ADC)、各后端依赖
 qirabot doctor
 
-# 只读服务器查询
-qirabot task <task_id>            # 状态、指令、步骤
-qirabot screenshot <task_id>      # 下载截图
-qirabot models                    # 列出模型档位
+# 模型总览——Vertex provider、默认模型、凭据状态
+qirabot models
 ```
 
 ## 命令一览
@@ -57,29 +55,33 @@ qirabot models                    # 列出模型档位
 | `android 指令` | 在 Android 设备运行 AI 任务([adb 直连](/zh/backends/android),内置;`--appium-url` 走 Appium) |
 | `ios 指令` | 在 iOS 设备运行 AI 任务([WDA 直连](/zh/backends/ios),内置;`--appium-url`/`--device` 走 Appium) |
 | `desktop 指令` | 在[桌面](/zh/backends/desktop)运行 AI 任务(pyautogui;`--window-title`/`--hwnd` 绑定[单个 Windows 窗口](/zh/backends/windows-games),内置) |
-| `login` | 浏览器授权登录并保存 API key(`--paste` 手动粘贴,`--status` 查看当前生效的 key,已脱敏) |
 | `install-browser` | 一次性下载浏览器后端所需的 Chromium |
-| `open-browser` | 打开浏览器手动登录网站——登录态保存在 `--user-data-dir`,无需 API key |
-| `doctor` | 检查 Python、API key/服务器与各后端依赖 |
-| `task TASK_ID` | 打印任务状态、指令与步骤 |
-| `screenshot TASK_ID` | 下载任务截图 |
-| `models` | 列出可用模型档位 |
+| `open-browser` | 打开浏览器手动登录网站——登录态保存在 `--user-data-dir`,供后续运行复用 |
+| `doctor` | 检查 Python、Google Cloud 凭据(ADC + 项目)与各后端依赖 |
+| `models` | 打印三个 Vertex provider 及其默认模型、本次会话的默认模型,以及 Google Cloud 凭据(ADC)能否解析(显示项目) |
 | `skill install [AGENT]` | 把自带的 [Agent Skill](/zh/guide/agents) 装进 AI agent 的 skills 目录 |
 | `skill uninstall [AGENT]` | 移除 `skill install` 装的 skill |
 | `skill list` | 列出已知 skills 目录与已安装的 skill 版本 |
 
 ## 全局选项
 
-全局选项写在**子命令之前**(用于配置连接):
+全局选项写在**子命令之前**(用于配置 Vertex AI 连接):
 
 ```bash
-qirabot --api-key qk_... --base-url https://app.qirabot.com browser "..."
+qirabot --vertex-project my-gcp-project --vertex-location global browser "..."
 ```
 
-API key 的解析顺序:`--api-key` 参数 > `QIRA_API_KEY` 环境变量 > 项目
-`.env` > `qirabot login` 配置文件。`qirabot login --status` 可查看当前生效
-的是哪一层。另有 `--timeout`、`--verify-ssl` / `--no-verify-ssl`、
-`--version`。
+项目的解析顺序:`--vertex-project` 参数 > `QIRA_VERTEX_PROJECT` 环境变量
+> `GOOGLE_CLOUD_PROJECT` > ADC 凭据自身的项目 id。位置(location):
+`--vertex-location` > `QIRA_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION` >
+`global`。另有 `--version`。
+
+模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
+`QIRA_MODEL` 环境变量 > 内置默认值
+`gemini-vertex/gemini-3-flash-preview`。只写 provider 名会选用该
+provider 的默认模型(`claude-vertex` →
+`claude-sonnet-4-5@20250929`);`vertex-openai` 没有默认模型,必须写出带
+publisher 前缀的完整模型,如 `vertex-openai/qwen/qwen3-vl-plus`。
 
 ## 退出码
 
@@ -92,10 +94,10 @@ API key 的解析顺序:`--api-key` 参数 > `QIRA_API_KEY` 环境变量 > 项�
 
 | 选项 | 默认值 | 作用 |
 |---|---|---|
-| `-n, --name` | 从指令推导 | 网页控制台中显示的任务名 |
-| `-m, --model` | 服务器默认 | 模型档位(见[配置](/zh/advanced/configuration)) |
-| `--thinking-level` | 档位自带设置 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
-| `-l, --language` | 服务器默认 | 响应语言,如 `zh`、`en` |
+| `-n, --name` | 从指令推导 | HTML 报告中显示的运行名 |
+| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3-flash-preview` | 模型,格式 `{provider}/{model}`,provider 为 `claude-vertex` / `gemini-vertex` / `vertex-openai` 之一(见[配置](/zh/advanced/configuration)) |
+| `--thinking-level` | 引擎默认 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
+| `-l, --language` | — | 响应语言,如 `zh`、`en` |
 | `--max-steps` | `20` | AI 任务的步数预算 |
 | `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL——远程内容请先自行下载 |
 | `--report / --no-report` | 开 | 写 HTML 运行报告 |
@@ -148,9 +150,6 @@ API key 的解析顺序:`--api-key` 参数 > `QIRA_API_KEY` 环境变量 > 项�
 | `--window-title` | — | 绑定标题匹配该正则的窗口(Windows 窗口后端) |
 | `--hwnd` | — | 绑定窗口句柄,十进制(Windows 窗口后端) |
 | `--ambiguous` | `error` | 多个窗口匹配 `--window-title` 时:`error` 报错并列出候选;`largest` 选面积最大的窗口 |
-
-**`screenshot TASK_ID`** —— `-s/--step`(0 = 最新)、`-o/--output`、
-`-f/--force`(覆盖)。
 
 **`skill install [AGENT]`** —— 安装自带的
 [Agent Skill](/zh/guide/agents)(SKILL.md、preflight 脚本、API 参考、起步

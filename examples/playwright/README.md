@@ -7,7 +7,11 @@ Use Qirabot as a bolt-on AI layer on top of your existing Playwright tests.
 ```bash
 python -m pip install qirabot pytest-playwright
 playwright install chromium
+gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```
+
+Pick a model via `QIRA_MODEL` or `Qirabot(model=...)` if you don't want the
+default (`gemini-vertex/gemini-3-flash-preview`).
 
 ## Run
 

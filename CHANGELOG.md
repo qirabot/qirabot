@@ -1,0 +1,76 @@
+# Changelog
+
+## 3.0.0 (2026-08-02)
+
+### Breaking: the decision engine now runs locally
+
+The v2 cloud decision service is gone. In v3 the engine runs inside the SDK
+process: each screenshot is sent directly from your machine to a vision model
+you configure on Google Vertex AI, authenticated with your own Google Cloud
+credentials (Application Default Credentials). No Qirabot account, no API key,
+no per-step billing, and no Qirabot server in the loop.
+
+**Breaking changes**
+
+- Authentication is Google Cloud ADC: set `GOOGLE_APPLICATION_CREDENTIALS` to
+  a service-account JSON, run `gcloud auth application-default login`, or run
+  on GCE (metadata server). The Qirabot account/API-key flow is removed.
+- Model selection is explicit and local:
+  `Qirabot(model="{provider}/{model}")` or `QIRA_MODEL`, with provider one of
+  `claude-vertex` / `gemini-vertex` / `vertex-openai`. Default:
+  `gemini-vertex/gemini-3-flash-preview`.
+- Google Cloud project/region: `vertex_project=` / `vertex_location=`
+  constructor parameters, `--vertex-project` / `--vertex-location` CLI global
+  options, or `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION` (falling back to
+  `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`, then to the project
+  carried by the ADC credentials; location defaults to `global`).
+- Constructing `Qirabot()` with `QIRA_API_KEY` set and no model configured
+  raises an error with migration guidance instead of silently ignoring the
+  stale variable.
+- `task_id` is now a local run id of the form `local-<hex>`; nothing is
+  synced to a server. `fail()` / `cancel()` remain, recording the run's
+  terminal outcome locally for the HTML report.
+- New required dependency: `google-auth`.
+
+**Removed → v3 equivalent**
+
+| v2 | v3 |
+| --- | --- |
+| `Qirabot(api_key=...)` | Removed — Google Cloud ADC (`GOOGLE_APPLICATION_CREDENTIALS` or `gcloud auth application-default login`) |
+| `Qirabot(base_url=...)` | Removed — no server endpoint; the SDK calls Vertex AI directly |
+| `Qirabot(model_alias=...)` | `Qirabot(model="{provider}/{model}")` or `QIRA_MODEL` |
+| `Qirabot(task_id=...)` | Removed — run ids are generated locally (`local-<hex>`) |
+| `Qirabot(source=...)` | Removed — no server-side task records |
+| `Qirabot(heartbeat=...)` | Removed — no server connection to keep alive |
+| `Qirabot(sync_local_steps=...)` | Removed — steps are only recorded locally (HTML report) |
+| `QIRA_API_KEY` env | Removed — ADC (see above) |
+| `QIRA_BASE_URL` env | Removed |
+| — | New: `vertex_project=` / `vertex_location=` params; `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION` env |
+| `qirabot login` | Removed — `gcloud auth application-default login` (or a service-account JSON) |
+| `qirabot task` | Removed — no server-side task list; run details are in the local HTML report |
+| `qirabot screenshot` | Removed |
+| `qirabot models` (cloud alias list) | `qirabot models` — lists the three Vertex providers, their default models, and checks ADC |
+| `qirabot doctor` (API-key / server check) | `qirabot doctor` — checks Python, Google Cloud credentials (ADC + project), and backend dependencies |
+| CLI globals `--api-key` / `--base-url` / `--timeout` / `--verify-ssl` | Removed — new globals: `--vertex-project` / `--vertex-location` |
+| `-m/--model` (cloud model alias) | `-m/--model` — local model string `{provider}/{model}` |
+
+**Added**
+
+- Vertex AI providers: `claude-vertex`, `gemini-vertex`, `vertex-openai`
+  (OpenAI-compatible publisher models, e.g. `vertex-openai/qwen/qwen3-vl-plus`).
+- `QIRA_LOCATE_FORMAT` (optional; `bbox_yx_1000`) — element-location output
+  format override.
+- `QIRA_ENGINE_TRACE=<dir>` — debugging: appends one JSONL record per engine
+  step and saves the step screenshots into the directory.
+
+**Unchanged**
+
+- The automation API: `bot.ai()`, `bot.click/type/extract/verify/locate`,
+  `knowledge=`, `custom_tools=`, `on_step`, `thinking_level`
+  (minimal/low/medium/high), backends (browser/Android/iOS/desktop/Windows
+  window), HTML reports, screen/device recording, and the progress overlay.
+
+**Keeping v2**
+
+The v2 cloud behavior remains available by pinning the previous major
+version: `pip install "qirabot<3"`.

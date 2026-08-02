@@ -30,8 +30,7 @@ AI 定位动作和 AI 操作共享这些关键字参数——在此统一说明:
 | `interval` | `2.0` | 自动等待的轮询间隔(秒)。 |
 | `wait` | `""` | 覆盖 `timeout` 使用的自动推导的存在性断言。 |
 | `retry` | 构造函数的 `retry` | 按调用覆盖瞬时失败的重试次数。 |
-| `model_alias` | 构造函数的 | 按调用覆盖[模型档位](/zh/advanced/configuration#模型与语言)。 |
-| `thinking_level` | 构造函数的 | 按调用覆盖[思考深度](/zh/advanced/configuration#思考深度)：`minimal` / `low` / `medium` / `high`；留空 = 使用档位自带设置。 |
+| `thinking_level` | 构造函数的 | 按调用覆盖[思考深度](/zh/advanced/configuration#思考深度)：`minimal` / `low` / `medium` / `high`；留空 = 使用引擎默认值。 |
 | `language` | 构造函数的 | 按调用覆盖响应语言。 |
 
 ## 会话与生命周期
@@ -75,7 +74,7 @@ close() -> None
 ```
 
 释放仍按住的输入、停止录屏、写出 [HTML 报告](/zh/advanced/reports)、
-关闭 `open()` 启动的资源,并把服务端任务标记完成。`atexit` 和上下文
+关闭 `open()` 启动的资源,并把运行记录为完成。`atexit` 和上下文
 管理器退出时自动调用。绝不关闭你自己创建的浏览器/driver。
 
 ### fail() / cancel()
@@ -85,13 +84,14 @@ fail(error_message="") -> None
 cancel(reason="") -> None
 ```
 
-记录 `close()` 默认上报的“成功完成”之外的终态:`fail()` 把任务标记为
-失败,`cancel()` 标记为主动中止。在 `close()` 之前调用。
+记录 `close()` 默认记录的“成功完成”之外的终态:`fail()` 把运行标记为
+失败,`cancel()` 标记为主动中止——都会体现在 HTML 报告里。在 `close()`
+之前调用。
 
 ### report_dir / task_id
 
-属性:每次运行的输出目录(`./qira_runs/<date>/<time-id>/`)和服务端
-任务 id。
+属性:每次运行的输出目录(`./qira_runs/<date>/<time-id>/`)和本地运行
+id(形如 `local-<8 位十六进制>`)。
 
 ## AI 定位动作
 
@@ -102,7 +102,7 @@ cancel(reason="") -> None
 
 ```python
 click(target, locate, *, modifier="", timeout=0.0, interval=2.0, wait="",
-      retry=None, model_alias="", thinking_level="", language="") -> target
+      retry=None, thinking_level="", language="") -> target
 ```
 
 `locate` 是自然语言的元素描述(任何语言均可)。`modifier` 在点击前后
@@ -124,7 +124,7 @@ type_text(target, locate, text, *, press_enter=False,
 ```
 
 定位输入框、聚焦、输入 `text`(中文/emoji 均可)。**空 `locate` 跳过
-AI 定位**,输入到当前拥有键盘焦点的元素——无 AI、不计费;该模式下
+AI 定位**,输入到当前拥有键盘焦点的元素——无 AI、无模型调用;该模式下
 `timeout`/`wait` 被忽略。
 
 ### long_press()
@@ -143,8 +143,8 @@ mouse_up(target, locate="", *, <common>) -> target
 ```
 
 拆分的按下/释放,用于按住拖动——仅桌面后端。`mouse_up` 不传 `locate`
-时在当前光标位置释放(无 AI、不计费)。`ai()` 运行结束和 `close()` 时
-自动释放仍按住的输入。
+时在当前光标位置释放(无 AI、无模型调用)。`ai()` 运行结束和 `close()`
+时自动释放仍按住的输入。
 
 ### key_down() / key_up()
 
@@ -153,26 +153,27 @@ key_down(target, key) -> target
 key_up(target, key) -> target
 ```
 
-在执行其他动作期间按住某个键(仅桌面后端)。无 AI、不计费。
+在执行其他动作期间按住某个键(仅桌面后端)。无 AI、无模型调用。
 
 ## AI 操作
 
 ### ai()
 
 ```python
-ai(target, instruction, max_steps=20, *, on_step=None, model_alias="",
-   thinking_level="", language="", custom_tools=None, exclude_tools=None) -> RunResult
+ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
+   language="", custom_tools=None, exclude_tools=None, knowledge=None) -> RunResult
 ```
 
 自主循环:截图 → 决策 → 执行,直到完成或达到 `max_steps`。每步之后以
 [`StepResult`](#stepresult) 为参数调用 `on_step`。`custom_tools` 把你的
 Python 函数注册为可调用工具;`exclude_tools` 按动作名移除内置工具——
-两者详见 [AI 任务与自定义工具](/zh/advanced/ai-tasks)。
+两者详见 [AI 任务与自定义工具](/zh/advanced/ai-tasks)。`knowledge` 为本次
+运行挂载领域参考材料(文本、`Path` 或二者的列表;合计 32KB)。
 
 ### extract()
 
 ```python
-extract(target, instruction, *, retry=None, model_alias="", thinking_level="",
+extract(target, instruction, *, retry=None, thinking_level="",
         language="") -> ExtractResult
 ```
 
@@ -182,18 +183,18 @@ extract(target, instruction, *, retry=None, model_alias="", thinking_level="",
 ### verify()
 
 ```python
-verify(target, assertion, *, retry=None, model_alias="", thinking_level="",
+verify(target, assertion, *, retry=None, thinking_level="",
        language="") -> VerifyResult
 ```
 
 视觉断言。断言不成立不抛异常——结果
-[按真假值使用](#verifyresult),带 `.reason`;传输/服务端错误仍会抛出。
+[按真假值使用](#verifyresult),带 `.reason`;传输/模型端点错误仍会抛出。
 
 ### locate()
 
 ```python
 locate(target, locate, *, timeout=0.0, interval=2.0, wait="",
-       retry=None, model_alias="", thinking_level="", language="") -> LocateResult
+       retry=None, thinking_level="", language="") -> LocateResult
 ```
 
 把自然语言元素描述解析成坐标,**不执行任何动作**——不点击、不输入。
@@ -209,9 +210,9 @@ page.mouse.click(x, y)   # 拿坐标驱动你自己的框架调用
 使用的坐标系一致,也就是报告截图里看到的位置,但不一定是操作系统全局
 坐标。
 
-计费:locate 本身仅一次 vision 调用(无 LLM token)。`timeout > 0` 时会
-先自动等待,语义与 `click()` 相同——每次轮询是一次 LLM verify 调用,按
-verify 计费。
+locate 本身仅一次 vision 调用(无 LLM token)。`timeout > 0` 时会先自动
+等待,语义与 `click()` 相同——每次轮询是发往你模型端点的一次 LLM verify
+调用。
 
 ::: warning 元素不存在时
 元素**不在屏幕上**时视觉解析器仍会返回坐标,且该坐标不可信。无法保证
@@ -222,14 +223,15 @@ verify 计费。
 
 ```python
 wait_for(target, assertion, timeout=30.0, interval=2.0, *,
-         model_alias="", thinking_level="", language="") -> None
+         thinking_level="", language="") -> None
 ```
 
 按 `verify` 语义每 `interval` 秒轮询一次;条件一成立立即返回,`timeout`
-到期抛 `QirabotTimeoutError`。每次轮询都是一次计费的 verify 调用——为了
-正确性优先用它取代 sleep,同时把 `interval` 设得合理以控制成本。
+到期抛 `QirabotTimeoutError`。每次轮询都是发往你模型端点的一次 verify
+调用——为了正确性优先用它取代 sleep,同时把 `interval` 设得合理以控制
+token 用量。
 
-## 直接动作——无 AI、不计费
+## 直接动作——无 AI
 
 ### navigate() / go_back() / close_tab()
 
@@ -240,7 +242,7 @@ close_tab(target) -> target          # 仅 Playwright
 ```
 
 各平台可用性见[矩阵](/zh/reference/api#平台支持矩阵);智能 `go_back`
-的行为见 [API 参考](/zh/reference/api#导航、滚动与按键-无-ai、不计费)。
+的行为见 [API 参考](/zh/reference/api#导航、滚动与按键-无-ai)。
 
 ### scroll()
 
@@ -260,7 +262,7 @@ press_key(target, key, duration_seconds=0) -> target
 DirectInput 扫描码。组合键用 `+` 连接(`"ctrl+shift+t"`,仅桌面/浏览器)。
 `duration_seconds > 0` 按住指定时长再释放(上限 10 秒;仅 pyautogui +
 Windows 窗口后端)。按键词汇表:
-[API 参考](/zh/reference/api#导航、滚动与按键-无-ai、不计费)。
+[API 参考](/zh/reference/api#导航、滚动与按键-无-ai)。
 
 ### screenshot()
 
@@ -343,4 +345,4 @@ output_tokens`。注意:会生成新字符串的 str 操作(切片、`.strip()`�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `x` / `y` | `int` | 解析出的坐标,位于 adapter 的截图像素坐标系 |
-| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token 用量——当前恒为 `0`(locate 按一次 vision 调用计费) |
+| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token 用量——当前恒为 `0`(locate 仅是一次 vision 调用) |

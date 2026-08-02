@@ -57,8 +57,9 @@ result = bot.ai(
 )
 ```
 
-模型选中工具后,SDK 在**你的本地机器**执行它——服务器看不到你的接口和
-凭据——并把返回值作为下一步的观察反馈给模型。
+模型选中工具后,SDK 在**你的本地机器**执行它,并把返回值作为下一步的
+观察反馈给模型。模型只看到工具的名字、描述和参数,以及工具的返回值——
+永远看不到背后的代码、接口和凭据。
 
 ### 规则
 
@@ -90,17 +91,16 @@ def wait_for_human(reason: str) -> str:
 ·
 [06_human_in_the_loop.py](https://github.com/qirabot/qirabot-python/blob/main/examples/automation/06_human_in_the_loop.py)
 
-## 按调用指定模型与语言
+## 模型与语言
 
 ```python
-bot = Qirabot(model_alias="high_quality", language="zh")   # 全局默认
-bot.click(page, "登录", model_alias="fast")                # 或按调用覆盖
+bot = Qirabot(model="claude-vertex", language="zh")        # 全局默认
 bot.verify(page, "每一行都显示折扣价",
            thinking_level="high")                          # 难的调用 → 多想想
 ```
 
-档位按成本换质量:`fast` · `balanced` · `balanced_pro` ·
-`high_quality`;留空使用服务器默认。`thinking_level`
-(`minimal`/`low`/`medium`/`high`)在同一档位内伸缩推理深度。详见
-[配置](/zh/advanced/configuration)。确定性的单步调用见
+`model` 为整个 bot 选择 Vertex AI 模型(`"{provider}/{model}"`);留空
+使用默认的 `gemini-vertex/gemini-3-flash-preview`。`thinking_level`
+(`minimal`/`low`/`medium`/`high`)在同一模型内伸缩推理深度,可按调用
+覆盖。详见[配置](/zh/advanced/configuration)。确定性的单步调用见
 [API 参考](/zh/reference/api)。

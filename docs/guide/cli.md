@@ -41,13 +41,11 @@ qirabot desktop "..." --hwnd 132456
 # Mount domain knowledge for the run — game rules, business terms (32KB total)
 qirabot browser "Buy 10 stamina potions in the shop" -k game-rules.md -k gm-policy.md
 
-# Environment check — what's installed, what's missing, is the server reachable
+# Environment check — Python, Google Cloud credentials (ADC), backend deps
 qirabot doctor
 
-# Read-only server queries
-qirabot task <task_id>            # status, commands, steps
-qirabot screenshot <task_id>      # download a screenshot
-qirabot models                    # list model aliases
+# Model overview — Vertex providers, default models, credential status
+qirabot models
 ```
 
 ## Commands
@@ -58,29 +56,35 @@ qirabot models                    # list model aliases
 | `android INSTRUCTION` | Run an AI task on an Android device ([adb direct](/backends/android), built in; `--appium-url` for Appium) |
 | `ios INSTRUCTION` | Run an AI task on an iOS device ([WDA direct](/backends/ios), built in; `--appium-url`/`--device` for Appium) |
 | `desktop INSTRUCTION` | Run an AI task on the [desktop screen](/backends/desktop) (pyautogui; `--window-title`/`--hwnd` binds [one Windows window](/backends/windows-games), built in) |
-| `login` | Log in via the browser and save the API key (`--paste` for manual entry, `--status` shows the active key, masked) |
 | `install-browser` | One-time Chromium download for the browser backend |
-| `open-browser` | Open a browser to log in to sites by hand — the session persists in `--user-data-dir`, no API key needed |
-| `doctor` | Check Python, API key/server, and per-backend dependencies |
-| `task TASK_ID` | Print a task's status, commands, and steps |
-| `screenshot TASK_ID` | Download a task screenshot |
-| `models` | List available model aliases |
+| `open-browser` | Open a browser to log in to websites by hand — the session persists in `--user-data-dir` for later runs |
+| `doctor` | Check Python, Google Cloud credentials (ADC + project), and per-backend dependencies |
+| `models` | Print the three Vertex providers with their default models, the session default model, and whether Google Cloud credentials (ADC) resolve (shows the project) |
 | `skill install [AGENT]` | Copy the bundled [Agent Skill](/guide/agents) into an AI agent's skills directory |
 | `skill uninstall [AGENT]` | Remove the skill installed by `skill install` |
 | `skill list` | Show known skills directories and the installed skill version |
 
 ## Global options
 
-Global options go **before** the subcommand (they configure the connection):
+Global options go **before** the subcommand (they configure the Vertex AI
+connection):
 
 ```bash
-qirabot --api-key qk_... --base-url https://app.qirabot.com browser "..."
+qirabot --vertex-project my-gcp-project --vertex-location global browser "..."
 ```
 
-The API key resolves in this order: `--api-key` flag > `QIRA_API_KEY` env var
-> project `.env` > the `qirabot login` config file. `qirabot login --status`
-shows which layer is active. Also available: `--timeout`,
-`--verify-ssl` / `--no-verify-ssl`, `--version`.
+The project resolves in this order: `--vertex-project` flag >
+`QIRA_VERTEX_PROJECT` env var > `GOOGLE_CLOUD_PROJECT` > the ADC
+credentials' own project id. The location: `--vertex-location` >
+`QIRA_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION` > `global`. Also
+available: `--version`.
+
+The model is a task-command option (`-m/--model`, below) and resolves:
+`-m` flag > `QIRA_MODEL` env var > the built-in default
+`gemini-vertex/gemini-3-flash-preview`. A bare provider name selects that
+provider's default model (`claude-vertex` → `claude-sonnet-4-5@20250929`);
+`vertex-openai` has no default and needs an explicit publisher-prefixed
+model, e.g. `vertex-openai/qwen/qwen3-vl-plus`.
 
 ## Exit codes
 
@@ -94,10 +98,10 @@ proceeds on success.
 
 | Option | Default | What it does |
 |---|---|---|
-| `-n, --name` | derived from the instruction | Task name shown in the web UI |
-| `-m, --model` | server default | Model alias (see [Configuration](/advanced/configuration)) |
-| `--thinking-level` | model alias's setting | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
-| `-l, --language` | server default | Response language, e.g. `zh`, `en` |
+| `-n, --name` | derived from the instruction | Run name shown in the HTML report |
+| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3-flash-preview` | Model as `{provider}/{model}`, provider one of `claude-vertex` / `gemini-vertex` / `vertex-openai` (see [Configuration](/advanced/configuration)) |
+| `--thinking-level` | engine default | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
+| `-l, --language` | — | Response language, e.g. `zh`, `en` |
 | `--max-steps` | `20` | Step budget for the AI task |
 | `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs — fetch remote sources yourself first |
 | `--report / --no-report` | on | Write an HTML run report |
@@ -150,9 +154,6 @@ proceeds on success.
 | `--window-title` | — | Bind to the window matching this title regex (Windows window backend) |
 | `--hwnd` | — | Bind to a window handle, decimal (Windows window backend) |
 | `--ambiguous` | `error` | When several windows match `--window-title`: `error` fails listing them; `largest` picks the biggest matching window |
-
-**`screenshot TASK_ID`** — `-s/--step` (0 = latest), `-o/--output`,
-`-f/--force` (overwrite).
 
 **`skill install [AGENT]`** — installs the bundled
 [Agent Skill](/guide/agents) (SKILL.md, preflight script, API reference,

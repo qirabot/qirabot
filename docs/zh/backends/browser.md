@@ -30,7 +30,7 @@ qirabot browser "..." --cdp-url http://localhost:9222                    # 接�
 
 ### 登录一次,后续复用
 
-需要账号的站点,登录这一步手动做——不跑 AI 任务、不需要 API key、不花
+需要账号的站点,登录这一步手动做——不跑 AI 任务、不调用模型、不花
 token。`open-browser` 会打开该 profile 的可见浏览器窗口;登录后关闭窗口,
 之后所有传入同一个 `--user-data-dir` 的运行都直接带着登录态启动:
 
@@ -76,7 +76,7 @@ bot.close()
 有一个值得提前知道的坑:点击可能打开**新标签页**,返回的 page 才是活动
 的那个——保持 `page = bot.click(page, ...)` 的写法。细节和智能 `go_back`
 行为见
-[API 参考](/zh/reference/api#导航、滚动与按键-无-ai、不计费)。
+[API 参考](/zh/reference/api#导航、滚动与按键-无-ai)。
 
 ## 说明
 

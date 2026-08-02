@@ -38,8 +38,8 @@ with Qirabot(task_name="browser-template") as bot:
     print("output:", result.output)
 
     # If a script (CI gate, conditional flow) must branch on success,
-    # uncomment. `verify` is a billed AI call — skip it when a human will
-    # read the report:
+    # uncomment. `verify` is an extra model call (token cost) — skip it when a
+    # human will read the report:
     # if not bot.verify(page, "an item is in the shopping cart"):
     #     bot.fail("item never made it into the cart")
 

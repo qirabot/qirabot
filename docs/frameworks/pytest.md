@@ -46,7 +46,7 @@ from qirabot import Qirabot
 def bot():
     b = Qirabot(report_dir="./artifacts")
     yield b
-    b.close()          # writes the HTML report, marks the server task complete
+    b.close()          # writes the HTML report
 
 def test_search(bot, page):
     page.goto("https://www.wikipedia.org")
@@ -54,10 +54,9 @@ def test_search(bot, page):
     assert bot.verify(page, "the SpaceX article is shown")
 ```
 
-`close()` is also covered by `atexit` if a test hard-crashes, and the server
-times out orphaned tasks after ~5 minutes of silence (the SDK sends a
-background heartbeat while your process is alive, so long waits between
-steps are safe — see [Configuration](/advanced/configuration)).
+`close()` is also covered by `atexit` if a test hard-crashes. The engine
+runs locally in your process, so long waits between steps are safe — see
+[Configuration](/advanced/configuration).
 
 ## Assertion patterns
 
@@ -82,9 +81,10 @@ Prefer `wait_for` over sleeps: it returns as soon as the condition holds.
   the exact screenshot at each step.
 - Turn reports off entirely with `Qirabot(report=False)` if you only want
   the assertions.
-- API key comes from `QIRA_API_KEY` (env var beats the `qirabot login`
-  config — CI-friendly). Exit codes on the CLI are script-friendly too:
-  `0` pass, `1` fail, `130` interrupted.
+- Credentials: point `GOOGLE_APPLICATION_CREDENTIALS` at a service-account
+  JSON on the runner (standard Google Cloud ADC), and set `QIRA_MODEL` /
+  `QIRA_VERTEX_PROJECT` as env vars. Exit codes on the CLI are
+  script-friendly too: `0` pass, `1` fail, `130` interrupted.
 - Headless: on display-less runners the managed browser automatically goes
   headless.
 

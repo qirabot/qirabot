@@ -17,8 +17,8 @@ qirabot browser "..." --vertex-project my-proj   # wrong (unknown option)
 
 | Option | Default | Notes |
 |---|---|---|
-| `--vertex-project` | env `GOOGLE_CLOUD_PROJECT`, else the ADC credentials' own project | Google Cloud project for the Vertex providers |
-| `--vertex-location` | env `GOOGLE_CLOUD_LOCATION`, else `global` | Vertex location |
+| `--vertex-project` | env `QIRA_VERTEX_PROJECT`, else `GOOGLE_CLOUD_PROJECT`, else the ADC credentials' own project | Google Cloud project for the Vertex providers |
+| `--vertex-location` | env `QIRA_VERTEX_LOCATION`, else `GOOGLE_CLOUD_LOCATION`, else `global` | Vertex location |
 
 `-h/--help` works everywhere and prints each option's default; `--version`
 prints the package version.
@@ -29,7 +29,7 @@ All four take the instruction as the positional argument and share:
 
 | Option | Default | Notes |
 |---|---|---|
-| `-n/--name` | derived from the instruction (first line, ≤60 chars) | task name in the web UI |
+| `-n/--name` | derived from the instruction (first line, ≤60 chars) | run name shown in the report |
 | `-m/--model` | env `QIRA_MODEL`, else the built-in default | `"{provider}/{model}"`, e.g. `gemini-vertex/gemini-3-flash-preview` — providers listed by `qirabot models` |
 | `--thinking-level` | model's setting | thinking override: `minimal`/`low`/`medium`/`high` |
 | `-l/--language` | engine default | e.g. `zh`, `en` |
@@ -40,8 +40,8 @@ All four take the instruction as the positional argument and share:
 | `--record` | off | see per-command semantics below — host screen on browser/desktop, **device** screen on android/ios |
 
 **Exit codes** (CI-gateable): `0` = model achieved the goal · `1` = failed /
-error / max-steps exhausted · `130` = Ctrl+C (task recorded as *cancelled*
-server-side, not failed). Live per-step trace prints to stdout while running
+error / max-steps exhausted · `130` = Ctrl+C (run recorded as *cancelled* in
+the report, not failed). Live per-step trace prints to stdout while running
 (`[3/20] click "Login" └ reasoning…`), final line is `Done: <output>` or
 `Failed: <output>`.
 
@@ -126,10 +126,8 @@ window-relative screenshots).
 | Command | What it does |
 |---|---|
 | `qirabot install-browser` | One-time Chromium download for the browser backend (wraps `playwright install chromium`; required form in isolated `uv tool` installs, where playwright's own CLI is not on PATH). |
-| `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
-| `qirabot task <task_id>` | Server-side status + commands + steps tables for any task (CLI- or SDK-created). |
-| `qirabot screenshot <task_id> [-s N] [-o PATH] [-f]` | Download a task screenshot (`-s 0` = latest step). Refuses to overwrite without `-f`. |
-| `qirabot models` | List available model aliases — the valid `-m` values. |
+| `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC + project), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
+| `qirabot models` | List the built-in Vertex providers (`claude-vertex` / `gemini-vertex` / `vertex-openai`), their default models, the session default, and whether ADC credentials resolve — the valid `-m`/`QIRA_MODEL` values. |
 
 ## When the CLI is the wrong tool → use the SDK
 

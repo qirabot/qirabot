@@ -32,8 +32,7 @@ documented once here:
 | `interval` | `2.0` | Seconds between auto-wait polls. |
 | `wait` | `""` | Override the auto-derived presence assertion used by `timeout`. |
 | `retry` | constructor's `retry` | Per-call override of the transient-failure retry count. |
-| `model_alias` | constructor's | Per-call [model alias](/advanced/configuration#model-language) override. |
-| `thinking_level` | constructor's | Per-call [thinking level](/advanced/configuration#thinking-level) override: `minimal` / `low` / `medium` / `high`; empty = the alias's configured level. |
+| `thinking_level` | constructor's | Per-call [thinking level](/advanced/configuration#thinking-level) override: `minimal` / `low` / `medium` / `high`; empty = the engine default. |
 | `language` | constructor's | Per-call response-language override. |
 
 ## Session & lifecycle
@@ -79,8 +78,8 @@ close() -> None
 ```
 
 Releases held inputs, stops recording, writes the
-[HTML report](/advanced/reports), closes what `open()` launched, and marks
-the server task complete. Auto-called by `atexit` and on context-manager
+[HTML report](/advanced/reports), closes what `open()` launched, and
+records the run as complete. Auto-called by `atexit` and on context-manager
 exit. Never closes a browser/driver you created yourself.
 
 ### fail() / cancel()
@@ -90,14 +89,16 @@ fail(error_message="") -> None
 cancel(reason="") -> None
 ```
 
-Record a terminal status other than the success-complete that `close()`
-reports by default: `fail()` marks the task failed, `cancel()` marks a
-deliberate abort. Call before `close()`.
+Record a terminal outcome other than the success-complete that `close()`
+records by default: `fail()` marks the run failed, `cancel()` marks a
+deliberate abort — both reflected in the HTML report. Call before
+`close()`.
 
 ### report_dir / task_id
 
 Properties: the per-run output directory
-(`./qira_runs/<date>/<time-id>/`) and the server task id.
+(`./qira_runs/<date>/<time-id>/`) and the local run id (of the form
+`local-<8 hex chars>`).
 
 ## AI-located actions
 
@@ -109,7 +110,7 @@ open a new tab (`page = bot.click(page, ...)`). All take the
 
 ```python
 click(target, locate, *, modifier="", timeout=0.0, interval=2.0, wait="",
-      retry=None, model_alias="", thinking_level="", language="") -> target
+      retry=None, thinking_level="", language="") -> target
 ```
 
 `locate` is a natural-language element description (any language).
@@ -133,7 +134,7 @@ type_text(target, locate, text, *, press_enter=False,
 
 Locates the field, focuses it, types `text` (Chinese/emoji included).
 **Empty `locate` skips AI location** and types into whatever has keyboard
-focus — no AI, no billing; `timeout`/`wait` are ignored in that mode.
+focus — no AI, no model call; `timeout`/`wait` are ignored in that mode.
 
 ### long_press()
 
@@ -153,8 +154,8 @@ mouse_up(target, locate="", *, <common>) -> target
 
 Split press/release for press-and-hold drags — desktop backends only.
 `mouse_up` with no `locate` releases at the current cursor position (no AI,
-no billing). Anything still held is auto-released at the end of an `ai()`
-run and on `close()`.
+no model call). Anything still held is auto-released at the end of an
+`ai()` run and on `close()`.
 
 ### key_down() / key_up()
 
@@ -163,27 +164,30 @@ key_down(target, key) -> target
 key_up(target, key) -> target
 ```
 
-Hold a key across other actions (desktop backends only). No AI, no billing.
+Hold a key across other actions (desktop backends only). No AI, no model
+call.
 
 ## AI operations
 
 ### ai()
 
 ```python
-ai(target, instruction, max_steps=20, *, on_step=None, model_alias="",
-   thinking_level="", language="", custom_tools=None, exclude_tools=None) -> RunResult
+ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
+   language="", custom_tools=None, exclude_tools=None, knowledge=None) -> RunResult
 ```
 
 The autonomous loop: screenshot → decide → act, until done or `max_steps`.
 `on_step` is called with a [`StepResult`](#stepresult) after each step.
 `custom_tools` registers your Python functions as callable tools;
 `exclude_tools` removes built-ins by action name — both detailed in
-[AI Tasks & Custom Tools](/advanced/ai-tasks).
+[AI Tasks & Custom Tools](/advanced/ai-tasks). `knowledge` mounts domain
+reference material for the run (text, a `Path`, or a list of either; 32KB
+total).
 
 ### extract()
 
 ```python
-extract(target, instruction, *, retry=None, model_alias="", thinking_level="",
+extract(target, instruction, *, retry=None, thinking_level="",
         language="") -> ExtractResult
 ```
 
@@ -193,19 +197,19 @@ Structured data straight off the screen. The return value
 ### verify()
 
 ```python
-verify(target, assertion, *, retry=None, model_alias="", thinking_level="",
+verify(target, assertion, *, retry=None, thinking_level="",
        language="") -> VerifyResult
 ```
 
 Visual assertion. A failed check doesn't raise — the result
-[is truthy/falsy](#verifyresult) with a `.reason`; transport/server errors
-still raise.
+[is truthy/falsy](#verifyresult) with a `.reason`; transport/model-endpoint
+errors still raise.
 
 ### locate()
 
 ```python
 locate(target, locate, *, timeout=0.0, interval=2.0, wait="",
-       retry=None, model_alias="", thinking_level="", language="") -> LocateResult
+       retry=None, thinking_level="", language="") -> LocateResult
 ```
 
 Resolves a natural-language element description to coordinates **without
@@ -223,9 +227,9 @@ pyautogui, device pixels on mobile — the same space the bot's own actions
 use, and what you see in the report screenshots, but not necessarily
 OS-global coordinates.
 
-Billing: the locate itself is a single vision call (no LLM tokens). With
+The locate itself is a single vision call (no LLM tokens). With
 `timeout > 0` it auto-waits first, same semantics as `click()` — each poll
-is an LLM verify call and billed as such.
+is an LLM verify call against your model endpoint.
 
 ::: warning Absent elements
 The vision resolver returns coordinates even when the element is **not on
@@ -237,15 +241,15 @@ guaranteed, pass `timeout=` or check with `verify()` / `wait_for()` first.
 
 ```python
 wait_for(target, assertion, timeout=30.0, interval=2.0, *,
-         model_alias="", thinking_level="", language="") -> None
+         thinking_level="", language="") -> None
 ```
 
 Polls `verify` semantics every `interval` seconds; returns as soon as the
 condition holds, raises `QirabotTimeoutError` at `timeout`. Each poll is a
-billed verify call — prefer it over sleeps for correctness, and keep
-`interval` reasonable for cost.
+verify call to your model endpoint — prefer it over sleeps for correctness,
+and keep `interval` reasonable to limit token usage.
 
-## Direct actions — no AI, no billing
+## Direct actions — no AI
 
 ### navigate() / go_back() / close_tab()
 
@@ -258,7 +262,7 @@ close_tab(target) -> target          # Playwright only
 Per-platform availability is in the
 [matrix](/reference/api#platform-support-matrix); the smart `go_back`
 behavior is described in the
-[API overview](/reference/api#navigation-scrolling-keys-no-ai-no-billing).
+[API overview](/reference/api#navigation-scrolling-keys-no-ai).
 
 ### scroll()
 
@@ -278,7 +282,7 @@ One key name works everywhere — adb keycode on Android, DirectInput
 scancode on the Windows window backend. Combos join with `+`
 (`"ctrl+shift+t"`, desktop/browser only). `duration_seconds > 0` holds the
 key(s) before releasing (capped at 10; pyautogui + Windows window backend
-only). Key vocabulary: [API overview](/reference/api#navigation-scrolling-keys-no-ai-no-billing).
+only). Key vocabulary: [API overview](/reference/api#navigation-scrolling-keys-no-ai).
 
 ### screenshot()
 
@@ -365,4 +369,4 @@ Returned by [`locate()`](#locate). Unpacks as a tuple:
 | Field | Type | Meaning |
 |---|---|---|
 | `x` / `y` | `int` | Resolved coordinates, in the adapter's screenshot pixel space |
-| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token usage — currently `0` (locate bills as one vision call) |
+| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token usage — currently `0` (locate is a single vision call) |

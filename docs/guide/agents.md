@@ -29,8 +29,8 @@ testing, or scraping a UI; it can also be invoked explicitly as
 `/qirabot:qirabot`. The skill contains:
 
 - **A preflight script** — validates the Python environment, backend
-  dependencies, and API key before any code is written, and prints the exact
-  fix command for each failing check.
+  dependencies, and Google Cloud credentials (ADC) before any code is
+  written, and prints the exact fix command for each failing check.
 - **Condensed SDK + CLI references** — the agent codes against an accurate,
   drift-tested API surface.
 - **Starter templates** for browser, Android (adb), iOS (WDA and Appium),

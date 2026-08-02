@@ -9,13 +9,15 @@ Install:
     playwright install chromium
 
 Run:
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/automation/01_quickstart.py
 """
 
 from qirabot import Qirabot
 
-bot = Qirabot(task_name="quickstart", model_alias="fast")
+# model= picks the Vertex AI model ("{provider}/{model}"); QIRA_MODEL works too.
+# Omit both and the default is gemini-vertex/gemini-3-flash-preview.
+bot = Qirabot(task_name="quickstart", model="gemini-vertex/gemini-3-flash-preview")
 
 # Qirabot launches the browser and returns a Playwright page.
 page = bot.open("https://www.wikipedia.org", headless=False, user_data_dir=".automation")

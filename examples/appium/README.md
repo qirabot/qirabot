@@ -8,6 +8,7 @@ AI is especially useful on mobile — element IDs change across Android versions
 
 ```bash
 python -m pip install qirabot Appium-Python-Client pytest
+gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```
 
 ## Start Appium server

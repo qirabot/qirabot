@@ -6,6 +6,7 @@ Use Qirabot as a bolt-on AI layer on top of your existing Selenium tests.
 
 ```bash
 python -m pip install qirabot selenium pytest
+gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```
 
 Make sure ChromeDriver is installed and in your PATH.

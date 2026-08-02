@@ -73,10 +73,11 @@ pins numpy/opencv.
 qirabot doctor
 ```
 
-`doctor` reports what is installed, what is missing (with the exact command to
-fix it), and whether your API key reaches the server. Haven't saved a key yet?
-That check will flag it — the [Quick Start](/guide/quickstart)'s first command
-(`qirabot login`) is the fix.
+`doctor` reports the Python version, whether Google Cloud credentials (ADC)
+resolve and to which project, and each backend's dependencies — with the
+exact command to fix anything missing. No credentials yet? The
+[Quick Start](/guide/quickstart)'s first command
+(`gcloud auth application-default login`) is the fix.
 
 ## Troubleshooting
 
@@ -93,5 +94,5 @@ That check will flag it — the [Quick Start](/guide/quickstart)'s first command
 
 ## Next steps
 
-- [Quick Start](/guide/quickstart) — save your API key and run your first task
+- [Quick Start](/guide/quickstart) — authenticate to Google Cloud and run your first task
 - [CLI Reference](/guide/cli) — run natural-language tasks without writing code

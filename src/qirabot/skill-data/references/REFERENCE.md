@@ -18,10 +18,10 @@ Common constructor options (all keyword):
 | Option | Default | Notes |
 |---|---|---|
 | `model` / env `QIRA_MODEL` | built-in default | `"{provider}/{model}"`, e.g. `"gemini-vertex/gemini-3-flash-preview"`; providers: `claude-vertex` \| `gemini-vertex` \| `vertex-openai` (list with `qirabot models`) |
-| `vertex_project` / `vertex_location` | ADC project / `global` | Google Cloud project/location for Vertex AI (env `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`) |
+| `vertex_project` / `vertex_location` | ADC project / `global` | Google Cloud project/location for Vertex AI (env `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION`, fallback `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`) |
 | `thinking_level` | model's setting | `minimal` \| `low` \| `medium` \| `high` — per-task thinking override; every action method also takes a per-call `thinking_level=`. Effective granularity depends on the underlying model (some levels may be merged or clamped). |
 | `language` | `"en"` | response language tag, e.g. `"zh"`, `"en"` |
-| `task_name` | `""` | shown in dashboard / report |
+| `task_name` | `""` | shown in the run report header |
 | `report` | `True` | write HTML report on close |
 | `report_dir` / env `QIRA_REPORT_DIR` | `./qira_runs/<date>/<run>/` | output root |
 | `record` / env `QIRA_RECORD` | `False` | ffmpeg recording of the **host machine's screen** into `report_dir/recording.mp4`, auto-embedded in the report — NOT the device screen. For mobile use `record_device`/`record_mjpeg_url` below, or drop your own `recording.mp4` into `report_dir` before `close()` (Appium: `driver.start_recording_screen()` then b64-decode `driver.stop_recording_screen()` to that path; stop before `close()` — it scans for the file). |
@@ -44,8 +44,9 @@ result = bot.ai(target, instruction, max_steps=20, *, on_step=None,
 # result.success -> bool, result.output -> str (final answer)
 ```
 
-Runs the full perceive → decide → act loop on qirabot's backend (step history
-managed server-side; self-heals on a misfire). Prefer this over hand-sequencing
+Runs the full perceive → decide → act loop locally in the SDK — each step
+sends a screenshot to your configured Vertex AI model, with step history
+managed in-process (self-heals on a misfire). Prefer this over hand-sequencing
 primitives. Drop to the primitives below only for strict determinism or a stable
 flow you'll run repeatedly (e.g. CI).
 
@@ -77,7 +78,8 @@ command in game testing is just one example). Pass named functions: name/descrip
 the function name, **docstring (required)**, and signature (annotations
 `str`/`int`/`float`/`bool`; params without defaults = required; lambdas and
 `*args`/`**kwargs` rejected; max 16 tools). The handler runs **locally** — the
-server never sees your endpoint/credentials — and its return value is fed back
+model only sees the tool's name/schema and return value, never your
+endpoint/credentials — and its return value is fed back
 to the model as the observation (`None` → `"ok"`; a raised exception → `ERROR:
 ...` so the model can react). Dict escape hatch for richer schemas:
 `{"name", "description", "parameters", "handler": fn}`.
@@ -86,8 +88,7 @@ to the model as the observation (`None` → `"ok"`; a raised exception → `ERRO
 the model's tool list for this call — prune actions the task never needs so the
 model can't wander into them. `done` cannot be excluded. Excluding an action the
 task actually requires (e.g. `"click"` on a browsing task) strands the run.
-Both params work on bound calls too; a server too old to support them logs a
-warning and the run continues without them.
+Both params work on bound calls too.
 
 **`knowledge` — domain background the model consults while deciding** (game
 rules, business flows, terminology), kept separate from `instruction` so
@@ -95,8 +96,7 @@ reference material is never mistaken for the goal. Accepts the text itself
 (`str`), a local file (`pathlib.Path`, UTF-8), or a list mixing both; combined
 limit 32 KB. A plain `str` is always literal text — never a filename. For
 remote sources fetch the text yourself (`requests.get(url).text`) and pass it.
-Like the tool params, it works on bound calls, and a server too old to support
-it logs a warning and the run continues without it.
+Like the tool params, it works on bound calls.
 Per-call scope makes staged loading natural: each `bot.ai` stage passes only
 its own knowledge, and dropping a stage's knowledge (or a tool) is just not
 passing it to the next call. Hard limits ("GM may be used once") belong in the
@@ -179,12 +179,12 @@ can grab a rotating search-box hint instead of the real value — scope the phra
 and cross-check against a screenshot.
 
 **Human-in-the-loop waits** (QR scan, OTP, captcha — possibly minutes): each
-`wait_for`/`verify` poll is a *billed* AI call, so the default `interval=2.0`
-burns credits while a human acts. Raise the interval (e.g. `interval=8.0`) or
+`wait_for`/`verify` poll is a full model call, so the default `interval=2.0`
+burns tokens while a human acts. Raise the interval (e.g. `interval=8.0`) or
 skip the AI and poll the live driver for free, e.g.
 `bot.current_page(target).wait_for_url("**/success**")` or watch
 `...context.cookies()`. **Inside `bot.ai`**, register a `custom_tools` function
-that blocks on `input()` until the human is done — zero billed calls while
+that blocks on `input()` until the human is done — zero model calls while
 waiting, and the model resumes with the tool's return value (see `custom_tools`
 above; the instruction must tell the model when to call it).
 
@@ -293,7 +293,7 @@ project; airtest stays your project's dependency, not qirabot's.
 ```python
 with Qirabot(task_name="job") as bot:   # auto-close + report on exit
     ...
-# or: bot.close()  (atexit also cleans up; server times out orphans after 30 min)
+# or: bot.close()  (atexit also cleans up)
 ```
 
 The `with` block auto-handles error states: an exception records the task as
@@ -311,8 +311,10 @@ bot.close()                             # finalize — cannot override a prior f
 ## Errors
 
 ```python
-from qirabot import (QirabotError, AuthenticationError, InsufficientBalanceError,
-                     QirabotTimeoutError, ActionError, RateLimitError, QirabotConnectionError)
+from qirabot import (QirabotError, AuthenticationError, QirabotTimeoutError,
+                     ActionError, MissingDependencyError)
 ```
 
-`QirabotError` is the base; catch it last.
+`QirabotError` is the base; catch it last. `AuthenticationError` means the
+Google Cloud credentials (ADC) are missing or unusable — set
+`GOOGLE_APPLICATION_CREDENTIALS` or run `gcloud auth application-default login`.

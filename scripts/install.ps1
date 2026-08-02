@@ -44,7 +44,7 @@ Say "downloading Chromium for the browser backend (one-time)"
 
 Say "done. Next steps:"
 Write-Host ""
-Write-Host '    qirabot login       # paste your API key once (https://app.qirabot.com)'
+Write-Host '    gcloud auth application-default login   # Google Cloud credentials (or set GOOGLE_APPLICATION_CREDENTIALS)'
 Write-Host '    qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org'
 Write-Host ""
 Write-Host "If 'qirabot' is not found, open a new terminal (PATH was just updated)."

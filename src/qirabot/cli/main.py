@@ -510,7 +510,7 @@ def _chromium_status() -> str | None:
 @cli.command()
 @click.pass_context
 def doctor(ctx: click.Context) -> None:
-    """Check the environment: Python, API key + server, and each backend's deps.
+    """Check the environment: Python, Google Cloud credentials, and each backend's deps.
 
     Exits 0 when at least one backend can run end-to-end (key accepted, backend
     installed), 1 otherwise — so setup scripts and CI can gate on it.

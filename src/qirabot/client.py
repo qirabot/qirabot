@@ -299,14 +299,24 @@ class Qirabot:
                 code="auth.cloud_removed",
             )
         # ADC + project resolution and the provider handshake happen here so a
-        # bad credential setup fails at construction, not mid-run.
-        self._backend = LocalBackend(
-            model=model or resolve_default_model(),
-            vertex_project=vertex_project,
-            vertex_location=vertex_location,
-            thinking_level=thinking_level,
-            locate_format=locate_format or os.environ.get("QIRA_LOCATE_FORMAT", ""),
-        )
+        # bad credential setup fails at construction, not mid-run. Config
+        # failures surface as the SDK's own exception types: missing/broken
+        # credentials -> AuthenticationError, bad model/project values ->
+        # QirabotError (the engine's messages are already actionable).
+        from qirabot.engine.providers.base import ProviderError
+
+        try:
+            self._backend = LocalBackend(
+                model=model or resolve_default_model(),
+                vertex_project=vertex_project,
+                vertex_location=vertex_location,
+                thinking_level=thinking_level,
+                locate_format=locate_format or os.environ.get("QIRA_LOCATE_FORMAT", ""),
+            )
+        except ProviderError as e:
+            raise AuthenticationError(str(e), code="auth.credentials") from e
+        except ValueError as e:
+            raise QirabotError(str(e), code="config.invalid") from e
         self._adapters: dict[int, DeviceAdapter] = {}
         self._pw_instances: list[Any] = []
         self._cdp_pages: list[Any] = []

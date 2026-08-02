@@ -52,7 +52,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -65,7 +64,6 @@ class _BoundQirabot:
                 interval=interval,
                 wait=wait,
                 retry=retry,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -82,7 +80,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -97,7 +94,6 @@ class _BoundQirabot:
                 interval=interval,
                 wait=wait,
                 retry=retry,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -111,7 +107,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -123,7 +118,6 @@ class _BoundQirabot:
                 interval=interval,
                 wait=wait,
                 retry=retry,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -138,7 +132,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -151,7 +144,6 @@ class _BoundQirabot:
                 interval=interval,
                 wait=wait,
                 retry=retry,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -165,7 +157,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -177,7 +168,6 @@ class _BoundQirabot:
                 interval=interval,
                 wait=wait,
                 retry=retry,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -191,7 +181,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -203,7 +192,6 @@ class _BoundQirabot:
                 interval=interval,
                 wait=wait,
                 retry=retry,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -214,7 +202,6 @@ class _BoundQirabot:
         instruction: str,
         *,
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> ExtractResult:
@@ -222,7 +209,6 @@ class _BoundQirabot:
             self._target,
             instruction,
             retry=retry,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -232,7 +218,6 @@ class _BoundQirabot:
         assertion: str,
         *,
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> VerifyResult:
@@ -240,7 +225,6 @@ class _BoundQirabot:
             self._target,
             assertion,
             retry=retry,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -253,7 +237,6 @@ class _BoundQirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> LocateResult:
@@ -264,7 +247,6 @@ class _BoundQirabot:
             interval=interval,
             wait=wait,
             retry=retry,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -275,7 +257,6 @@ class _BoundQirabot:
         timeout: float = 30.0,
         interval: float = 2.0,
         *,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> "_BoundQirabot":
@@ -289,7 +270,6 @@ class _BoundQirabot:
             assertion,
             timeout,
             interval,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -301,7 +281,6 @@ class _BoundQirabot:
         max_steps: int = 20,
         *,
         on_step: Callable[["StepResult"], None] | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
         custom_tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
@@ -313,7 +292,6 @@ class _BoundQirabot:
             instruction,
             max_steps,
             on_step=on_step,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             custom_tools=custom_tools,

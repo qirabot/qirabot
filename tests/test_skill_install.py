@@ -30,7 +30,7 @@ def home(tmp_path, monkeypatch):
 
 
 def _invoke(args, runner=None):
-    return (runner or CliRunner()).invoke(cli, ["--api-key", "qk_test", "skill", *args])
+    return (runner or CliRunner()).invoke(cli, ["skill", *args])
 
 
 def test_install_dir_copies_payload_and_marker(tmp_path):

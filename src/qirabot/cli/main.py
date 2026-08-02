@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar
@@ -15,40 +14,8 @@ from click.core import ParameterSource
 from qirabot._browser import launch_browser
 from qirabot._dotenv import load_dotenv
 from qirabot._optional import extra_install_hint, package_install_hint, require
-from qirabot._transport import Transport
 from qirabot.cli.skill import skill
 from qirabot.exceptions import QirabotError
-
-
-# Whether QIRA_API_KEY entered os.environ via ./.env (set by main() around
-# load_dotenv), so `login --status` can name the real source layer.
-_KEY_FROM_DOTENV = False
-
-
-def _require_api_key(ctx: click.Context) -> str:
-    """Single place for the missing-key error so every command says the same thing."""
-    api_key: str = ctx.obj["api_key"]
-    if not api_key:
-        click.echo(
-            "Error: API key is required. Run `qirabot login` to save one "
-            "(or set QIRA_API_KEY / pass --api-key).",
-            err=True,
-        )
-        sys.exit(1)
-    return api_key
-
-
-def _transport(ctx: click.Context) -> Transport:
-    """Get or create a shared Transport from the CLI context."""
-    if "transport" not in ctx.obj:
-        ctx.obj["transport"] = Transport(
-            base_url=ctx.obj["base_url"],
-            api_key=_require_api_key(ctx),
-            timeout=ctx.obj["timeout"],
-            verify_ssl=ctx.obj["verify_ssl"],
-        )
-    transport: Transport = ctx.obj["transport"]
-    return transport
 
 
 def _make_bot(
@@ -68,18 +35,14 @@ def _make_bot(
 ) -> Any:
     from qirabot import Qirabot
 
-    api_key = _require_api_key(ctx)
     try:
         return Qirabot(
-            api_key=api_key,
-            base_url=ctx.obj["base_url"],
-            timeout=ctx.obj["timeout"],
-            verify_ssl=ctx.obj["verify_ssl"],
-            model_alias=model,
+            model=model,
+            vertex_project=ctx.obj.get("vertex_project", ""),
+            vertex_location=ctx.obj.get("vertex_location", ""),
             thinking_level=thinking_level,
             language=language,
             task_name=task_name,
-            source="cli",
             report=report,
             report_dir=report_dir,
             screenshot_annotate=annotate,
@@ -90,9 +53,9 @@ def _make_bot(
             overlay=overlay,
         )
     except Exception as e:
-        # No special-casing needed: Transport already maps connection failures to
-        # QirabotConnectionError with an actionable message (server URL +
-        # QIRA_BASE_URL hint), so str(e) is user-friendly as-is.
+        # Engine construction already produces actionable messages (missing
+        # ADC credentials, unknown provider, missing project), so str(e)
+        # prints cleanly as-is.
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
@@ -102,7 +65,6 @@ def _run_local(
     target: Any,
     instruction: str,
     max_steps: int,
-    base_url: str = "",
     knowledge: str = "",
 ) -> None:
     from rich.console import Console
@@ -112,11 +74,7 @@ def _run_local(
     indent = " " * (len(f"[{max_steps}/{max_steps}]") + 1)
 
     if bot.task_id:
-        if base_url:
-            task_url = f"{base_url.rstrip('/')}/tasks/{bot.task_id}"
-            console.print(f"[dim]Task:[/dim] [link={task_url}]{bot.task_id}[/link]")
-        else:
-            console.print(f"[dim]Task:[/dim] {bot.task_id}")
+        console.print(f"[dim]Run:[/dim] {bot.task_id}")
 
     def on_step(step: Any) -> None:
         if step.action_type == "done":
@@ -200,19 +158,10 @@ def _fail_setup(bot: Any, e: Exception) -> NoReturn:
 
 
 def _default_task_name(instruction: str) -> str:
-    """Derive a task name from the instruction when --name is not given, so CLI
-    runs are distinguishable in the web UI instead of all sharing one name."""
+    """Derive a task name from the instruction when --name is not given, so
+    runs are distinguishable in the report header instead of sharing one name."""
     first_line = next((ln.strip() for ln in instruction.splitlines() if ln.strip()), "")
     return first_line[:60] or "cli"
-
-
-def _img_ext(data: bytes) -> str:
-    """Infer a screenshot file extension from magic bytes (server sends jpeg or png)."""
-    if data[:3] == b"\xff\xd8\xff":
-        return "jpg"
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "png"
-    return "bin"
 
 
 # Accept -h alongside --help, and print each option's default in --help. The
@@ -292,9 +241,13 @@ def _task_options(f: _FC) -> _FC:
     )(f)
     f = _option("--max-steps", group=_TASK_GROUP, default=20, help="Max steps for AI")(f)
     f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Language (e.g. zh, en)")(f)
-    f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high (default: the model alias's setting)")(f)
-    f = _option("--model", "-m", group=_TASK_GROUP, default="", help="Model alias")(f)
-    f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Task name shown in the web UI (default: derived from the instruction)")(f)
+    f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high")(f)
+    f = _option(
+        "--model", "-m", group=_TASK_GROUP, default="",
+        help='Model as "{provider}/{model}" with provider one of claude-vertex / '
+        "gemini-vertex / vertex-openai (default: QIRA_MODEL or the built-in default)",
+    )(f)
+    f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Run name shown in the report (default: derived from the instruction)")(f)
     return f
 
 
@@ -318,297 +271,85 @@ def _debug_options(record: bool = True) -> Callable[[_FC], _FC]:
 
 @click.group(context_settings=_CONTEXT_SETTINGS)
 @click.version_option(package_name="qirabot", prog_name="qirabot")
-@click.option("--api-key", envvar="QIRA_API_KEY", help="API key")
-@click.option("--base-url", envvar="QIRA_BASE_URL", default="https://app.qirabot.com", help="Server URL")
-@click.option("--timeout", type=float, default=120.0, help="HTTP request timeout (seconds)")
-@click.option("--verify-ssl/--no-verify-ssl", default=True, help="Verify the server's TLS certificate")
+@click.option(
+    "--vertex-project",
+    envvar="QIRA_VERTEX_PROJECT",
+    default="",
+    help="Google Cloud project for the Vertex providers "
+    "(default: GOOGLE_CLOUD_PROJECT or the ADC credentials' own project)",
+)
+@click.option(
+    "--vertex-location",
+    envvar="QIRA_VERTEX_LOCATION",
+    default="",
+    help="Vertex location (default: GOOGLE_CLOUD_LOCATION or global)",
+)
 @click.pass_context
-def cli(ctx: click.Context, api_key: str, base_url: str, timeout: float, verify_ssl: bool) -> None:
+def cli(ctx: click.Context, vertex_project: str, vertex_location: str) -> None:
     """Qirabot CLI — AI automation tool.
 
-    Global options (--api-key/--base-url/--timeout/--verify-ssl) go before the
-    subcommand, e.g. `qirabot --base-url ... browser "..."`.
+    The decision engine runs locally against Vertex AI with your Google Cloud
+    credentials (ADC): set GOOGLE_APPLICATION_CREDENTIALS to a service-account
+    JSON or run `gcloud auth application-default login` once.
+
+    Global options (--vertex-project/--vertex-location) go before the
+    subcommand, e.g. `qirabot --vertex-project my-proj browser "..."`.
     """
     ctx.ensure_object(dict)
-    # Key resolution order: --api-key flag > QIRA_API_KEY env var > ./.env
-    # (loaded into the environment by main()) > the `qirabot login` config
-    # file. The source tag feeds `qirabot login --status`.
-    source = ""
-    if api_key:
-        if ctx.get_parameter_source("api_key") == ParameterSource.COMMANDLINE:
-            source = "flag"
-        else:
-            source = ".env" if _KEY_FROM_DOTENV else "env"
-    else:
-        from qirabot._userconfig import load_api_key
-
-        stored = load_api_key()
-        if stored:
-            api_key, source = stored, "config"
-    ctx.obj["api_key"] = api_key
-    ctx.obj["api_key_source"] = source
-    ctx.obj["base_url"] = base_url
-    ctx.obj["timeout"] = timeout
-    ctx.obj["verify_ssl"] = verify_ssl
-
-
-@cli.command()
-@click.argument("task_id")
-@click.pass_context
-def task(ctx: click.Context, task_id: str) -> None:
-    """Get task status and steps."""
-    from rich.console import Console
-    from rich.table import Table
-
-    t = _transport(ctx)
-    console = Console()
-
-    resp = t.request("GET", f"/tasks/{task_id}")
-    console.print(f"Task: [cyan]{task_id}[/cyan]")
-    console.print(f"  Status: {resp.get('status', '')}")
-    console.print(f"  Step: {resp.get('currentStep', 0)}")
-
-    commands = t.request("GET", f"/tasks/{task_id}/commands")
-    if isinstance(commands, list) and commands:
-        cmd_table = Table(title="Commands")
-        cmd_table.add_column("#")
-        cmd_table.add_column("Type")
-        cmd_table.add_column("Instruction")
-        cmd_table.add_column("Status")
-        for c in commands:
-            cmd_table.add_row(
-                str(c.get("seq", "")),
-                c.get("commandType", ""),
-                c.get("instruction", ""),
-                c.get("status", ""),
-            )
-        console.print(cmd_table)
-
-        steps = [s for c in commands for s in (c.get("steps") or [])]
-        if steps:
-            table = Table(title="Steps")
-            table.add_column("#")
-            table.add_column("Action")
-            table.add_column("Status")
-            table.add_column("Duration")
-            for s in steps:
-                table.add_row(
-                    str(s.get("stepNumber", "")),
-                    s.get("actionType", ""),
-                    s.get("status", ""),
-                    f"{s.get('stepDurationMs', 0)}ms",
-                )
-            console.print(table)
-
-
-@cli.command()
-@click.argument("task_id")
-@click.option("--step", "-s", type=int, default=0, help="Step number (0 = latest)")
-@click.option("--output", "-o", default="", help="Output path (default: ./screenshot-<task_id>[-step<N>].<ext>)")
-@click.option("--force", "-f", is_flag=True, help="Overwrite the output file if it already exists")
-@click.pass_context
-def screenshot(ctx: click.Context, task_id: str, step: int, output: str, force: bool) -> None:
-    """Download a task screenshot."""
-    t = _transport(ctx)
-
-    path = f"/screenshots?taskId={task_id}"
-    if step > 0:
-        path += f"&step={step}"
-
-    data = t.get_bytes(path)
-    if not output:
-        suffix = f"-step{step}" if step > 0 else ""
-        output = f"screenshot-{task_id}{suffix}.{_img_ext(data)}"
-    if os.path.exists(output) and not force:
-        click.echo(f"Error: {output} already exists. Pass --force to overwrite.", err=True)
-        sys.exit(1)
-    with open(output, "wb") as f:
-        f.write(data)
-    click.echo(f"Saved to {output} ({len(data)} bytes)")
+    ctx.obj["vertex_project"] = vertex_project
+    ctx.obj["vertex_location"] = vertex_location
 
 
 @cli.command()
 @click.pass_context
 def models(ctx: click.Context) -> None:
-    """List available model aliases."""
+    """List the built-in Vertex providers, their default models, and whether
+    Google Cloud credentials (ADC) resolve on this machine."""
     from rich.console import Console
     from rich.table import Table
 
-    t = _transport(ctx)
-    resp = t.request("GET", "/model-aliases")
-    aliases = resp.get("aliases", []) if isinstance(resp, dict) else []
-
-    table = Table(title="Model Aliases")
-    table.add_column("Name", style="cyan")
-    table.add_column("Display")
-    table.add_column("Description")
-
-    for m in aliases:
-        table.add_row(
-            m.get("name", ""),
-            m.get("displayName", ""),
-            m.get("description", ""),
-        )
-
-    Console().print(table)
-
-
-@cli.command()
-@click.option("--status", is_flag=True, help="Show the configured key (masked) and which layer it comes from")
-@click.option("--paste", is_flag=True, help="Paste an API key manually instead of the browser flow")
-@click.pass_context
-def login(ctx: click.Context, status: bool, paste: bool) -> None:
-    """Log in via the browser — every later command picks the key up automatically.
-
-    Prints a short confirmation code and a URL (opening the browser when one
-    is available), waits for you to click Authorize on the web page, then
-    verifies the resulting API key against the server and writes it to the
-    user config file (chmod 600). The page can be opened on any device — the
-    browser doesn't have to run on this machine. Environment variables and
-    ./.env keep working and always take precedence. Use --paste to enter a
-    key from the dashboard manually instead.
-    """
-    from qirabot import _userconfig as user_config
-
-    if status:
-        key: str = ctx.obj["api_key"]
-        if not key:
-            click.echo(
-                "No API key configured. Run `qirabot login`, or set QIRA_API_KEY."
-            )
-            sys.exit(1)
-        origin = {
-            "flag": "--api-key flag",
-            "env": "QIRA_API_KEY environment variable",
-            ".env": "./.env file",
-            "config": f"login config ({user_config.config_path()})",
-        }.get(ctx.obj["api_key_source"], "unknown")
-        click.echo(f"API key: {user_config.mask_key(key)}  (from: {origin})")
-        return
-
-    if paste:
-        _login_paste(ctx)
-        return
-
-    import platform as platform_mod
-
-    transport = Transport(
-        base_url=ctx.obj["base_url"],
-        api_key="",
-        timeout=min(ctx.obj["timeout"], 10.0),
-        verify_ssl=ctx.obj["verify_ssl"],
+    from qirabot.engine.providers.registry import (
+        DEFAULT_MODELS,
+        SUPPORTED_PROVIDERS,
+        resolve_default_model,
     )
+
+    console = Console()
+    table = Table(title="Vertex providers")
+    table.add_column("Provider", style="cyan")
+    table.add_column("Default model")
+    table.add_column("Example")
+    for provider in SUPPORTED_PROVIDERS:
+        default = DEFAULT_MODELS.get(provider, "")
+        example = f"{provider}/{default}" if default else f"{provider}/<publisher>/<model>"
+        table.add_row(provider, default or "(explicit model required)", example)
+    console.print(table)
+    console.print(f"Session default: [cyan]{resolve_default_model()}[/cyan]  (override with --model or QIRA_MODEL)")
+
+    project, cred_err = _resolve_adc(ctx)
+    if cred_err:
+        console.print(f"[red]✗[/red] Google Cloud credentials: {cred_err}")
+    else:
+        console.print(f"[green]✓[/green] Google Cloud credentials OK (project: {project})")
+
+
+def _resolve_adc(ctx: click.Context) -> tuple[str, str]:
+    """(project, error) — probe ADC + project resolution without any LLM call.
+
+    Fetching an access token exercises the real credential path (service
+    account, gcloud, or metadata server) so `doctor`/`models` report the same
+    failure a task run would hit, at zero model cost.
+    """
+    from qirabot.engine.providers.registry import resolve_vertex_project
+    from qirabot.engine.providers.vertex_auth import VertexTokenSource
+
+    tokens = VertexTokenSource()
     try:
-        start = transport.request(
-            "POST", "/auth/cli/start", json_data={"clientName": platform_mod.node()}
-        )
-    except QirabotError as e:
-        # Only a missing route means "older server without browser login".
-        # Connection failures must NOT fall back to paste — the user would
-        # save a key for a server they can't reach and be confused later.
-        if getattr(e, "status_code", None) in (404, 405):
-            click.echo(
-                "This server doesn't support browser login; falling back to manual entry."
-            )
-            _login_paste(ctx)
-            return
-        click.echo(f"Error: could not start browser login ({e})", err=True)
-        sys.exit(1)
-
-    user_code = start.get("userCode", "")
-    uri_complete = start.get("verificationUriComplete") or start.get("verificationUri", "")
-    interval = max(1, int(start.get("interval", 3)))
-    expires_in = int(start.get("expiresIn", 600))
-
-    click.echo()
-    click.echo(f"  Confirmation code: {user_code}")
-    click.echo(f"  Open this page and check the code matches: {uri_complete}")
-    click.echo()
-
-    import webbrowser
-
-    try:
-        webbrowser.open(uri_complete)
-    except Exception:
-        pass  # headless is fine — the URL above works from any device
-
-    from rich.console import Console
-
-    key = ""
-    deadline = time.monotonic() + expires_in
-    with Console().status("Waiting for approval in the browser (Ctrl-C to cancel)..."):
-        while time.monotonic() < deadline:
-            time.sleep(interval)
-            try:
-                res = transport.request(
-                    "POST",
-                    "/auth/cli/poll",
-                    json_data={"deviceCode": start.get("deviceCode", "")},
-                )
-            except QirabotError as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
-            poll_status = res.get("status")
-            if poll_status == "pending":
-                continue
-            if poll_status == "approved":
-                key = res.get("apiKey") or ""
-                break
-            if poll_status == "denied":
-                click.echo(
-                    "Error: the request was denied in the browser; nothing saved.",
-                    err=True,
-                )
-                sys.exit(1)
-            click.echo(
-                "Error: the code expired before approval; run `qirabot login` again.",
-                err=True,
-            )
-            sys.exit(1)
-
-    if not key:
-        click.echo(
-            "Error: timed out waiting for approval; run `qirabot login` again.",
-            err=True,
-        )
-        sys.exit(1)
-
-    _verify_and_save(ctx, key)
-
-
-def _login_paste(ctx: click.Context) -> None:
-    """The pre-2.2 manual flow: prompt for a key pasted from the dashboard."""
-    key = click.prompt(
-        "API key (qk_..., from https://app.qirabot.com)", hide_input=True
-    ).strip()
-    if not key:
-        raise click.ClickException("empty API key; nothing saved")
-    _verify_and_save(ctx, key)
-
-
-def _verify_and_save(ctx: click.Context, key: str) -> None:
-    from qirabot import _userconfig as user_config
-
-    # Verify BEFORE writing — an unverified key must not silently poison every
-    # later command. Short timeout: this is a diagnostic-grade request.
-    try:
-        with_transport = Transport(
-            base_url=ctx.obj["base_url"],
-            api_key=key,
-            timeout=min(ctx.obj["timeout"], 10.0),
-            verify_ssl=ctx.obj["verify_ssl"],
-        )
-        with_transport.request("GET", "/model-aliases")
+        tokens.token()
+        project = resolve_vertex_project(ctx.obj.get("vertex_project", ""), tokens)
+        return project, ""
     except Exception as e:
-        click.echo(
-            f"Error: {ctx.obj['base_url']} rejected this key or is unreachable "
-            f"({e}); nothing saved.",
-            err=True,
-        )
-        sys.exit(1)
-    path = user_config.save_api_key(key)
-    click.echo(f"Key verified and saved to {path}.")
-    click.echo('You\'re set — try: qirabot browser "Search for SpaceX on Wikipedia"')
+        return "", str(e)
 
 
 @cli.command("install-browser")
@@ -790,32 +531,21 @@ def doctor(ctx: click.Context) -> None:
         console.print(f"{bad} Python {py} — qirabot requires 3.10+")
         problems += 1
 
-    if not ctx.obj["api_key"]:
-        console.print(
-            f"{bad} API key not set — run `qirabot login` "
-            "(or export QIRA_API_KEY=qk_... / put it in ./.env)"
-        )
+    # Google Cloud credentials: the engine runs locally, so ADC + a project
+    # are the whole "server" story now. Probing a token exercises the same
+    # credential path a task run would use, at zero model cost.
+    with console.status("checking Google Cloud credentials (ADC)..."):
+        project, cred_err = _resolve_adc(ctx)
+    if cred_err:
+        console.print(f"{bad} Google Cloud credentials: {escape(cred_err)}")
         problems += 1
     else:
-        # A diagnostic must fail fast: unless --timeout was passed explicitly,
-        # drop the 120s default (sized for AI task steps) to 10s so an
-        # unreachable server reports in seconds instead of looking like a hang.
-        # Must happen before _transport(), which caches a Transport built from
-        # ctx.obj["timeout"]. The status spinner is transient (and silent when
-        # output is not a terminal) — it names the server so a wrong base_url
-        # is visible while doctor waits, not only after the timeout.
-        if ctx.find_root().get_parameter_source("timeout") != ParameterSource.COMMANDLINE:
-            ctx.obj["timeout"] = 10.0
-        try:
-            with console.status(f"checking server ({ctx.obj['base_url']})..."):
-                _transport(ctx).request("GET", "/model-aliases")
-            console.print(f"{ok} API key set, server reachable ({ctx.obj['base_url']})")
-        except Exception as e:
-            console.print(
-                f"{bad} API key set but {ctx.obj['base_url']} rejected it or is "
-                f"unreachable: {escape(str(e))}"
-            )
-            problems += 1
+        from qirabot.engine.providers.registry import resolve_default_model
+
+        console.print(
+            f"{ok} Google Cloud credentials OK (project: {escape(project)}, "
+            f"model: {escape(resolve_default_model())})"
+        )
 
     # (label, ready, fix-hint). A missing Chromium download or missing system
     # libraries both count as not-ready: bot.open() would fail at launch even
@@ -959,7 +689,7 @@ def browser(
         )
         _run_local(
             bot, page, instruction, max_steps,
-            base_url=ctx.obj["base_url"], knowledge=knowledge,
+            knowledge=knowledge,
         )
     except Exception as e:
         # Only setup (bot.open) reaches here: _run_local reports its own errors
@@ -1024,7 +754,7 @@ def _run_appium(
         try:
             _run_local(
                 bot, driver, instruction, max_steps,
-                base_url=ctx.obj["base_url"], knowledge=knowledge,
+                knowledge=knowledge,
             )
         finally:
             # The Appium recording lives in the session: flush it to disk
@@ -1083,7 +813,7 @@ def _run_direct(
             _fail_setup(bot, e)
         _run_local(
             bot, target, instruction, max_steps,
-            base_url=ctx.obj["base_url"], knowledge=knowledge,
+            knowledge=knowledge,
         )
     finally:
         bot.close()
@@ -1363,17 +1093,16 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             )
         from qirabot.windows import Window
 
-        # Validate the key before the --app side effect (same contract as the
-        # pyautogui path below).
-        _require_api_key(ctx)
-        if app:
-            _launch_desktop_app(app, app_wait)
-
         window = Window(
             hwnd=hwnd or None, title_re=window_title or None, ambiguous=ambiguous,
         )
 
         def connect() -> Any:
+            # Launch the app only after _run_direct has built the bot: a bad
+            # credential setup must error out before the --app side effect,
+            # and a launch failure lands in _fail_setup's reporting.
+            if app:
+                _launch_desktop_app(app, app_wait)
             window.hwnd  # noqa: B018 — resolve now for actionable errors
             return window
 
@@ -1389,23 +1118,21 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
 
     pyautogui = require("pyautogui", "desktop")
 
-    # Validate the key before the --app side effect: without this, a missing
-    # key would launch the app first and only then error out.
-    _require_api_key(ctx)
-
-    if app:
-        _launch_desktop_app(app, app_wait)
-
+    # Build the bot before the --app side effect: engine construction
+    # validates the credential setup, and a bad one must not launch the app
+    # first and only then error out.
     bot = _make_bot(
         ctx, model=model, thinking_level=thinking_level, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
         overlay=overlay,
     )
+    if app:
+        _launch_desktop_app(app, app_wait)
     try:
         _run_local(
             bot, pyautogui, instruction, max_steps,
-            base_url=ctx.obj["base_url"], knowledge=knowledge,
+            knowledge=knowledge,
         )
     finally:
         bot.close()
@@ -1414,18 +1141,13 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
 def main() -> None:
     # The SDK never reads .env implicitly; the CLI is the "calling script" in
     # that contract, so it opts in here — before click parses options, so the
-    # envvar fallbacks (QIRA_API_KEY etc.) see the values. Best-effort, and
-    # exported variables always win over .env entries. Remember whether the
-    # key came from .env so `login --status` can say so.
-    global _KEY_FROM_DOTENV
-    had_env_key = "QIRA_API_KEY" in os.environ
+    # envvar fallbacks (QIRA_MODEL, QIRA_VERTEX_PROJECT,
+    # GOOGLE_APPLICATION_CREDENTIALS, ...) see the values. Best-effort, and
+    # exported variables always win over .env entries.
     load_dotenv()
-    _KEY_FROM_DOTENV = not had_env_key and "QIRA_API_KEY" in os.environ
     # Catch SDK errors that escape command bodies and print them as one line,
-    # no traceback: MissingDependencyError (install hint, may surface deep
-    # inside a command via lazy imports) and transport errors from the
-    # read-only commands (task/screenshot/models), which call the server
-    # directly without _make_bot/_run_local's handling.
+    # no traceback (e.g. MissingDependencyError's install hint, which may
+    # surface deep inside a command via lazy imports).
     try:
         cli()
     except QirabotError as e:

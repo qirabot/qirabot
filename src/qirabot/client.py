@@ -5,24 +5,22 @@ from __future__ import annotations
 import atexit
 import contextlib
 import io
-import json
 import logging
 import os
 import signal
 import threading
 import time
+import uuid
 import weakref
-from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Literal
 
 from qirabot._browser import launch_browser
-from qirabot._heartbeat import Heartbeat
 from qirabot._knowledge import resolve_knowledge
 from qirabot._tools import build_tool_defs
-from qirabot._transport import Transport
-from qirabot._userconfig import load_api_key as _load_saved_api_key
+from qirabot.engine.local_backend import LocalBackend
+from qirabot.engine.providers.registry import resolve_default_model
 from qirabot.recording import MjpegStreamRecorder, Recorder, ScreenRecorder, device_recorder
 from qirabot.adapters import auto
 from qirabot.adapters.base import DeviceAdapter, ScreenshotConfig
@@ -32,18 +30,11 @@ from qirabot.exceptions import (
     AuthenticationError,
     QirabotError,
     QirabotTimeoutError,
-    TaskTerminatedError,
     _is_retryable,
 )
 from qirabot.overlay import Overlay
 
 logger = logging.getLogger("qirabot")
-
-# Local-step sync flush thresholds: entry count matches the server's batch
-# cap; the byte cap keeps a full batch of desktop JPEG screenshots well under
-# whatever body limit a fronting reverse proxy enforces.
-_LOCAL_BUF_MAX_ENTRIES = 50
-_LOCAL_BUF_MAX_BYTES = 8 * 1024 * 1024
 
 
 @contextlib.contextmanager
@@ -253,9 +244,13 @@ class RunResult:
 class Qirabot:
     """AI automation bolt-on for any framework.
 
+    The decision engine runs locally (v3.0+): screenshots go straight to the
+    model you configure via Vertex AI with your own GCP credentials (ADC) —
+    no Qirabot server is involved.
+
     Usage::
 
-        bot = Qirabot("qk_xxx")
+        bot = Qirabot(model="gemini-vertex/gemini-3-flash-preview")
         bot.click(page, "Login button")
         bot.type_text(page, "Username field", "admin@example.com")
         result = bot.ai(page, "Find the cheapest item and add to cart")
@@ -264,16 +259,13 @@ class Qirabot:
 
     def __init__(
         self,
-        api_key: str = "",
-        base_url: str = "",
-        timeout: float = 120.0,
-        verify_ssl: bool = True,
-        model_alias: str = "",
+        model: str = "",
+        vertex_project: str = "",
+        vertex_location: str = "",
         thinking_level: str = "",
         language: str = "",
         task_name: str = "",
-        task_id: str = "",
-        source: str = "sdk",
+        locate_format: str = "",
         report: bool = True,
         report_dir: str = "",
         screenshot_format: str = "jpeg",
@@ -289,68 +281,50 @@ class Qirabot:
         record_audio_offset: float | None = None,
         record_mjpeg_url: str | None = None,
         record_device: bool = False,
-        heartbeat: bool = True,
-        sync_local_steps: bool = True,
         overlay: bool = False,
     ):
-        # Same last-resort fallback as the CLI: the `qirabot login` config file.
-        # Explicit param and env var stay ahead of it, so nothing changes for
-        # existing setups — and CI boxes have no config file, so they still
-        # fail fast on a forgotten env var.
-        api_key = api_key or os.environ.get("QIRA_API_KEY", "") or _load_saved_api_key()
-        # Fail fast on a missing key: it's a local config error, so surface an
-        # actionable message here instead of letting an empty key reach the
-        # server and bounce back as an opaque 401 after a wasted round-trip.
-        if not api_key:
+        # v2 configured a Qirabot cloud API key; v3 runs the decision engine
+        # locally against your own Vertex AI credentials. Catch the stale
+        # setup early with a migration pointer instead of silently ignoring
+        # the old variable.
+        explicit_model = bool(model or os.environ.get("QIRA_MODEL", "").strip())
+        if os.environ.get("QIRA_API_KEY") and not explicit_model:
             raise AuthenticationError(
-                "No API key provided. Run `qirabot login` once, set the "
-                "QIRA_API_KEY environment variable, or pass api_key=... to "
-                "Qirabot().",
-                code="auth.api_key_missing",
+                "Qirabot v3 runs the decision engine locally — QIRA_API_KEY and "
+                "the cloud backend are gone. Configure Google Cloud ADC (set "
+                "GOOGLE_APPLICATION_CREDENTIALS or run `gcloud auth "
+                "application-default login`) and pass model=... / QIRA_MODEL "
+                '(e.g. "gemini-vertex/gemini-3-flash-preview"). To keep the old '
+                "cloud behavior, pin qirabot<3.",
+                code="auth.cloud_removed",
             )
-        base_url = base_url or os.environ.get("QIRA_BASE_URL", "https://app.qirabot.com")
-        self._transport = Transport(base_url=base_url, api_key=api_key, timeout=timeout, verify_ssl=verify_ssl)
+        # ADC + project resolution and the provider handshake happen here so a
+        # bad credential setup fails at construction, not mid-run.
+        self._backend = LocalBackend(
+            model=model or resolve_default_model(),
+            vertex_project=vertex_project,
+            vertex_location=vertex_location,
+            thinking_level=thinking_level,
+            locate_format=locate_format or os.environ.get("QIRA_LOCATE_FORMAT", ""),
+        )
         self._adapters: dict[int, DeviceAdapter] = {}
         self._pw_instances: list[Any] = []
         self._cdp_pages: list[Any] = []
-        self._model_alias = model_alias
-        # Instance-wide thinking override, sent with every /act request (the
-        # server has no task-level storage for it). "" = use the alias default.
-        # Requires a backend that knows the field; older servers silently
-        # ignore it. Granularity depends on the alias's underlying model.
+        # Instance-wide thinking override, sent with every step. "" = the
+        # engine default. Granularity depends on the underlying model.
         self._thinking_level = thinking_level
         self._language = language
         self._task_name = task_name
-        self._external_task = bool(task_id)
         self._closed = False
         # On-screen progress window (capture-excluded, click-through); a no-op
         # on unsupported platforms, so gating here is on intent alone.
         self._overlay: Overlay | None = Overlay() if overlay else None
-        # Set once a terminal status has been reported to the server (success via
-        # close() or failure via fail()), so close()'s default success-complete
-        # never overrides an already-reported failure.
+        # Set once a terminal outcome was recorded (fail()/cancel()), so
+        # close()'s default bookkeeping never overrides an explicit failure.
         self._terminalized = False
-        if task_id:
-            self._task_id: str | None = task_id
-        else:
-            create_body: dict[str, Any] = {"name": self._task_name}
-            if source:
-                create_body["source"] = source
-            if model_alias:
-                create_body["modelAlias"] = model_alias
-            result = self._transport.post("/tasks/create", json_data=create_body)
-            self._task_id = result["taskId"]
-        # Background liveness signal: without it the server's orphan cleaner
-        # times the task out after ~5 minutes of silence, so a script that
-        # sleeps between bot.ai calls would be reclaimed mid-run. Sent for
-        # externally-owned tasks too — this SDK is the executor, so liveness
-        # is its to prove. QIRA_HEARTBEAT=0 is the troubleshooting kill switch.
-        self._heartbeat: Heartbeat | None = None
-        if heartbeat and os.environ.get("QIRA_HEARTBEAT", "").lower() not in ("0", "false", "no", "off"):
-            self._heartbeat = Heartbeat(
-                self._transport, self._task_id, on_terminated=self._on_server_terminated
-            )
-            self._heartbeat.start()
+        # Local run id: everything cloud-side is gone, but the report
+        # directory naming and report header still key off a task id.
+        self._task_id: str | None = f"local-{uuid.uuid4().hex[:8]}"
         # Per-run output directory, bucketed by date to avoid one flat pile:
         #   <root>/<YYYY-MM-DD>/<HHMMSS>-<task_id[:8]>/
         # report_dir / QIRA_REPORT_DIR set only the root; the date/run subdirs
@@ -429,22 +403,6 @@ class Qirabot:
         if settle_seconds is not None and settle_seconds < 0:
             raise ValueError(f"settle_seconds must be >= 0, got {settle_seconds}")
         self._settle_seconds = settle_seconds
-        self._step_seq = 0
-        # Local-step sync: deterministic actions (press_key/scroll/...) are
-        # buffered here and flushed to POST /tasks/{id}/local-steps so the
-        # cloud timeline includes them (see _flush_local_steps for the flush
-        # points that keep step ordering correct). Sync shares the report's
-        # capture pipeline, so report=False disables both.
-        self._sync_local_steps = sync_local_steps
-        self._local_buf: list[dict[str, Any]] = []
-        self._local_buf_bytes = 0
-        # None = not probed yet; False = old server (404) or terminal task —
-        # stop posting for the rest of the session.
-        self._local_sync_supported: bool | None = None
-        # One warning per session when the server rejects a batch outright
-        # (4xx): the batch is dropped for good, which the user should see once
-        # — repeats stay at debug so a stale server can't spam every flush.
-        self._local_sync_rejected_warned = False
         # Built-in ffmpeg full-screen recording. Opt-in (default off); the
         # QIRA_RECORD env var enables it without a code change. Auto-started here
         # and stopped in close() so the mp4 is finalized before the report scans
@@ -491,36 +449,6 @@ class Qirabot:
         ) and self._report
         atexit.register(self.close)
         self._maybe_start_recording()
-
-    def _on_server_terminated(self, status: str) -> None:
-        """Heartbeat-thread callback: the server reports the task is terminal.
-
-        One-way boolean flip (safe under the GIL, no lock needed): close()
-        must not report /complete for a task the server already terminated —
-        the state machine would reject it, and the local report would lie.
-        The error itself surfaces on the script's next bot call via the /act
-        control response; this callback never interrupts the main thread.
-        """
-        self._terminalized = True
-
-    def _check_control(self, result: dict[str, Any]) -> None:
-        """Raise on a /act control response before any success handling.
-
-        ``control="terminated"`` means the task is already terminal server-side
-        (console kill, orphan cleaner, max-duration cap): no step ran, nothing
-        was charged, and retrying is pointless. Unknown control values (e.g. a
-        future "paused" from a newer server) fall through to the normal
-        failure path so this SDK doesn't misreport a recoverable state as
-        terminated — the server's error message travels either way.
-        """
-        if result.get("control") != "terminated":
-            return
-        self._terminalized = True
-        status = str(result.get("status", ""))
-        raise TaskTerminatedError(
-            result.get("error") or f"task already {status}",
-            task_status=status,
-        )
 
     @property
     def report_dir(self) -> str:
@@ -621,7 +549,6 @@ class Qirabot:
         timeout: float,
         interval: float,
         wait: str,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> None:
@@ -643,7 +570,6 @@ class Qirabot:
             assertion,
             timeout=timeout,
             interval=interval,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -658,7 +584,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -686,7 +611,6 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -697,7 +621,6 @@ class Qirabot:
         self._ai_action(
             target,
             action={"type": "click", "params": params},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             retry=retry,
@@ -716,7 +639,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -755,7 +677,6 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -767,7 +688,6 @@ class Qirabot:
         self._ai_action(
             target,
             action={"type": "type_text", "params": params},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             retry=retry,
@@ -783,7 +703,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -802,7 +721,6 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -810,7 +728,6 @@ class Qirabot:
         self._ai_action(
             target,
             action={"type": "double_click", "params": {"locate": locate}},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             retry=retry,
@@ -827,7 +744,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -849,7 +765,6 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -861,7 +776,6 @@ class Qirabot:
         self._ai_action(
             target,
             action={"type": "long_press", "params": params},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             retry=retry,
@@ -877,7 +791,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -900,7 +813,6 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
@@ -908,7 +820,6 @@ class Qirabot:
         self._ai_action(
             target,
             action={"type": "mouse_down", "params": {"locate": locate}},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             retry=retry,
@@ -924,7 +835,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> Any:
@@ -948,14 +858,12 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
         self._ai_action(
             target,
             action={"type": "mouse_up", "params": {"locate": locate}},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             retry=retry,
@@ -994,7 +902,6 @@ class Qirabot:
         instruction: str,
         *,
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> ExtractResult:
@@ -1007,7 +914,6 @@ class Qirabot:
         result = self._ai_action(
             target,
             action={"type": "extract", "params": {"instruction": instruction}},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             execute_result=False,
@@ -1022,7 +928,6 @@ class Qirabot:
         assertion: str,
         *,
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> VerifyResult:
@@ -1035,7 +940,6 @@ class Qirabot:
         result = self._ai_action(
             target,
             action={"type": "assert", "params": {"assertion": assertion}},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             execute_result=False,
@@ -1053,7 +957,6 @@ class Qirabot:
         interval: float = 2.0,
         wait: str = "",
         retry: int | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> LocateResult:
@@ -1081,14 +984,12 @@ class Qirabot:
             timeout,
             interval,
             wait,
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
         )
         result = self._ai_action(
             target,
             action={"type": "locate", "params": {"locate": locate}},
-            model_alias=model_alias,
             thinking_level=thinking_level,
             language=language,
             execute_result=False,
@@ -1119,7 +1020,6 @@ class Qirabot:
         timeout: float = 30.0,
         interval: float = 2.0,
         *,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
     ) -> None:
@@ -1135,7 +1035,6 @@ class Qirabot:
             met = self.verify(
                 target,
                 assertion,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
             )
@@ -1154,7 +1053,6 @@ class Qirabot:
         max_steps: int = 20,
         *,
         on_step: Callable[[StepResult], None] | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
         custom_tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
@@ -1220,7 +1118,6 @@ class Qirabot:
                 instruction,
                 max_steps,
                 on_step=on_step,
-                model_alias=model_alias,
                 thinking_level=thinking_level,
                 language=language,
                 custom_tools=custom_tools,
@@ -1278,7 +1175,6 @@ class Qirabot:
         max_steps: int = 20,
         *,
         on_step: Callable[[StepResult], None] | None = None,
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
         custom_tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
@@ -1303,15 +1199,8 @@ class Qirabot:
                 screenshot_bytes = adapter.screenshot(self._screenshot_config)
             device_info = adapter.device_info()
 
-            # Allocate a fresh step_seq for this loop iteration. The ai() loop
-            # currently does not retry a failed step, so the seq is consumed
-            # exactly once per iteration. If retry is added in the future, the
-            # seq must stay constant across the retry attempts.
-            self._step_seq += 1
-
             request_body: dict[str, Any] = {
                 "device_info": device_info.to_dict(),
-                "step_seq": self._step_seq,
             }
             if last_action_result:
                 request_body["action_result"] = last_action_result
@@ -1327,9 +1216,10 @@ class Qirabot:
                     "type": "ai",
                     "params": ai_params,
                 }
-            alias = model_alias or self._model_alias
-            if alias:
-                request_body["model_alias"] = alias
+            else:
+                # Continuation steps still carry the action envelope so the
+                # backend routes them to the live ai session.
+                request_body["action"] = {"type": "ai", "params": {}}
             tl = thinking_level or self._thinking_level
             if tl:
                 request_body["thinking_level"] = tl
@@ -1337,19 +1227,9 @@ class Qirabot:
             if lang:
                 request_body["language"] = lang
 
-            files: dict[str, tuple[str, bytes, str]] = {}
-            if screenshot_bytes:
-                files["screenshot"] = (
-                    f"screenshot.{self._screenshot_config.extension}",
-                    screenshot_bytes,
-                    self._screenshot_config.mime_type,
-                )
-
-            result = self._post_act_retrying(
-                files=files,
-                data={"request": json.dumps(request_body)},
+            result = self._backend.act(
+                screenshot_bytes, request_body, self._screenshot_config.mime_type
             )
-            self._check_control(result)
 
             if not result.get("success"):
                 error_msg = result.get("error", "AI request failed")
@@ -1923,125 +1803,8 @@ class Qirabot:
                     end_coords=_extract_end_coords(params),
                     coord_scale=adapter.annotation_scale(),
                 )
-                self._buffer_local_step(action_type, params or {}, raw)
         except Exception:
             logger.debug("local step recording failed", exc_info=True)
-
-    def _buffer_local_step(
-        self, action_type: str, params: dict[str, Any], screenshot: bytes
-    ) -> None:
-        """Queue a locally-executed step for cloud sync (no network here unless
-        a threshold is crossed).
-
-        Draws step_seq from the same per-task counter as /act so a replayed
-        batch is idempotent server-side. The execution timestamp rides along as
-        ``ts`` — the server stores it as client_ts, because created_at will be
-        the (batched) flush time, not the execution time.
-        """
-        if not self._sync_local_steps or self._local_sync_supported is False:
-            return
-        if self._task_id is None or self._terminalized:
-            return
-        self._step_seq += 1
-        self._local_buf.append(
-            {
-                "step_seq": self._step_seq,
-                "action_type": action_type,
-                "params": params,
-                "ts": datetime.now(timezone.utc)
-                .isoformat(timespec="milliseconds")
-                .replace("+00:00", "Z"),
-                "screenshot": screenshot,
-            }
-        )
-        self._local_buf_bytes += len(screenshot)
-        if (
-            len(self._local_buf) >= _LOCAL_BUF_MAX_ENTRIES
-            or self._local_buf_bytes >= _LOCAL_BUF_MAX_BYTES
-        ):
-            self._flush_local_steps()
-
-    def _flush_local_steps(self) -> None:
-        """Upload the buffered local steps to the server, best-effort.
-
-        Called synchronously right before every cloud call (so local steps
-        always commit before the AI step that follows them — step_number order
-        then matches real execution order), on buffer thresholds, and from
-        close(). A failed flush drops the batch (the local report still has
-        the full record) and must never affect the action flow. A 404 marks
-        the server as not supporting the endpoint; no further attempts this
-        session.
-        """
-        if not self._local_buf:
-            return
-        buf, self._local_buf, self._local_buf_bytes = self._local_buf, [], 0
-        if self._local_sync_supported is False or self._task_id is None:
-            return
-
-        steps: list[dict[str, Any]] = []
-        files: dict[str, tuple[str, bytes, str]] = {}
-        for i, item in enumerate(buf):
-            entry: dict[str, Any] = {
-                "step_seq": item["step_seq"],
-                "action_type": item["action_type"],
-                "ts": item["ts"],
-            }
-            if item["params"]:
-                entry["params"] = item["params"]
-            steps.append(entry)
-            if item["screenshot"]:
-                files[f"screenshot_{i}"] = (
-                    f"screenshot.{self._screenshot_config.extension}",
-                    item["screenshot"],
-                    self._screenshot_config.mime_type,
-                )
-
-        try:
-            result = self._transport.post_multipart(
-                f"/tasks/{self._task_id}/local-steps",
-                files=files,
-                data={"request": json.dumps({"steps": steps})},
-            )
-        except QirabotError as e:
-            if getattr(e, "status_code", None) == 404:
-                # Old server (or the task vanished): stop probing for the rest
-                # of the session instead of posting a doomed request per batch.
-                if self._local_sync_supported is None:
-                    logger.warning(
-                        "server does not support local step sync; "
-                        "cloud step counts will exclude local actions"
-                    )
-                self._local_sync_supported = False
-            else:
-                status = getattr(e, "status_code", None)
-                if (
-                    status is not None
-                    and 400 <= status < 500
-                    and not self._local_sync_rejected_warned
-                ):
-                    # Deterministic rejection (e.g. an action type this
-                    # server's whitelist doesn't know): retrying won't help
-                    # and the batch is gone from the cloud timeline, so say
-                    # so once instead of dropping it silently. The local
-                    # report still has the full record.
-                    self._local_sync_rejected_warned = True
-                    logger.warning(
-                        "server rejected a local-step batch (dropped from the "
-                        "cloud timeline; the local report is unaffected): %s", e
-                    )
-                else:
-                    logger.debug("local step sync failed: %s", e)
-            return
-        except Exception:
-            logger.debug("local step sync failed", exc_info=True)
-            return
-
-        self._local_sync_supported = True
-        if result.get("control") == "terminated":
-            # The task ended server-side; further batches are pointless. The
-            # terminal handling itself stays with _check_control / close().
-            logger.debug("task is terminal; stopping local step sync")
-            self._local_sync_supported = False
 
     def _save_frame(self, data: bytes, label: str) -> Path | None:
         """Write a full-resolution screenshot to ``report_dir/screenshots/``."""
@@ -2110,76 +1873,28 @@ class Qirabot:
         self._cache_adapter(target, adapter)
         return target
 
-    def _post_act_retrying(
-        self, files: dict[str, tuple[str, bytes, str]], data: dict[str, str]
-    ) -> dict[str, Any]:
-        """POST to /act, retrying transient errors with exponential backoff.
-
-        The ai() loop allocates ``step_seq`` once per iteration and keeps it
-        constant inside ``data`` across attempts, so a retry after a 5xx or
-        network blip hits the server's idempotency cache and replays the prior
-        response instead of triggering a second LLM call + credit charge. This
-        gives the multi-step loop the same resilience the single-action path
-        already gets from _ai_action.
-        """
-        # Flush buffered local steps BEFORE the attempt loop (never inside it):
-        # they must commit ahead of this AI step so server step numbers follow
-        # real execution order, and a retried /act must not re-trigger a flush.
-        self._flush_local_steps()
-        max_attempts = self._retry + 1
-        for attempt in range(max_attempts):
-            try:
-                return self._transport.post_multipart(
-                    f"/tasks/{self._task_id}/act", files=files, data=data,
-                )
-            except QirabotError as e:
-                if not _is_retryable(e) or attempt >= max_attempts - 1:
-                    raise
-                delay = self._retry_delay * (2 ** attempt)
-                logger.warning(
-                    "attempt %d/%d failed: %s, retrying in %.1fs...",
-                    attempt + 1, max_attempts, e, delay,
-                )
-                time.sleep(delay)
-        raise RuntimeError("unreachable")
-
     def _ai_action(
         self,
         target: Any,
         action: dict[str, Any],
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
         execute_result: bool = True,
         retry: int | None = None,
     ) -> dict[str, Any]:
-        """Send an AI action request and optionally execute the result.
-
-        The step_seq nonce is allocated ONCE outside the retry loop and
-        threaded through every attempt. That way a retry after a 5xx or
-        network timeout hits the server's idempotency cache and replays the
-        prior response instead of triggering a second LLM call + credit
-        charge.
-        """
+        """Run a single AI action through the local engine, retrying
+        retryable failures (the engine's provider layer already retries
+        transport blips; this loop only catches errors surfaced as retryable
+        QirabotErrors)."""
         max_attempts = (retry if retry is not None else self._retry) + 1
-
-        self._step_seq += 1
-        step_seq = self._step_seq
-
-        # Flush after allocating this step's seq, before the attempt loop —
-        # local steps commit first (correct ordering) and retries don't
-        # re-flush.
-        self._flush_local_steps()
 
         for attempt in range(max_attempts):
             try:
                 return self._ai_action_once(
                     target, action,
-                    model_alias=model_alias,
                     thinking_level=thinking_level,
                     language=language,
                     execute_result=execute_result,
-                    step_seq=step_seq,
                 )
             except QirabotError as e:
                 if not _is_retryable(e) or attempt >= max_attempts - 1:
@@ -2197,11 +1912,9 @@ class Qirabot:
         self,
         target: Any,
         action: dict[str, Any],
-        model_alias: str = "",
         thinking_level: str = "",
         language: str = "",
         execute_result: bool = True,
-        step_seq: int | None = None,
     ) -> dict[str, Any]:
         """Single attempt of an AI action request."""
         adapter = self._get_adapter(target)
@@ -2212,11 +1925,6 @@ class Qirabot:
             "action": action,
             "device_info": device_info.to_dict(),
         }
-        if step_seq is not None:
-            request_body["step_seq"] = step_seq
-        alias = model_alias or self._model_alias
-        if alias:
-            request_body["model_alias"] = alias
         tl = thinking_level or self._thinking_level
         if tl:
             request_body["thinking_level"] = tl
@@ -2224,12 +1932,9 @@ class Qirabot:
         if lang:
             request_body["language"] = lang
 
-        result = self._transport.post_multipart(
-            f"/tasks/{self._task_id}/act",
-            files={"screenshot": (f"screenshot.{self._screenshot_config.extension}", screenshot_bytes, self._screenshot_config.mime_type)},
-            data={"request": json.dumps(request_body)},
+        result = self._backend.act(
+            screenshot_bytes, request_body, self._screenshot_config.mime_type
         )
-        self._check_control(result)
 
         if not result.get("success"):
             raise ActionError(result.get("error", "AI request failed"))
@@ -2286,49 +1991,33 @@ class Qirabot:
         adapter.execute(action_type, params)
 
     def fail(self, error_message: str = "") -> None:
-        """Report a client-side failure so the task is recorded as failed.
+        """Record a client-side failure for the run's local bookkeeping.
 
         Use this when the run is aborted by an error on the client (e.g. your
-        script catches an exception) and you want to attach your own error
-        message or fail regardless of the last command's outcome. As a safety
-        net, close() already records the task as failed when the most recent
-        ai() call errored — fail() lets you be explicit and covers errors
-        outside ai(). Idempotent and a no-op for externally owned tasks. The
-        server's state machine rejects a later completion once the task is
-        failed, so a subsequent close() cannot override it.
+        script catches an exception) and you want the run recorded as failed
+        regardless of the last command's outcome. Idempotent; a subsequent
+        close() cannot override it.
         """
         if self._terminalized:
             return
         self._terminalized = True
-        if self._task_id is not None and not self._external_task:
-            try:
-                self._transport.post(
-                    f"/tasks/{self._task_id}/complete",
-                    json_data={"status": "failed", "errorMessage": error_message},
-                )
-            except Exception:
-                logger.debug("failed to report failure for task %s", self._task_id)
+        # An explicit fail() message wins over whatever the last ai() error
+        # was — the caller is being deliberate.
+        if error_message:
+            self._last_ai_error = error_message
+        logger.info("run marked failed%s", f": {error_message}" if error_message else "")
 
     def cancel(self, reason: str = "") -> None:
-        """Report a deliberate client-side abort (e.g. Ctrl+C) so the task is
-        recorded as cancelled rather than failed or, worse, completed.
+        """Record a deliberate client-side abort (e.g. Ctrl+C) so the run is
+        treated as cancelled rather than failed or, worse, completed.
 
-        Like fail(), but the server records a distinct 'cancelled' terminal state
-        kept out of the failure bucket. Shares fail()'s terminalized guard so it
-        is idempotent and a later close() cannot override it; a no-op for
-        externally owned tasks.
+        Shares fail()'s terminalized guard so it is idempotent and a later
+        close() cannot override it.
         """
         if self._terminalized:
             return
         self._terminalized = True
-        if self._task_id is not None and not self._external_task:
-            try:
-                self._transport.post(
-                    f"/tasks/{self._task_id}/complete",
-                    json_data={"status": "cancelled", "errorMessage": reason},
-                )
-            except Exception:
-                logger.debug("failed to report cancellation for task %s", self._task_id)
+        logger.info("run cancelled%s", f": {reason}" if reason else "")
 
     def clear_user_abort(self) -> None:
         """Re-allow ai() runs after a user abort (ESC hold / mouse-to-corner).
@@ -2388,7 +2077,7 @@ class Qirabot:
                 # synthetic entries gone and local steps synced, len(_log)
                 # matches the server's step count.
                 stats={**self._stats, "total_steps": len(self._log)},
-                model=self._model_alias,
+                model=self._backend.model_label,
             )
             logger.info("report written: %s", out)
             return out
@@ -2406,11 +2095,6 @@ class Qirabot:
         # milliseconds between ai() returning and close() running.
         if self._overlay is not None:
             self._overlay.close(linger=1.5)
-        # Stop the heartbeat first so no beat is in flight when the transport
-        # closes below; the thread is a daemon, so a stuck request can only
-        # cost the 2s join grace, never hang shutdown.
-        if self._heartbeat is not None:
-            self._heartbeat.stop()
         # The report is the primary artifact of an aborted run, so guarantee it
         # even if the user mashes Ctrl+C during shutdown: SIGINT is suppressed
         # for this whole block (recording finalize + report write). A plain
@@ -2435,34 +2119,7 @@ class Qirabot:
                 self._write_report()
             except BaseException:
                 logger.debug("report write interrupted", exc_info=True)
-            # Ship the last batch of local steps while SIGINT is still
-            # suppressed — a Ctrl+C here must not drop the tail of the cloud
-            # timeline. Must run before the /complete below: a terminal task
-            # rejects the batch.
-            try:
-                self._flush_local_steps()
-            except BaseException:
-                logger.debug("local step flush interrupted", exc_info=True)
-        # Auto-complete when no terminal status was reported yet. Status
-        # follows the last ai() outcome: a run whose final command errored is
-        # recorded failed, not completed — this covers scripts that crash out
-        # of ai() and never reach fail() (close() then runs via atexit).
-        # An explicit fail()/cancel() beforehand always wins (_terminalized).
-        if self._task_id is not None and not self._external_task and not self._terminalized:
-            self._terminalized = True
-            try:
-                if self._last_ai_status == "error":
-                    self._transport.post(
-                        f"/tasks/{self._task_id}/complete",
-                        json_data={
-                            "status": "failed",
-                            "errorMessage": self._last_ai_error or "run ended after an errored command",
-                        },
-                    )
-                else:
-                    self._transport.post(f"/tasks/{self._task_id}/complete")
-            except Exception:
-                logger.debug("failed to complete task %s on close", self._task_id)
+        self._terminalized = True
         # Let adapters unhook framework listeners (e.g. Playwright's "page"
         # event) before we tear down the contexts they're attached to. Several
         # cache keys can map to one adapter, so de-dup by identity.
@@ -2495,7 +2152,7 @@ class Qirabot:
                 pass
         self._pw_instances.clear()
         try:
-            self._transport.close()
+            self._backend.close()
         except Exception:
             pass
         atexit.unregister(self.close)

@@ -20,7 +20,8 @@ Prereqs (real device):
 Install:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install qirabot       # the WDA client is built in
-    echo 'QIRA_API_KEY=qk_...' > .env    # load_dotenv() reads this (also QIRA_BASE_URL)
+    gcloud auth application-default login    # one-time Google Cloud auth (ADC)
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3-flash-preview' > .env    # load_dotenv() reads this
 
 When to pick this over ios_appium.py:
     - You already have WDA running on :8100 and don't want an Appium server.
@@ -33,7 +34,7 @@ The HTML report is written to ./qira_runs/<date>/<run>/report.html on close.
 
 from qirabot import Qirabot, StepResult, WdaClient, load_dotenv
 
-# Read QIRA_API_KEY / QIRA_BASE_URL from ./.env (a real exported env var wins).
+# Read QIRA_MODEL (and other QIRA_* settings) from ./.env (a real exported env var wins).
 load_dotenv()
 
 # TODO: the app under test and what you want done
@@ -57,7 +58,7 @@ def on_step(step: StepResult) -> None:
 client.app_launch(BUNDLE_ID)
 
 
-with Qirabot(task_name="ios-wda-template", model_alias="balanced_pro").bind(client) as bot:
+with Qirabot(task_name="ios-wda-template").bind(client) as bot:
     # Default: hand the whole task to qirabot's agent loop (self-heals).
     result = bot.ai(TASK, max_steps=20, on_step=on_step)
     print("success:", result.success)

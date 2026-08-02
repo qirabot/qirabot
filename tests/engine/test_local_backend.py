@@ -523,3 +523,16 @@ class TestMisc:
         assert '"actionType": "click"' in trace
         # Screenshot stored by content hash, not inline.
         assert len(list(tmp_path.glob("*.img"))) == 1
+
+
+class TestPlatformNormalization:
+    def test_browser_maps_to_chrome(self) -> None:
+        # SDK adapters report "browser"; the engine prompt/tool vocabulary is
+        # "chrome" (same mapActPlatform normalization the server did). Without
+        # it the chrome prompt/tools silently fall back to android.
+        fake = FakeProvider(tool_resp("click", CLICK_ARGS))
+        req = ai_request()
+        req["device_info"] = {"platform": "browser", "width": 1280, "height": 720}
+        backend(fake).act(PNG, req)
+        assert fake.requests[0].cacheable_system_prompt.startswith("# 角色\n你是一名针对Chrome浏览器平台")
+        assert any(t.name == "navigate" for t in fake.requests[0].tools)

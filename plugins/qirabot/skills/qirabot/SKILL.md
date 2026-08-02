@@ -16,8 +16,8 @@ python scripts/preflight.py browser     # or: android | ios | desktop
 
 **If it fails, stop and fix what it prints** — every failing check comes with
 the exact fix command. (After qirabot is installed, `qirabot doctor` is the
-packaged complement: it also probes that the API key is accepted and the
-server is reachable, and exits 0/1 so CI can gate on it.)
+packaged complement: it also probes that the Google Cloud credentials (ADC)
+work, and exits 0/1 so CI can gate on it.)
 
 **One interpreter, one source of truth.** Preflight validates *one* Python and
 prints its absolute path. Run your script with that exact path — and the CLI
@@ -32,7 +32,9 @@ Bootstrap only when preflight reports something missing — prefer a venv:
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install "qirabot[browser]"    # then: playwright install chromium
 #  or qirabot[appium] / qirabot[desktop]; Android/iOS/Windows-window are built in
-echo 'QIRA_API_KEY=qk_...' > .env   # from https://app.qirabot.com — never hard-code it
+gcloud auth application-default login   # one-time Google Cloud auth (ADC) — or set
+#   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+echo 'QIRA_MODEL=gemini-vertex/gemini-3-flash-preview' > .env   # optional: pin the model
 ```
 
 All extras install cleanly together (no numpy/opencv pins anywhere): one
@@ -64,9 +66,9 @@ qirabot desktop "Compute 12*34 in the calculator" --app Calculator
 several `ai()` calls in one session, `wait_for` gates, or a `bind()` of your
 own Selenium/Appium driver. Continue with Step 2.
 
-Utility commands help on both paths: `qirabot doctor` (env check),
-`qirabot task <id>` (server-side status/steps), `qirabot screenshot <id>`,
-`qirabot models` (valid `-m`/`model_alias` values).
+Utility commands help on both paths: `qirabot doctor` (env check) and
+`qirabot models` (the built-in Vertex providers and their default models —
+the valid `-m`/`QIRA_MODEL` values).
 
 ## Step 2 — SDK path: pick a target and start from a template
 
@@ -185,8 +187,8 @@ screen (desktop/browser); for Android/iOS record the **device** screen via
   user's identity (posting, purchasing, deleting): read first, report exactly
   what you're about to do, get the user's go-ahead, then act — as separate
   steps.
-- Costs real credits per AI call; watch for `InsufficientBalanceError`. Pick
-  the cheapest `model_alias` that fits (`fast`/`balanced`, stepping up only
+- Costs real tokens per AI call. Pick the cheapest `model=` that fits (e.g. a
+  flash-class model, stepping up to a pro-class one only
   when needed). Long human-in-the-loop waits (QR/OTP) poll with billed calls —
   raise the `wait_for` interval or poll the live driver free (see REFERENCE).
 - Always `bot.close()` (or the `with` form) — it finalizes the task and writes

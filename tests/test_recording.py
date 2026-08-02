@@ -762,7 +762,7 @@ class TestClientRecordingWiring:
 
     def test_record_true_autostarts(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
-        Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        Qirabot(record=True, report_dir=str(tmp_path))
         assert len(_FakeRecorder.instances) == 1
         rec = _FakeRecorder.instances[0]
         assert rec.started is True
@@ -770,25 +770,25 @@ class TestClientRecordingWiring:
 
     def test_record_false_does_not_record(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
-        bot = Qirabot(api_key="k", task_id="t", report_dir=str(tmp_path))
+        bot = Qirabot(report_dir=str(tmp_path))
         assert _FakeRecorder.instances == []
         assert bot._recorder is None
 
     def test_env_var_enables_recording(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
         monkeypatch.setenv("QIRA_RECORD", "1")
-        Qirabot(api_key="k", task_id="t", report_dir=str(tmp_path))
+        Qirabot(report_dir=str(tmp_path))
         assert len(_FakeRecorder.instances) == 1
 
     def test_start_recording_is_idempotent(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         assert bot.start_recording() is True  # already running -> no new ffmpeg
         assert len(_FakeRecorder.instances) == 1
 
     def test_stop_recording_clears_slot(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         rec = _FakeRecorder.instances[0]
         assert bot.stop_recording() == rec.output
         assert rec.stopped is True
@@ -799,7 +799,7 @@ class TestClientRecordingWiring:
 
     def test_close_stops_before_report_written(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         rec = _FakeRecorder.instances[0]
 
         order = {}
@@ -814,7 +814,7 @@ class TestClientRecordingWiring:
 
     def test_manual_recording_without_flag(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
-        bot = Qirabot(api_key="k", task_id="t", report_dir=str(tmp_path))
+        bot = Qirabot(report_dir=str(tmp_path))
         assert bot.start_recording() is True
         assert len(_FakeRecorder.instances) == 1
         assert bot.stop_recording() == _FakeRecorder.instances[0].output
@@ -822,7 +822,7 @@ class TestClientRecordingWiring:
     def test_record_window_defers_until_target(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
         bot = Qirabot(
-            api_key="k", task_id="t", record=True, record_window=True, report_dir=str(tmp_path)
+            record=True, record_window=True, report_dir=str(tmp_path)
         )
         # No target at construction time -> deferred, nothing started yet.
         assert _FakeRecorder.instances == []
@@ -837,7 +837,7 @@ class TestClientRecordingWiring:
     def test_record_window_degrades_to_fullscreen(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
         bot = Qirabot(
-            api_key="k", task_id="t", record=True, record_window=True, report_dir=str(tmp_path)
+            record=True, record_window=True, report_dir=str(tmp_path)
         )
         monkeypatch.setattr(bot, "_resolve_window_target", lambda target: None)  # not resolvable
         bot._maybe_start_recording(target=object())
@@ -847,7 +847,7 @@ class TestClientRecordingWiring:
     def test_record_window_starts_only_once(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
         bot = Qirabot(
-            api_key="k", task_id="t", record=True, record_window=True, report_dir=str(tmp_path)
+            record=True, record_window=True, report_dir=str(tmp_path)
         )
         monkeypatch.setattr(bot, "_resolve_window_target", lambda target: "W")
         bot._maybe_start_recording(target=object())
@@ -857,7 +857,7 @@ class TestClientRecordingWiring:
     def test_record_audio_passed_to_recorder(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
         Qirabot(
-            api_key="k", task_id="t", record=True, record_audio=True, report_dir=str(tmp_path)
+            record=True, record_audio=True, report_dir=str(tmp_path)
         )
         # record_window off -> starts immediately (full screen) with audio on.
         assert len(_FakeRecorder.instances) == 1
@@ -899,7 +899,7 @@ class TestClientMjpegRecordingWiring:
     def test_mjpeg_url_routes_to_stream_recorder(self, monkeypatch, tmp_path):
         self._use_fakes(monkeypatch)
         Qirabot(
-            api_key="k", task_id="t", record=True,
+            record=True,
             record_mjpeg_url="http://127.0.0.1:9100", report_dir=str(tmp_path),
         )
         assert _FakeRecorder.instances == []  # host-screen path not taken
@@ -912,7 +912,7 @@ class TestClientMjpegRecordingWiring:
     def test_env_var_sets_mjpeg_url(self, monkeypatch, tmp_path):
         self._use_fakes(monkeypatch)
         monkeypatch.setenv("QIRA_RECORD_MJPEG_URL", "http://10.0.0.5:9100")
-        Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        Qirabot(record=True, report_dir=str(tmp_path))
         assert len(_FakeMjpegRecorder.instances) == 1
         assert _FakeMjpegRecorder.instances[0].url == "http://10.0.0.5:9100"
 
@@ -921,7 +921,6 @@ class TestClientMjpegRecordingWiring:
         # required on top of it.
         self._use_fakes(monkeypatch)
         Qirabot(
-            api_key="k", task_id="t",
             record_mjpeg_url="http://127.0.0.1:9100", report_dir=str(tmp_path),
         )
         assert _FakeRecorder.instances == []
@@ -933,7 +932,7 @@ class TestClientMjpegRecordingWiring:
         # device stream has no host window, so it must start immediately.
         self._use_fakes(monkeypatch)
         Qirabot(
-            api_key="k", task_id="t", record=True, record_window=True,
+            record=True, record_window=True,
             record_mjpeg_url="http://127.0.0.1:9100", report_dir=str(tmp_path),
         )
         assert len(_FakeMjpegRecorder.instances) == 1
@@ -942,7 +941,7 @@ class TestClientMjpegRecordingWiring:
     def test_stop_recording_returns_stream_path(self, monkeypatch, tmp_path):
         self._use_fakes(monkeypatch)
         bot = Qirabot(
-            api_key="k", task_id="t", record=True,
+            record=True,
             record_mjpeg_url="http://127.0.0.1:9100", report_dir=str(tmp_path),
         )
         rec = _FakeMjpegRecorder.instances[0]
@@ -971,7 +970,7 @@ class TestClientDeviceRecordingWiring:
     def test_defers_until_target_then_records_device(self, monkeypatch, tmp_path):
         made = self._setup(monkeypatch)
         bot = Qirabot(
-            api_key="k", task_id="t", record=True, record_device=True,
+            record=True, record_device=True,
             report_dir=str(tmp_path),
         )
         # No target at construction -> deferred (an eager start would grab the
@@ -990,7 +989,7 @@ class TestClientDeviceRecordingWiring:
     def test_env_var_enables_device_recording(self, monkeypatch, tmp_path):
         made = self._setup(monkeypatch)
         monkeypatch.setenv("QIRA_RECORD_DEVICE", "1")
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         assert bot._recorder is None  # still deferred
         bot._maybe_start_recording(target=object())
         assert len(made) == 1
@@ -1000,7 +999,7 @@ class TestClientDeviceRecordingWiring:
         # runs on — worse than no recording plus the report notice.
         self._setup(monkeypatch, factory_result=None)
         bot = Qirabot(
-            api_key="k", task_id="t", record=True, record_device=True,
+            record=True, record_device=True,
             report_dir=str(tmp_path),
         )
         bot._maybe_start_recording(target=object())
@@ -1017,7 +1016,7 @@ class TestClientDeviceRecordingWiring:
             lambda output, url: fake_mjpeg.append(url) or _FakeRecorder(output),
         )
         Qirabot(
-            api_key="k", task_id="t", record=True, record_device=True,
+            record=True, record_device=True,
             record_mjpeg_url="http://127.0.0.1:9100", report_dir=str(tmp_path),
         )
         assert fake_mjpeg == ["http://127.0.0.1:9100"]
@@ -1064,7 +1063,7 @@ class TestReportRecordingNotice:
 
     def test_client_notes_failed_recording(self, monkeypatch, tmp_path):
         monkeypatch.setattr(client_mod, "ScreenRecorder", _FailingRecorder)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         assert bot._recorder is None  # start() failed
         bot._log.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
@@ -1074,7 +1073,7 @@ class TestReportRecordingNotice:
 
     def test_client_zero_byte_recording_is_failure(self, monkeypatch, tmp_path):
         monkeypatch.setattr(client_mod, "ScreenRecorder", _FailingRecorder)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         (Path(bot.report_dir) / "recording.mp4").write_bytes(b"")  # 0 bytes
         bot._log.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
@@ -1084,7 +1083,7 @@ class TestReportRecordingNotice:
 
     def test_client_valid_recording_embeds_no_notice(self, monkeypatch, tmp_path):
         monkeypatch.setattr(client_mod, "ScreenRecorder", _FailingRecorder)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         (Path(bot.report_dir) / "recording.mp4").write_bytes(b"data")
         bot._log.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
@@ -1093,7 +1092,7 @@ class TestReportRecordingNotice:
         assert "Recording was requested but not produced" not in markup
 
     def test_no_notice_when_record_not_requested(self, tmp_path):
-        bot = Qirabot(api_key="k", task_id="t", report_dir=str(tmp_path))
+        bot = Qirabot(report_dir=str(tmp_path))
         bot._log.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
         markup = Path(out).read_text(encoding="utf-8")
@@ -1125,7 +1124,7 @@ class TestReportSurvivesCtrlC:
     def test_report_written_when_recording_stop_interrupted(self, monkeypatch, tmp_path):
         # A Ctrl+C during recording finalize must not skip the report.
         monkeypatch.setattr(client_mod, "ScreenRecorder", _InterruptingRecorder)
-        bot = Qirabot(api_key="k", task_id="t", record=True, report_dir=str(tmp_path))
+        bot = Qirabot(record=True, report_dir=str(tmp_path))
         bot._log.append(dict(_LOG_ENTRY))
         report_path = Path(bot.report_dir) / "report.html"
 
@@ -1137,7 +1136,7 @@ class TestReportSurvivesCtrlC:
         # The fallback path (non-main-thread, where SIGINT suppression is a
         # no-op): a KeyboardInterrupt raised inside the write is swallowed so
         # close() finishes its teardown instead of aborting.
-        bot = Qirabot(api_key="k", task_id="t", report_dir=str(tmp_path))
+        bot = Qirabot(report_dir=str(tmp_path))
         bot._log.append(dict(_LOG_ENTRY))
 
         def boom(out=None):

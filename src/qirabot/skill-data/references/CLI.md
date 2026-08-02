@@ -1,25 +1,24 @@
 # Qirabot CLI reference (condensed)
 
 The `qirabot` command ships with the package (any install/extra). Same auth as
-the SDK: `QIRA_API_KEY` from the environment, `./.env` (the CLI loads `.env`
-automatically; the SDK doesn't), or the `qirabot login` config file. One run
-command = one server task = one `ai()` run — there is no CLI equivalent of
-`extract`/`verify`/`wait_for` or of chaining several `ai()` calls in one
+the SDK: Google Cloud ADC — set `GOOGLE_APPLICATION_CREDENTIALS` to a
+service-account JSON or run `gcloud auth application-default login` once. The
+CLI also loads `./.env` automatically (the SDK doesn't), so `QIRA_MODEL` etc.
+can live there. One run command = one `ai()` run — there is no CLI equivalent
+of `extract`/`verify`/`wait_for` or of chaining several `ai()` calls in one
 session; those need the SDK.
 
 ## Global options — go BEFORE the subcommand
 
 ```bash
-qirabot --base-url https://self.hosted browser "..."   # right
-qirabot browser "..." --base-url https://self.hosted   # wrong (unknown option)
+qirabot --vertex-project my-proj browser "..."   # right
+qirabot browser "..." --vertex-project my-proj   # wrong (unknown option)
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `--api-key` | env `QIRA_API_KEY` | auth |
-| `--base-url` | env `QIRA_BASE_URL`, else `https://app.qirabot.com` | self-hosted/regional |
-| `--timeout` | `120` | HTTP timeout (seconds) |
-| `--verify-ssl/--no-verify-ssl` | verify | TLS verification |
+| `--vertex-project` | env `GOOGLE_CLOUD_PROJECT`, else the ADC credentials' own project | Google Cloud project for the Vertex providers |
+| `--vertex-location` | env `GOOGLE_CLOUD_LOCATION`, else `global` | Vertex location |
 
 `-h/--help` works everywhere and prints each option's default; `--version`
 prints the package version.
@@ -31,9 +30,9 @@ All four take the instruction as the positional argument and share:
 | Option | Default | Notes |
 |---|---|---|
 | `-n/--name` | derived from the instruction (first line, ≤60 chars) | task name in the web UI |
-| `-m/--model` | server default | model alias — list them with `qirabot models` |
-| `--thinking-level` | model alias's setting | thinking override: `minimal`/`low`/`medium`/`high` (needs a backend that knows the field; older servers silently ignore it) |
-| `-l/--language` | server default | e.g. `zh`, `en` |
+| `-m/--model` | env `QIRA_MODEL`, else the built-in default | `"{provider}/{model}"`, e.g. `gemini-vertex/gemini-3-flash-preview` — providers listed by `qirabot models` |
+| `--thinking-level` | model's setting | thinking override: `minimal`/`low`/`medium`/`high` |
+| `-l/--language` | engine default | e.g. `zh`, `en` |
 | `--max-steps` | `20` | AI step budget |
 | `--report/--no-report` | report | HTML run report |
 | `--report-dir` | env `QIRA_REPORT_DIR`, else `./qira_runs/<date>/<run>/` | output root |
@@ -126,9 +125,8 @@ window-relative screenshots).
 
 | Command | What it does |
 |---|---|
-| `qirabot login` | Save the API key once (verified, stored in the user config; flag/env/.env still win). `--status` shows the active key masked + its source layer. |
 | `qirabot install-browser` | One-time Chromium download for the browser backend (wraps `playwright install chromium`; required form in isolated `uv tool` installs, where playwright's own CLI is not on PATH). |
-| `qirabot doctor` | Environment check: Python, API key + server reachability, each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
+| `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
 | `qirabot task <task_id>` | Server-side status + commands + steps tables for any task (CLI- or SDK-created). |
 | `qirabot screenshot <task_id> [-s N] [-o PATH] [-f]` | Download a task screenshot (`-s 0` = latest step). Refuses to overwrite without `-f`. |
 | `qirabot models` | List available model aliases — the valid `-m` values. |

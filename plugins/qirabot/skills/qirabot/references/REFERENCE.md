@@ -7,17 +7,19 @@ mirrors the parts an agent needs to write a script. Keep in sync with the SDK.
 
 ```python
 from qirabot import Qirabot
-bot = Qirabot()                       # QIRA_API_KEY env, else `qirabot login` config
+bot = Qirabot()                       # model from QIRA_MODEL env, else the built-in default
 ```
+
+Auth is Google Cloud ADC: set `GOOGLE_APPLICATION_CREDENTIALS` to a
+service-account JSON, or run `gcloud auth application-default login` once.
 
 Common constructor options (all keyword):
 
 | Option | Default | Notes |
 |---|---|---|
-| `api_key` / env `QIRA_API_KEY` | — | auth |
-| `base_url` / env `QIRA_BASE_URL` | `https://app.qirabot.com` | self-hosted/regional |
-| `model_alias` | `"balanced_pro"` | `fast` \| `balanced` \| `balanced_pro` \| `high_quality` |
-| `thinking_level` | alias's setting | `minimal` \| `low` \| `medium` \| `high` — per-task thinking override; every action method also takes a per-call `thinking_level=`. Needs a backend that knows the field (older servers silently ignore it); effective granularity depends on the alias's underlying model (some levels may be merged or clamped). |
+| `model` / env `QIRA_MODEL` | built-in default | `"{provider}/{model}"`, e.g. `"gemini-vertex/gemini-3-flash-preview"`; providers: `claude-vertex` \| `gemini-vertex` \| `vertex-openai` (list with `qirabot models`) |
+| `vertex_project` / `vertex_location` | ADC project / `global` | Google Cloud project/location for Vertex AI (env `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`) |
+| `thinking_level` | model's setting | `minimal` \| `low` \| `medium` \| `high` — per-task thinking override; every action method also takes a per-call `thinking_level=`. Effective granularity depends on the underlying model (some levels may be merged or clamped). |
 | `language` | `"en"` | response language tag, e.g. `"zh"`, `"en"` |
 | `task_name` | `""` | shown in dashboard / report |
 | `report` | `True` | write HTML report on close |
@@ -36,7 +38,7 @@ Common constructor options (all keyword):
 ## Default: hand the task to `bot.ai`
 
 ```python
-result = bot.ai(target, instruction, max_steps=20, *, on_step=None, model_alias="",
+result = bot.ai(target, instruction, max_steps=20, *, on_step=None,
                 thinking_level="", language="", custom_tools=None, exclude_tools=None,
                 knowledge=None)
 # result.success -> bool, result.output -> str (final answer)
@@ -134,7 +136,7 @@ the explicit form** `page = bot.click(page, ...)` so new-tab follows stay visibl
 ## AI-located actions (one model call each)
 
 ```python
-bot.click(target, locate, *, modifier="", timeout=0.0, interval=2.0, wait="", model_alias="", thinking_level="", language="")
+bot.click(target, locate, *, modifier="", timeout=0.0, interval=2.0, wait="", thinking_level="", language="")
 bot.type_text(target, locate, text, *, press_enter=False, clear_before_typing=False, timeout=0.0, ...)
 bot.double_click(target, locate, ...)
 bot.long_press(target, locate, *, duration=2.0, timeout=0.0, ...)  # mobile only

@@ -166,6 +166,10 @@ class LocalBackend:
     def _device_info(request: dict[str, Any]) -> tuple[str, int, int]:
         info = request.get("device_info") or {}
         platform = str(info.get("platform") or "")
+        # SDK adapters report "browser"; the engine's platform vocabulary
+        # says "chrome" (same mapActPlatform normalization the server did).
+        if platform == "browser":
+            platform = actions.PLATFORM_CHROME
         width = info.get("width")
         height = info.get("height")
         return (

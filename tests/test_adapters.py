@@ -865,7 +865,7 @@ class TestBind:
         self._bound(bot).click("Login", retry=2)
         bot.click.assert_called_once_with(
             "T", "Login", modifier="", timeout=0.0, interval=2.0, wait="", retry=2,
-            model_alias="", thinking_level="", language=""
+            thinking_level="", language=""
         )
 
     def test_type_text_injects_target(self):
@@ -882,7 +882,6 @@ class TestBind:
             interval=2.0,
             wait="",
             retry=None,
-            model_alias="",
             thinking_level="",
             language="",
         )

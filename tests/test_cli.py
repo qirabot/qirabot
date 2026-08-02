@@ -47,7 +47,7 @@ def fake_appium(monkeypatch):
 
 @pytest.fixture
 def stub_bot(monkeypatch):
-    """Bypass task creation / AI run so the command exercises only wiring."""
+    """Bypass bot construction / AI run so the command exercises only wiring."""
     from qirabot.cli import main
 
     monkeypatch.setattr(main, "_make_bot", lambda *a, **k: MagicMock(name="bot"))
@@ -57,7 +57,7 @@ def stub_bot(monkeypatch):
 def _invoke(args):
     from qirabot.cli.main import cli
 
-    return CliRunner().invoke(cli, ["--api-key", "qk_test", *args])
+    return CliRunner().invoke(cli, args)
 
 
 def test_ios_bundle_id_is_passed_to_options(fake_appium, stub_bot):
@@ -583,7 +583,7 @@ class TestDeviceRecording:
 
     def test_unreachable_stream_fails_before_task_creation(self, fake_wda, monkeypatch):
         # The probe failing must exit with the iproxy hint and never build the
-        # bot (no server task, no 300-step run that quietly recorded nothing).
+        # bot (no task, no 300-step run that quietly recorded nothing).
         import qirabot.recording as recording_mod
         from qirabot.cli import main
 
@@ -731,7 +731,8 @@ class TestSetupFailureReporting:
 class TestEntryPoint:
     def test_main_loads_dotenv_before_parsing(self, monkeypatch):
         """main() must load .env before click parses options, so envvar
-        fallbacks (QIRA_API_KEY etc.) can pick up values from the file."""
+        fallbacks (QIRA_MODEL, QIRA_VERTEX_PROJECT, ...) can pick up values
+        from the file."""
         from qirabot.cli import main as cli_main
 
         called = []
@@ -744,54 +745,104 @@ class TestEntryPoint:
         assert exc.value.code == 0
         assert called == [True]
 
-    def test_transport_error_from_readonly_command_prints_one_line(self, monkeypatch, capsys):
-        """task/screenshot/models call the server without _make_bot/_run_local's
-        handling; main() must turn escaping SDK errors into a one-line message
-        instead of a traceback."""
+    def test_qirabot_error_escaping_command_prints_one_line(self, monkeypatch, capsys):
+        """SDK errors that escape a command body (lazy imports deep inside)
+        must become a one-line message, not a traceback."""
         from qirabot.cli import main as cli_main
-        from qirabot.exceptions import QirabotConnectionError
+        from qirabot.exceptions import QirabotError
 
-        t = MagicMock(name="transport")
-        t.request.side_effect = QirabotConnectionError("Could not connect to http://x")
-        monkeypatch.setattr(cli_main, "_transport", lambda ctx: t)
+        def boom(ctx):
+            raise QirabotError("engine exploded mid-probe")
+
+        monkeypatch.setattr(cli_main, "_resolve_adc", boom)
         monkeypatch.setattr(cli_main, "load_dotenv", lambda: False)
-        monkeypatch.setattr(sys, "argv", ["qirabot", "--api-key", "qk", "models"])
+        monkeypatch.setattr(sys, "argv", ["qirabot", "models"])
 
         with pytest.raises(SystemExit) as exc:
             cli_main.main()
 
         assert exc.value.code == 1
         err = capsys.readouterr().err
-        assert "Could not connect to http://x" in err
+        assert "engine exploded mid-probe" in err
         assert "Traceback" not in err
 
 
 class TestMakeBotErrors:
-    def test_connection_error_prints_transport_message(self, monkeypatch):
-        """No string-sniffing: the QirabotConnectionError message from the
-        transport (already actionable) is printed verbatim, exit code 1."""
+    def test_construction_error_prints_engine_message(self, monkeypatch):
+        """No string-sniffing: the engine's construction error (already
+        actionable — missing ADC, unknown provider, missing project) is
+        printed verbatim, exit code 1."""
         import qirabot
-        from qirabot.exceptions import QirabotConnectionError
 
         def boom(**kwargs):
-            raise QirabotConnectionError("Could not connect to https://x. Check QIRA_BASE_URL.")
+            raise ValueError(
+                'unknown provider "nope"; use model="{provider}/{model}"'
+            )
 
         monkeypatch.setattr(qirabot, "Qirabot", boom)
 
         result = _invoke(["browser", "do something"])
 
         assert result.exit_code == 1
-        assert "Could not connect to https://x" in result.output
+        assert 'unknown provider "nope"' in result.output
 
-    def test_missing_api_key_message_is_uniform(self, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
 
-        from qirabot.cli.main import cli
+class TestModelsCommand:
+    """models is local-only now: it prints the built-in provider table and the
+    ADC probe result — no network LLM call, no server."""
 
-        result = CliRunner().invoke(cli, ["browser", "do something"])
+    @staticmethod
+    def _flat(result):
+        return " ".join(result.output.split())
 
-        assert result.exit_code == 1
-        assert "Run `qirabot login`" in result.output
+    def test_lists_all_three_providers(self, monkeypatch):
+        from qirabot.cli import main
+
+        monkeypatch.setattr(main, "_resolve_adc", lambda ctx: ("my-proj", ""))
+
+        result = _invoke(["models"])
+
+        assert result.exit_code == 0, result.output
+        for provider in ("claude-vertex", "gemini-vertex", "vertex-openai"):
+            assert provider in result.output
+
+    def test_adc_ok_prints_project(self, monkeypatch):
+        from qirabot.cli import main
+
+        monkeypatch.setattr(main, "_resolve_adc", lambda ctx: ("my-proj", ""))
+
+        result = _invoke(["models"])
+
+        out = self._flat(result)
+        assert result.exit_code == 0, result.output
+        assert "Google Cloud credentials OK" in out
+        assert "my-proj" in out
+
+    def test_adc_failure_is_reported(self, monkeypatch):
+        from qirabot.cli import main
+
+        monkeypatch.setattr(
+            main, "_resolve_adc",
+            lambda ctx: ("", "no credentials were found (run `gcloud auth application-default login`)"),
+        )
+
+        result = _invoke(["models"])
+
+        out = self._flat(result)
+        assert result.exit_code == 0, result.output  # informational, not a gate
+        assert "no credentials were found" in out
+
+    def test_session_default_model_is_shown(self, monkeypatch):
+        from qirabot.cli import main
+        from qirabot.engine.providers.registry import resolve_default_model
+
+        monkeypatch.setattr(main, "_resolve_adc", lambda ctx: ("p", ""))
+
+        result = _invoke(["models"])
+
+        assert result.exit_code == 0, result.output
+        assert "Session default" in self._flat(result)
+        assert resolve_default_model() in self._flat(result)
 
 
 class TestHelpers:
@@ -814,16 +865,10 @@ class TestHelpers:
         # blank instruction falls back to a stable default
         assert _default_task_name("   \n  ") == "cli"
 
-    def test_img_ext_detects_formats(self):
-        from qirabot.cli.main import _img_ext
-
-        assert _img_ext(b"\xff\xd8\xff\xe0 jpeg body") == "jpg"
-        assert _img_ext(b"\x89PNG\r\n\x1a\n png body") == "png"
-        assert _img_ext(b"not an image") == "bin"
-
 
 class TestRunOptionWiring:
-    """--name derivation and --report/--record are threaded to _make_bot."""
+    """--name derivation, --report/--record and the model/language/thinking
+    task options are threaded to _make_bot; --max-steps reaches _run_local."""
 
     def _capture_make_bot(self, monkeypatch):
         from qirabot.cli import main
@@ -831,6 +876,7 @@ class TestRunOptionWiring:
         captured = {}
 
         def fake_make_bot(ctx, **kwargs):
+            captured["ctx"] = ctx
             captured.update(kwargs)
             return MagicMock(name="bot")
 
@@ -857,6 +903,72 @@ class TestRunOptionWiring:
         assert captured["task_name"] == "smoke-test"
         assert captured["report"] is False
         assert captured["record"] is True
+
+    def test_model_thinking_language_threaded(self, monkeypatch):
+        captured = self._capture_make_bot(monkeypatch)
+
+        result = _invoke([
+            "browser", "do it",
+            "-m", "gemini-vertex/gemini-3-flash-preview",
+            "--thinking-level", "high",
+            "-l", "zh",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["model"] == "gemini-vertex/gemini-3-flash-preview"
+        assert captured["thinking_level"] == "high"
+        assert captured["language"] == "zh"
+
+    def test_defaults_leave_model_to_the_engine(self, monkeypatch):
+        # No -m: the CLI passes "" through and the engine resolves QIRA_MODEL /
+        # the built-in default — the CLI must not bake in a model of its own.
+        captured = self._capture_make_bot(monkeypatch)
+
+        result = _invoke(["browser", "do it"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["model"] == ""
+        assert captured["thinking_level"] == ""
+        assert captured["language"] == ""
+
+    def test_vertex_project_and_location_reach_ctx(self, monkeypatch):
+        captured = self._capture_make_bot(monkeypatch)
+
+        result = _invoke([
+            "--vertex-project", "my-proj", "--vertex-location", "europe-west1",
+            "browser", "do it",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["ctx"].obj["vertex_project"] == "my-proj"
+        assert captured["ctx"].obj["vertex_location"] == "europe-west1"
+
+    def test_vertex_env_vars_are_the_fallback(self, monkeypatch):
+        captured = self._capture_make_bot(monkeypatch)
+        monkeypatch.setenv("QIRA_VERTEX_PROJECT", "env-proj")
+        monkeypatch.setenv("QIRA_VERTEX_LOCATION", "us-central1")
+
+        result = _invoke(["browser", "do it"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["ctx"].obj["vertex_project"] == "env-proj"
+        assert captured["ctx"].obj["vertex_location"] == "us-central1"
+
+    def test_max_steps_reaches_run_local(self, monkeypatch):
+        from qirabot.cli import main
+
+        captured = {}
+        monkeypatch.setattr(main, "_make_bot", lambda *a, **k: MagicMock(name="bot"))
+
+        def spy(bot, target, instruction, max_steps, **kwargs):
+            captured["max_steps"] = max_steps
+
+        monkeypatch.setattr(main, "_run_local", spy)
+
+        result = _invoke(["browser", "do it", "--max-steps", "7"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["max_steps"] == 7
 
 
 class TestKnowledgeOption:
@@ -885,9 +997,7 @@ class TestKnowledgeOption:
 
             from qirabot.cli.main import cli
 
-            result = runner.invoke(
-                cli, ["--api-key", "qk", "browser", "do it", "-k", "rules.md"]
-            )
+            result = runner.invoke(cli, ["browser", "do it", "-k", "rules.md"])
 
         assert result.exit_code == 0, result.output
         assert captured["knowledge"] == "GM commands may be used once per match."
@@ -905,8 +1015,7 @@ class TestKnowledgeOption:
             from qirabot.cli.main import cli
 
             result = runner.invoke(
-                cli,
-                ["--api-key", "qk", "browser", "do it", "-k", "a.md", "-k", "b.md"],
+                cli, ["browser", "do it", "-k", "a.md", "-k", "b.md"]
             )
 
         assert result.exit_code == 0, result.output
@@ -933,7 +1042,7 @@ class TestKnowledgeOption:
             result = runner.invoke(
                 cli,
                 [
-                    "--api-key", "qk", "android", "do it",
+                    "android", "do it",
                     "--appium-url", "http://localhost:4723", "-k", "k.md",
                 ],
             )
@@ -966,9 +1075,7 @@ class TestKnowledgeOption:
 
             from qirabot.cli.main import cli
 
-            result = runner.invoke(
-                cli, ["--api-key", "qk", "browser", "do it", "-k", "big.md"]
-            )
+            result = runner.invoke(cli, ["browser", "do it", "-k", "big.md"])
 
         assert result.exit_code != 0
         assert "exceeds the 32768-byte limit" in result.output
@@ -988,9 +1095,7 @@ class TestKnowledgeOption:
 
             from qirabot.cli.main import cli
 
-            result = runner.invoke(
-                cli, ["--api-key", "qk", "browser", "do it", "-k", "bin.md"]
-            )
+            result = runner.invoke(cli, ["browser", "do it", "-k", "bin.md"])
 
         assert result.exit_code != 0
         assert "not UTF-8" in result.output
@@ -1048,6 +1153,28 @@ class TestMobileSplit:
         assert "No such option" in result.output
 
 
+class TestRemovedCloudCommands:
+    """v3 dropped the cloud backend: login/task/screenshot and the cloud
+    connection flags must be gone from the CLI surface."""
+
+    @pytest.mark.parametrize("command", ["login", "task", "screenshot"])
+    def test_cloud_command_is_gone(self, command):
+        from qirabot.cli.main import cli
+
+        ctx = click.Context(cli)
+        assert command not in cli.list_commands(ctx)
+        assert cli.get_command(ctx, command) is None
+
+    @pytest.mark.parametrize(
+        "flag", ["--api-key", "--base-url", "--timeout", "--verify-ssl"]
+    )
+    def test_cloud_global_flag_is_gone(self, flag):
+        result = _invoke([flag, "x", "models"])
+
+        assert result.exit_code != 0
+        assert "No such option" in result.output
+
+
 class TestGroupedHelp:
     """Task-command --help renders options under group headings so the shared
     surface (task + report/debug groups) is recognizable across platforms."""
@@ -1074,58 +1201,6 @@ class TestGroupedHelp:
         assert "\nOptions:\n" not in result.output
 
 
-class TestScreenshotDownload:
-    def _stub_transport(self, monkeypatch):
-        from qirabot.cli import main
-
-        t = MagicMock(name="transport")
-        t.get_bytes.return_value = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
-        monkeypatch.setattr(main, "_transport", lambda ctx: t)
-        return main
-
-    def test_saves_default_filename_by_magic_bytes(self, monkeypatch):
-        import os
-
-        main = self._stub_transport(monkeypatch)
-
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(main.cli, ["--api-key", "qk", "screenshot", "abc123"])
-            assert result.exit_code == 0, result.output
-            assert os.path.exists("screenshot-abc123.png")
-
-    def test_refuses_to_overwrite_existing_file(self, monkeypatch):
-        main = self._stub_transport(monkeypatch)
-
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            with open("screenshot-abc123.png", "wb") as f:
-                f.write(b"old")
-
-            result = runner.invoke(main.cli, ["--api-key", "qk", "screenshot", "abc123"])
-
-            assert result.exit_code == 1
-            assert "already exists" in result.output
-            with open("screenshot-abc123.png", "rb") as f:
-                assert f.read() == b"old"
-
-    def test_force_overwrites_existing_file(self, monkeypatch):
-        main = self._stub_transport(monkeypatch)
-
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            with open("screenshot-abc123.png", "wb") as f:
-                f.write(b"old")
-
-            result = runner.invoke(
-                main.cli, ["--api-key", "qk", "screenshot", "abc123", "--force"]
-            )
-
-            assert result.exit_code == 0, result.output
-            with open("screenshot-abc123.png", "rb") as f:
-                assert f.read().startswith(b"\x89PNG")
-
-
 class TestBrowserCommand:
     def test_browser_is_canonical_and_browse_is_gone(self):
         from qirabot.cli.main import cli
@@ -1145,7 +1220,7 @@ class TestBrowserCommand:
 
 class TestOpenBrowserCommand:
     """open-browser exists so users can log in to sites by hand once and
-    persist the session in --user-data-dir — no AI task, no API key."""
+    persist the session in --user-data-dir — no AI task, no credentials."""
 
     @pytest.fixture
     def launched(self, monkeypatch):
@@ -1158,26 +1233,20 @@ class TestOpenBrowserCommand:
         monkeypatch.setattr(main, "launch_browser", launch)
         return launch, fake
 
-    def _invoke_without_key(self, args, monkeypatch):
-        # No --api-key flag, no env var: the command must not need either.
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        from qirabot.cli.main import cli
-
-        return CliRunner().invoke(cli, ["open-browser", *args])
-
-    def test_user_data_dir_is_required(self, launched, monkeypatch):
-        result = self._invoke_without_key([], monkeypatch)
+    def test_user_data_dir_is_required(self, launched):
+        result = _invoke(["open-browser"])
 
         assert result.exit_code != 0
         assert "--user-data-dir" in result.output
         launched[0].assert_not_called()
 
-    def test_opens_waits_and_prints_next_step(self, launched, monkeypatch):
+    def test_opens_waits_and_prints_next_step(self, launched):
         launch, fake = launched
-        result = self._invoke_without_key(
-            ["--user-data-dir", "~/.automation", "--url", "news.ycombinator.com/login"],
-            monkeypatch,
-        )
+        result = _invoke([
+            "open-browser",
+            "--user-data-dir", "~/.automation",
+            "--url", "news.ycombinator.com/login",
+        ])
 
         assert result.exit_code == 0, result.output
         kwargs = launch.call_args.kwargs
@@ -1189,11 +1258,11 @@ class TestOpenBrowserCommand:
         fake.playwright.stop.assert_called_once()
         assert 'qirabot browser "<your task>" --user-data-dir ~/.automation' in result.output
 
-    def test_ctrl_c_still_cleans_up_and_reports(self, launched, monkeypatch):
+    def test_ctrl_c_still_cleans_up_and_reports(self, launched):
         launch, fake = launched
         fake.context.wait_for_event.side_effect = KeyboardInterrupt
 
-        result = self._invoke_without_key(["--user-data-dir", "/tmp/p"], monkeypatch)
+        result = _invoke(["open-browser", "--user-data-dir", "/tmp/p"])
 
         assert result.exit_code == 0, result.output
         assert "Session saved to /tmp/p" in result.output
@@ -1208,38 +1277,22 @@ class TestOpenBrowserCommand:
         launch, _ = launched
         monkeypatch.setattr(main, "_display_available", lambda: False)
 
-        result = self._invoke_without_key(["--user-data-dir", "/tmp/p"], monkeypatch)
+        result = _invoke(["open-browser", "--user-data-dir", "/tmp/p"])
 
         assert result.exit_code != 0
         assert "no display detected" in result.output
         launch.assert_not_called()
 
 
-class TestDesktopKeyCheckBeforeAppLaunch:
-    def test_missing_key_fails_before_launching_app(self, monkeypatch):
-        """A missing API key must fail before the --app side effect — the old
-        order launched the app first and only then errored out."""
-        import qirabot
-
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        monkeypatch.setitem(sys.modules, "pyautogui", types.ModuleType("pyautogui"))
-        launch = MagicMock(name="launch_app")
-        monkeypatch.setattr(qirabot, "launch_app", launch)
-
-        from qirabot.cli.main import cli
-
-        result = CliRunner().invoke(cli, ["desktop", "do it", "--app", "Notes"])
-
-        assert result.exit_code == 1
-        assert "Run `qirabot login`" in result.output
-        launch.assert_not_called()
-
-
 class TestDoctor:
-    """doctor is pure wiring around probes — stub the probes, assert the verdict."""
+    """doctor is pure wiring around probes — stub the probes (including the
+    real-ADC one, which would otherwise hit the credential chain), assert the
+    verdict."""
+
+    _ADC_ERR = "no credentials were found (run `gcloud auth application-default login`)"
 
     def _run(
-        self, monkeypatch, *, has=(), chromium=None, key=True, server_ok=True,
+        self, monkeypatch, *, has=(), chromium=None, adc_ok=True,
         display=True, adb=False,
     ):
         """Invoke doctor with stubbed probes; returns the click result."""
@@ -1249,14 +1302,10 @@ class TestDoctor:
         monkeypatch.setattr(main, "_chromium_status", lambda: chromium)
         monkeypatch.setattr(main, "_display_available", lambda: display)
         monkeypatch.setattr(main, "_adb_binary_found", lambda: adb)
-        transport = MagicMock(name="transport")
-        if not server_ok:
-            transport.request.side_effect = RuntimeError("401 bad key")
-        monkeypatch.setattr(main, "_transport", lambda ctx: transport)
+        adc = ("my-proj", "") if adc_ok else ("", self._ADC_ERR)
+        monkeypatch.setattr(main, "_resolve_adc", lambda ctx: adc)
 
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        args = (["--api-key", "qk_test"] if key else []) + ["doctor"]
-        return CliRunner().invoke(main.cli, args)
+        return CliRunner().invoke(main.cli, ["doctor"])
 
     @staticmethod
     def _flat(result):
@@ -1264,22 +1313,43 @@ class TestDoctor:
         substring assertions don't break on a wrap point."""
         return " ".join(result.output.split())
 
-    def test_ready_when_key_and_one_backend(self, monkeypatch):
+    def test_ready_when_adc_and_one_backend(self, monkeypatch):
         result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
 
         assert result.exit_code == 0, result.output
         assert "Ready" in self._flat(result)
 
+    def test_adc_ok_prints_project_and_model(self, monkeypatch):
+        from qirabot.engine.providers.registry import resolve_default_model
+
+        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
+
+        out = self._flat(result)
+        assert result.exit_code == 0, result.output
+        assert "Google Cloud credentials OK" in out
+        assert "my-proj" in out
+        assert resolve_default_model() in out
+
     def test_nothing_installed_exits_1_with_hints(self, monkeypatch):
-        result = self._run(monkeypatch, key=False)
+        result = self._run(monkeypatch, adc_ok=False)
 
         out = self._flat(result)
         assert result.exit_code == 1
-        assert "API key not set" in out
+        assert "no credentials were found" in out
         assert 'python -m pip install "qirabot[browser]" && qirabot install-browser' in out
         # Selenium is not an extra — the hint must be a plain pip install.
         assert "python -m pip install selenium" in out
         assert "qirabot[selenium]" not in out
+        assert "Not ready" in out
+
+    def test_adc_failure_is_a_problem(self, monkeypatch):
+        """A working backend can't compensate for missing credentials — the
+        local engine needs ADC for every run."""
+        result = self._run(monkeypatch, has={"pyautogui"}, adc_ok=False)
+
+        out = self._flat(result)
+        assert result.exit_code == 1
+        assert "no credentials were found" in out
         assert "Not ready" in out
 
     def test_playwright_without_chromium_is_not_ready(self, monkeypatch):
@@ -1318,43 +1388,6 @@ class TestDoctor:
         assert result.exit_code == 1
         assert "sudo playwright install-deps chromium" in out
         assert "system libraries are missing" in out
-
-    def test_server_rejection_is_a_problem(self, monkeypatch):
-        result = self._run(
-            monkeypatch, has={"pyautogui"}, chromium=None, server_ok=False
-        )
-
-        out = self._flat(result)
-        assert result.exit_code == 1
-        assert "401 bad key" in out
-
-    def _run_real_transport(self, monkeypatch, *cli_args):
-        """Invoke doctor with probes stubbed but _transport left real, so the
-        Transport construction (and its timeout) can be asserted."""
-        from qirabot.cli import main
-
-        monkeypatch.setattr(main, "_has_module", lambda m: False)
-        monkeypatch.setattr(main, "_chromium_status", lambda: None)
-        monkeypatch.setattr(main, "_display_available", lambda: True)
-        monkeypatch.setattr(main, "_adb_binary_found", lambda: False)
-        transport_cls = MagicMock(name="Transport")
-        monkeypatch.setattr(main, "Transport", transport_cls)
-
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        CliRunner().invoke(main.cli, [*cli_args, "--api-key", "qk_test", "doctor"])
-        return transport_cls
-
-    def test_server_check_uses_short_timeout_by_default(self, monkeypatch):
-        """doctor is a diagnostic — against an unreachable server the 120s task
-        default reads as a hang, so the server check drops to 10s."""
-        transport_cls = self._run_real_transport(monkeypatch)
-
-        assert transport_cls.call_args.kwargs["timeout"] == 10.0
-
-    def test_server_check_respects_explicit_timeout(self, monkeypatch):
-        transport_cls = self._run_real_transport(monkeypatch, "--timeout", "3")
-
-        assert transport_cls.call_args.kwargs["timeout"] == 3.0
 
     def test_other_backend_alone_is_ready(self, monkeypatch):
         """The default path (browser) is a recommendation, not a requirement —

@@ -14,7 +14,8 @@ Windows desktop, built in) variants at the bottom.
 Run (Selenium):
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install qirabot selenium        # Appium: qirabot[appium] · desktop: qirabot[desktop]
-    echo 'QIRA_API_KEY=qk_...' > .env    # load_dotenv() reads this (also QIRA_BASE_URL)
+    gcloud auth application-default login    # one-time Google Cloud auth (ADC)
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3-flash-preview' > .env    # load_dotenv() reads this
     python bolt_on.py
 
 The HTML report is written to ./qira_runs/<date>/<run>/report.html on close.
@@ -24,7 +25,7 @@ from selenium import webdriver
 
 from qirabot import Qirabot, StepResult, load_dotenv
 
-# Read QIRA_API_KEY / QIRA_BASE_URL from ./.env (a real exported env var wins).
+# Read QIRA_MODEL (and other QIRA_* settings) from ./.env (a real exported env var wins).
 load_dotenv()
 
 # TODO: the task to perform (and the start URL / app for your target)
@@ -46,7 +47,7 @@ driver.get(START_URL)
 
 # bind() once: the driver is stable for the whole session, so every call drops the
 # repeated first arg — bot.click("...") instead of bot.click(driver, "...").
-with Qirabot(task_name="bolt-on-template", model_alias="balanced").bind(driver) as bot:
+with Qirabot(task_name="bolt-on-template").bind(driver) as bot:
     # Default: hand the whole task to qirabot's agent loop (self-heals).
     result = bot.ai(TASK, max_steps=15, on_step=on_step)
     print("success:", result.success)

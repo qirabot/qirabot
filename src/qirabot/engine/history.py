@@ -53,6 +53,12 @@ class History:
                     self._summary.append(s)
             self._entries = self._entries[overflow:]
 
+    def backfill_last_tool_output(self, output: str) -> None:
+        """Overwrite the most recent entry's tool output — the SDK reports a
+        step's execution result with the NEXT request, not at execution time."""
+        if self._entries:
+            self._entries[-1].tool_output = output
+
     def attach_screenshots(self, screenshots: list[bytes]) -> None:
         """Inject screenshot data into the most recent max_screenshots entries,
         using reverse alignment with the provided screenshots list."""

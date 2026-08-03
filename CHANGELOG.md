@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+**Added**
+
+- CLI: `--output-format text|json|stream-json` on `browser` / `android` /
+  `ios` / `desktop`. `json` prints one final JSON result object on stdout
+  (`success`, `status`, `output`, `task_id`, `usage` token/step totals, and
+  the `report.html` path); `stream-json` prints NDJSON — a `start` line, one
+  line per AI step mirroring the SDK's `StepResult` fields, then the same
+  result object. Every exit path (done / failed / error / cancelled, and
+  setup failures such as an unreachable device) ends with a result object;
+  exit codes are unchanged, and the machine formats suppress all
+  human-readable stdout so the output stays parseable by scripts and CI.
+- CLI: `--media-resolution low|medium|high|ultra_high` on `browser` /
+  `android` / `ios` / `desktop` — screenshot detail the model sees
+  (gemini-vertex only; default `QIRA_MEDIA_RESOLUTION`, else `high`). The
+  constructor parameter and env var already existed; this exposes them as a
+  task option alongside `--thinking-level`.
+
 ## 3.0.0 (2026-08-02)
 
 ### Breaking: the decision engine now runs locally
@@ -17,8 +36,8 @@ no per-step billing, and no Qirabot server in the loop.
   on GCE (metadata server). The Qirabot account/API-key flow is removed.
 - Model selection is explicit and local:
   `Qirabot(model="{provider}/{model}")` or `QIRA_MODEL`, with provider one of
-  `claude-vertex` / `gemini-vertex` / `vertex-openai`. Default:
-  `gemini-vertex/gemini-3-flash-preview`.
+  `claude-vertex` / `gemini-vertex`. Default:
+  `gemini-vertex/gemini-3.6-flash`.
 - Google Cloud project/region: `vertex_project=` / `vertex_location=`
   constructor parameters, `--vertex-project` / `--vertex-location` CLI global
   options, or `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION` (falling back to
@@ -49,15 +68,14 @@ no per-step billing, and no Qirabot server in the loop.
 | `qirabot login` | Removed — `gcloud auth application-default login` (or a service-account JSON) |
 | `qirabot task` | Removed — no server-side task list; run details are in the local HTML report |
 | `qirabot screenshot` | Removed |
-| `qirabot models` (cloud alias list) | `qirabot models` — lists the three Vertex providers, their default models, and checks ADC |
+| `qirabot models` (cloud alias list) | `qirabot models` — lists the Vertex providers, their default models, and checks ADC |
 | `qirabot doctor` (API-key / server check) | `qirabot doctor` — checks Python, Google Cloud credentials (ADC + project), and backend dependencies |
 | CLI globals `--api-key` / `--base-url` / `--timeout` / `--verify-ssl` | Removed — new globals: `--vertex-project` / `--vertex-location` |
 | `-m/--model` (cloud model alias) | `-m/--model` — local model string `{provider}/{model}` |
 
 **Added**
 
-- Vertex AI providers: `claude-vertex`, `gemini-vertex`, `vertex-openai`
-  (OpenAI-compatible publisher models, e.g. `vertex-openai/qwen/qwen3-vl-plus`).
+- Vertex AI providers: `claude-vertex`, `gemini-vertex`.
 - `QIRA_LOCATE_FORMAT` (optional; `bbox_yx_1000`) — element-location output
   format override.
 - `QIRA_ENGINE_TRACE=<dir>` — debugging: appends one JSONL record per engine

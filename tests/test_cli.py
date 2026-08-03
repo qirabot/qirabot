@@ -795,7 +795,7 @@ class TestModelsCommand:
     def _flat(result):
         return " ".join(result.output.split())
 
-    def test_lists_all_three_providers(self, monkeypatch):
+    def test_lists_all_providers(self, monkeypatch):
         from qirabot.cli import main
 
         monkeypatch.setattr(main, "_resolve_adc", lambda ctx: ("my-proj", ""))
@@ -803,7 +803,7 @@ class TestModelsCommand:
         result = _invoke(["models"])
 
         assert result.exit_code == 0, result.output
-        for provider in ("claude-vertex", "gemini-vertex", "vertex-openai"):
+        for provider in ("claude-vertex", "gemini-vertex"):
             assert provider in result.output
 
     def test_adc_ok_prints_project(self, monkeypatch):
@@ -1379,6 +1379,36 @@ class TestDoctor:
 
         assert "fall back to headless" not in self._flat(result)
 
+    def test_stale_v2_key_prints_migration_warning(self, monkeypatch):
+        """Without this warning, doctor says "Ready" while every default run
+        trips the SDK's cloud-removed migration guard."""
+        monkeypatch.setenv("QIRA_API_KEY", "qk_stale")
+        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
+
+        out = self._flat(result)
+        assert result.exit_code == 0, result.output
+        assert "leftover v2 QIRA_API_KEY" in out
+        assert "--model / QIRA_MODEL" in out
+
+    def test_qira_model_silences_stale_key_warning(self, monkeypatch):
+        # An explicit model choice disarms the SDK guard, so doctor must not
+        # warn about a key that no longer blocks anything.
+        monkeypatch.setenv("QIRA_API_KEY", "qk_stale")
+        monkeypatch.setenv("QIRA_MODEL", "gemini-vertex/gemini-3-flash-preview")
+        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
+
+        assert "leftover v2 QIRA_API_KEY" not in self._flat(result)
+
+    def test_v2_user_config_file_prints_cleanup_note(self, monkeypatch):
+        # conftest points XDG_CONFIG_HOME/APPDATA at a tmp dir, so this writes
+        # a throwaway config.json, not the developer's real one.
+        from qirabot._userconfig import save_api_key
+
+        save_api_key("qk_old")
+        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
+
+        assert "unused in v3" in self._flat(result)
+
     def test_chromium_missing_system_libs_is_not_ready(self, monkeypatch):
         """A downloaded Chromium whose shared libraries don't resolve (bare Linux
         server) fails at launch; the fix is install-deps, not a re-download."""
@@ -1451,3 +1481,332 @@ class TestRunLocalUserAbort:
         assert exc.value.code == 1
         assert len(bot.failed) == 1 and "boom" in bot.failed[0]
         assert "Error" in capsys.readouterr().out
+
+
+class TestRunLocalUsageSummary:
+    """_run_local ends every path with a dim usage line (steps · tokens ·
+    duration) — success, failure and cancel alike; silent when nothing ran."""
+
+    def _bot(self, ai=None, ai_steps=3, input_tokens=38_100, output_tokens=4_200,
+             thinking_tokens=1_100, cache_read_tokens=0, cache_write_tokens=0,
+             step_duration_ms=84_000):
+        from qirabot.client import SessionUsage
+
+        usage = SessionUsage(
+            ai_steps=ai_steps,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            thinking_tokens=thinking_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
+            step_duration_ms=step_duration_ms,
+        )
+
+        class _Bot:
+            task_id = None
+
+            def __init__(self):
+                self.failed = []
+                self.cancelled = []
+                self.usage = usage
+
+            def ai(self, *a, **k):
+                if isinstance(ai, BaseException):
+                    raise ai
+                return ai
+
+            def fail(self, msg=""):
+                self.failed.append(msg)
+
+            def cancel(self, msg=""):
+                self.cancelled.append(msg)
+
+        return _Bot()
+
+    @staticmethod
+    def _result(success, output, status):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(success=success, output=output, status=status)
+
+    def test_success_prints_summary_after_done(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(True, "all good", "completed"))
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert "Done" in out
+        assert "3 AI steps" in out
+        # total = input + cache + output; thinking is already inside output.
+        assert "42.3k tokens" in out
+        assert "in 38.1k / out 4.2k / think 1.1k" in out
+        assert "1m24s" in out
+        assert out.index("Done") < out.index("3 AI steps")
+
+    def test_cache_tokens_join_the_total(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(True, "ok", "completed"),
+                        cache_read_tokens=90_000, cache_write_tokens=10_000)
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        # 38.1k in + 100k cache + 4.2k out
+        assert "142.3k tokens" in out
+        assert "cache 100.0k" in out
+
+    def test_zero_thinking_is_not_shown(self, capsys):
+        """Anthropic reports no separate thinking count — "think 0" would
+        read as "did not think" when it really means "not split out"."""
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(True, "ok", "completed"), thinking_tokens=0)
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert "42.3k tokens" in out
+        assert "think" not in out
+
+    def test_failed_run_still_prints_summary(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(False, "max steps", "max_steps"))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert "Failed" in out
+        assert "42.3k tokens" in out
+
+    def test_cancelled_run_still_prints_summary(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=KeyboardInterrupt())
+        with pytest.raises(SystemExit) as exc:
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+        assert exc.value.code == 130
+        out = capsys.readouterr().out
+        assert "Cancelled" in out
+        assert "42.3k tokens" in out
+
+    def test_no_ai_steps_prints_nothing(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(True, "ok", "completed"), ai_steps=0,
+                        input_tokens=0, output_tokens=0, thinking_tokens=0,
+                        step_duration_ms=0)
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert "tokens" not in out
+
+    def test_failed_first_step_tokens_still_print(self, capsys):
+        """0 committed steps but real spend (the run died on its first
+        decide): the spend is what the user wants to see."""
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(False, "boom", "error"), ai_steps=0,
+                        input_tokens=5_000, output_tokens=300, thinking_tokens=0,
+                        step_duration_ms=0)
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert "0 AI steps" in out
+        assert "5.3k tokens" in out
+
+    def test_bot_without_usage_stays_silent(self, capsys):
+        """A summary failure must never mask the run outcome (e.g. a stubbed
+        or older bot object with no .usage)."""
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(True, "ok", "completed"))
+        del bot.usage
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert "Done" in out
+        assert "tokens" not in out
+
+
+class TestOutputFormats:
+    """--output-format json / stream-json: stdout must carry only parseable
+    JSON — one result object (json), or start/step lines plus the result
+    (stream-json) — with the same schema on every exit path, so scripts and
+    CI parse a single shape instead of scraping the rich output."""
+
+    def _bot(self, ai=None, steps=(), report=True):
+        from qirabot.client import SessionUsage
+
+        usage = SessionUsage(
+            ai_steps=2, input_tokens=1_000, output_tokens=200,
+            thinking_tokens=50, cache_read_tokens=300, cache_write_tokens=0,
+            step_duration_ms=9_000,
+        )
+
+        class _Bot:
+            task_id = "local-abc12345"
+            _report = report
+            _log = [object()] if report else []
+            report_dir = "/tmp/qira-run"
+
+            def __init__(self):
+                self.failed = []
+                self.cancelled = []
+                self.usage = usage
+
+            def ai(self, *a, on_step=None, **k):
+                if on_step is not None:
+                    for s in steps:
+                        on_step(s)
+                if isinstance(ai, BaseException):
+                    raise ai
+                return ai
+
+            def fail(self, msg=""):
+                self.failed.append(msg)
+
+            def cancel(self, msg=""):
+                self.cancelled.append(msg)
+
+        return _Bot()
+
+    @staticmethod
+    def _lines(capsys):
+        import json
+
+        raw = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+        return [json.loads(ln) for ln in raw]
+
+    @staticmethod
+    def _run_result(success, output, status):
+        from qirabot.client import RunResult
+
+        return RunResult(success=success, output=output, status=status)
+
+    def test_json_success_emits_single_result_object(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(True, "all done", "completed"))
+        cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+
+        lines = self._lines(capsys)  # raises if any stdout line is not JSON
+        assert len(lines) == 1
+        res = lines[0]
+        assert res["type"] == "result"
+        assert res["success"] is True
+        assert res["status"] == "completed"
+        assert res["output"] == "all done"
+        assert res["task_id"] == "local-abc12345"
+        # Usage mirrors SessionUsage's fields plus the total.
+        assert res["usage"]["ai_steps"] == 2
+        assert res["usage"]["total_tokens"] == 1_000 + 300 + 200
+        assert res["report"] == "/tmp/qira-run/report.html"
+
+    def test_json_failure_exits_1_with_result_object(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(False, "max steps reached", "max_steps"))
+        with pytest.raises(SystemExit) as exc:
+            cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+
+        assert exc.value.code == 1
+        assert bot.failed == ["max steps reached"]
+        (res,) = self._lines(capsys)
+        assert res["success"] is False
+        assert res["status"] == "max_steps"
+
+    def test_json_cancel_exits_130_with_cancelled_status(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=KeyboardInterrupt())
+        with pytest.raises(SystemExit) as exc:
+            cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+
+        assert exc.value.code == 130
+        assert bot.cancelled and not bot.failed
+        (res,) = self._lines(capsys)
+        assert res["success"] is False
+        assert res["status"] == "cancelled"
+
+    def test_json_error_exits_1_with_error_status(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=RuntimeError("boom"))
+        with pytest.raises(SystemExit) as exc:
+            cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+
+        assert exc.value.code == 1
+        assert bot.failed == ["boom"]
+        (res,) = self._lines(capsys)
+        assert res["status"] == "error"
+        assert res["output"] == "boom"
+
+    def test_json_no_report_emits_null(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(True, "ok", "completed"), report=False)
+        cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+
+        (res,) = self._lines(capsys)
+        assert res["report"] is None
+
+    def test_stream_json_emits_start_steps_and_result(self, capsys):
+        from qirabot.cli import main as cli_main
+        from qirabot.client import StepResult
+
+        steps = [
+            StepResult(step=1, action_type="click", params={"locate": "Login"},
+                       decision="click the login button", input_tokens=500),
+            # Unlike the text renderer, the machine stream keeps the "done"
+            # step: its decision/output are data, not screen noise.
+            StepResult(step=2, action_type="done", finished=True, output="ok"),
+        ]
+        bot = self._bot(ai=self._run_result(True, "ok", "completed"), steps=steps)
+        cli_main._run_local(bot, object(), "task", max_steps=5, output_format="stream-json")
+
+        lines = self._lines(capsys)
+        assert [ln["type"] for ln in lines] == ["start", "step", "step", "result"]
+        assert lines[0] == {"type": "start", "task_id": "local-abc12345", "max_steps": 5}
+        # Step lines mirror StepResult's fields verbatim.
+        assert lines[1]["action_type"] == "click"
+        assert lines[1]["params"] == {"locate": "Login"}
+        assert lines[1]["input_tokens"] == 500
+        assert lines[2]["action_type"] == "done"
+        assert lines[3]["type"] == "result"
+
+    def test_text_mode_is_unchanged(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(True, "ok", "completed"))
+        cli_main._run_local(bot, object(), "task", max_steps=5, output_format="text")
+
+        out = capsys.readouterr().out
+        assert "Done" in out
+        assert '"type"' not in out
+
+    def test_setup_failure_emits_json_result(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot()
+        with pytest.raises(SystemExit) as exc:
+            cli_main._fail_setup(bot, RuntimeError("no device"), "json")
+
+        assert exc.value.code == 1
+        assert bot.failed == ["no device"]
+        (res,) = self._lines(capsys)
+        assert res["type"] == "result"
+        assert res["status"] == "error"
+        assert res["output"] == "no device"
+
+    def test_output_format_flag_reaches_run_local(self, monkeypatch):
+        from qirabot.cli import main as cli_main
+
+        seen = {}
+
+        def spy(bot, target, instruction, max_steps, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setattr(cli_main, "_make_bot", lambda *a, **k: MagicMock(name="bot"))
+        monkeypatch.setattr(cli_main, "_run_local", spy)
+
+        result = _invoke(
+            ["browser", "do something", "--output-format", "stream-json"]
+        )
+
+        assert result.exit_code == 0
+        assert seen.get("output_format") == "stream-json"

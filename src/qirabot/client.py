@@ -37,6 +37,23 @@ from qirabot.overlay import Overlay
 logger = logging.getLogger("qirabot")
 
 
+def _stale_key_source() -> str:
+    """Where the leftover v2 QIRA_API_KEY came from, for error messages.
+
+    The CLI loads ``./.env`` into the environment before the SDK ever runs, so
+    by the time the migration guard fires the variable's origin is invisible —
+    except that :mod:`qirabot._dotenv` records which keys it injected. Name
+    the file when we know it; otherwise point at the places a real export
+    would live.
+    """
+    from qirabot._dotenv import injected_from
+
+    path = injected_from("QIRA_API_KEY")
+    if path:
+        return f"(loaded from {path})"
+    return "(exported in your environment — check your shell profile or CI config)"
+
+
 @contextlib.contextmanager
 def _suppress_sigint() -> Iterator[None]:
     """Make the wrapped block uninterruptible by Ctrl+C (SIGINT).
@@ -82,6 +99,8 @@ class StepResult:
     input_tokens: int = 0
     output_tokens: int = 0
     thinking_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     step_duration_ms: int = 0
     llm_decision_duration_ms: int = 0
 
@@ -97,6 +116,8 @@ class StepResult:
             input_tokens=data.get("inputTokens", 0),
             output_tokens=data.get("outputTokens", 0),
             thinking_tokens=data.get("thinkingTokens", 0),
+            cache_read_tokens=data.get("cacheReadTokens", 0),
+            cache_write_tokens=data.get("cacheWriteTokens", 0),
             step_duration_ms=data.get("stepDurationMs", 0),
             llm_decision_duration_ms=data.get("llmDecisionDurationMs", 0),
         )
@@ -241,6 +262,44 @@ class RunResult:
     status: RunStatus = "completed"
 
 
+@dataclass(frozen=True)
+class SessionUsage:
+    """Session-wide AI usage totals, read via :attr:`Qirabot.usage`.
+
+    Accumulates over every AI call on the client — ai() steps, AI-located
+    actions (click()/type_text()/…) and standalone
+    verify()/extract()/locate() calls — including the spend of failed calls
+    and cancelled runs. ``ai_steps`` counts successful calls only; a failed
+    call's tokens still land in the totals. A frozen snapshot: read it again
+    for updated totals.
+
+    Token semantics: ``input_tokens`` is the non-cached prompt tokens only
+    (both providers); the cached prompt portion rides in
+    ``cache_read_tokens``/``cache_write_tokens``. ``output_tokens`` already
+    includes ``thinking_tokens`` (Anthropic semantics; the Gemini provider
+    normalizes to match), so :attr:`total_tokens` is
+    input + cache read/write + output — thinking is not added again.
+    """
+
+    ai_steps: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    thinking_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    step_duration_ms: int = 0
+    llm_decision_duration_ms: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return (
+            self.input_tokens
+            + self.cache_read_tokens
+            + self.cache_write_tokens
+            + self.output_tokens
+        )
+
+
 class Qirabot:
     """AI automation bolt-on for any framework.
 
@@ -250,7 +309,7 @@ class Qirabot:
 
     Usage::
 
-        bot = Qirabot(model="gemini-vertex/gemini-3-flash-preview")
+        bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
         bot.click(page, "Login button")
         bot.type_text(page, "Username field", "admin@example.com")
         result = bot.ai(page, "Find the cheapest item and add to cart")
@@ -263,6 +322,7 @@ class Qirabot:
         vertex_project: str = "",
         vertex_location: str = "",
         thinking_level: str = "",
+        media_resolution: str = "",
         language: str = "",
         task_name: str = "",
         locate_format: str = "",
@@ -284,25 +344,22 @@ class Qirabot:
         overlay: bool = False,
     ):
         # v2 configured a Qirabot cloud API key; v3 runs the decision engine
-        # locally against your own Vertex AI credentials. Catch the stale
-        # setup early with a migration pointer instead of silently ignoring
-        # the old variable.
-        explicit_model = bool(model or os.environ.get("QIRA_MODEL", "").strip())
-        if os.environ.get("QIRA_API_KEY") and not explicit_model:
-            raise AuthenticationError(
-                "Qirabot v3 runs the decision engine locally — QIRA_API_KEY and "
-                "the cloud backend are gone. Configure Google Cloud ADC (set "
-                "GOOGLE_APPLICATION_CREDENTIALS or run `gcloud auth "
-                "application-default login`) and pass model=... / QIRA_MODEL "
-                '(e.g. "gemini-vertex/gemini-3-flash-preview"). To keep the old '
-                "cloud behavior, pin qirabot<3.",
-                code="auth.cloud_removed",
-            )
+        # locally against your own Vertex AI credentials. A leftover
+        # QIRA_API_KEY with no explicit model choice means the user has not
+        # acknowledged the v3 switch — refuse with a migration pointer rather
+        # than silently changing which account gets billed. Passing model= or
+        # setting QIRA_MODEL counts as opting in and disarms the guard.
+        stale_key = bool(os.environ.get("QIRA_API_KEY")) and not (
+            model or os.environ.get("QIRA_MODEL", "").strip()
+        )
         # ADC + project resolution and the provider handshake happen here so a
         # bad credential setup fails at construction, not mid-run. Config
         # failures surface as the SDK's own exception types: missing/broken
         # credentials -> AuthenticationError, bad model/project values ->
-        # QirabotError (the engine's messages are already actionable).
+        # QirabotError (the engine's messages are already actionable). The
+        # stale-key guard deliberately fires *after* the handshake: knowing
+        # whether ADC works lets the message name the user's actual next step
+        # instead of prescribing credential setup they may already have.
         from qirabot.engine.providers.base import ProviderError
 
         try:
@@ -311,12 +368,41 @@ class Qirabot:
                 vertex_project=vertex_project,
                 vertex_location=vertex_location,
                 thinking_level=thinking_level,
+                media_resolution=media_resolution
+                or os.environ.get("QIRA_MEDIA_RESOLUTION", ""),
                 locate_format=locate_format or os.environ.get("QIRA_LOCATE_FORMAT", ""),
             )
         except ProviderError as e:
+            if stale_key:
+                raise AuthenticationError(
+                    "Qirabot v3 runs the decision engine locally — the cloud "
+                    "backend is gone, but a v2-era QIRA_API_KEY is still set "
+                    f"{_stale_key_source()}. To use v3: remove QIRA_API_KEY "
+                    "(and QIRA_BASE_URL), configure Google Cloud ADC (set "
+                    "GOOGLE_APPLICATION_CREDENTIALS or run `gcloud auth "
+                    "application-default login`), and optionally pick a model "
+                    'via model=... / QIRA_MODEL (e.g. "gemini-vertex/'
+                    'gemini-3.6-flash"). To keep the old cloud behavior, '
+                    f"pin qirabot<3. (credential check: {e})",
+                    code="auth.cloud_removed",
+                ) from e
             raise AuthenticationError(str(e), code="auth.credentials") from e
         except ValueError as e:
             raise QirabotError(str(e), code="config.invalid") from e
+        if stale_key:
+            self._backend.close()
+            raise AuthenticationError(
+                "Your Google Cloud setup works and Qirabot v3 is ready to use "
+                "it — but a v2-era QIRA_API_KEY is still set "
+                f"{_stale_key_source()}, and the cloud backend it belonged to "
+                "is gone. Refusing to start rather than silently switching "
+                "billing to your GCP project: remove QIRA_API_KEY (and "
+                "QIRA_BASE_URL), or opt into v3 explicitly via model=... / "
+                "QIRA_MODEL (e.g. "
+                '"gemini-vertex/gemini-3.6-flash"). To keep the old '
+                "cloud behavior, pin qirabot<3.",
+                code="auth.cloud_removed",
+            )
         self._adapters: dict[int, DeviceAdapter] = {}
         self._pw_instances: list[Any] = []
         self._cdp_pages: list[Any] = []
@@ -385,6 +471,8 @@ class Qirabot:
             "input_tokens": 0,
             "output_tokens": 0,
             "thinking_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
             "step_duration_ms": 0,
             "llm_decision_duration_ms": 0,
         }
@@ -480,6 +568,27 @@ class Qirabot:
     @property
     def task_id(self) -> str | None:
         return self._task_id
+
+    @property
+    def usage(self) -> SessionUsage:
+        """Session-wide AI usage totals so far (tokens, AI steps, timing).
+
+        Covers every AI call on this client — ai() steps, AI-located actions
+        (click()/type_text()/…) and standalone verify()/extract()/locate() —
+        including the spend of failed calls and cancelled runs. Returns a
+        frozen snapshot; read again for updated totals. See
+        :class:`SessionUsage` for the token-counting semantics.
+        """
+        return SessionUsage(
+            ai_steps=self._stats["ai_steps"],
+            input_tokens=self._stats["input_tokens"],
+            output_tokens=self._stats["output_tokens"],
+            thinking_tokens=self._stats["thinking_tokens"],
+            cache_read_tokens=self._stats["cache_read_tokens"],
+            cache_write_tokens=self._stats["cache_write_tokens"],
+            step_duration_ms=self._stats["step_duration_ms"],
+            llm_decision_duration_ms=self._stats["llm_decision_duration_ms"],
+        )
 
     def bind(self, target: Any) -> _BoundQirabot:
         """Bind a target once and drop it from subsequent calls.
@@ -929,7 +1038,6 @@ class Qirabot:
             execute_result=False,
             retry=retry,
         )
-        self._accumulate_stats(result)
         return ExtractResult.from_dict(result)
 
     def verify(
@@ -955,7 +1063,6 @@ class Qirabot:
             execute_result=False,
             retry=retry,
         )
-        self._accumulate_stats(result)
         return VerifyResult.from_dict(result)
 
     def locate(
@@ -1005,23 +1112,30 @@ class Qirabot:
             execute_result=False,
             retry=retry,
         )
-        self._accumulate_stats(result)
         return LocateResult.from_dict(result)
 
-    def _accumulate_stats(self, result: dict[str, Any]) -> None:
-        """Fold a one-shot /act result's usage into the run stats.
-
-        verify()/extract() are single AI calls outside the ai() loop, so their
-        tokens would otherwise never reach the report. Count each as an AI step
-        (mirroring the ai() loop) so the summary line shows up and totals are
-        complete even for pure verify/extract scripts.
-        """
-        self._stats["ai_steps"] += 1
+    def _accumulate_tokens(self, result: dict[str, Any]) -> None:
+        """Fold a /act response's token/timing usage into the run stats —
+        error payloads included: a failed step's decide attempts (up to
+        MAX_GROUNDING_ATTEMPTS of them) are real spend the engine reports on
+        the error body, and dropping them would understate the session totals
+        exactly on the most expensive steps."""
         self._stats["input_tokens"] += result.get("inputTokens", 0)
         self._stats["output_tokens"] += result.get("outputTokens", 0)
         self._stats["thinking_tokens"] += result.get("thinkingTokens", 0)
+        self._stats["cache_read_tokens"] += result.get("cacheReadTokens", 0)
+        self._stats["cache_write_tokens"] += result.get("cacheWriteTokens", 0)
         self._stats["step_duration_ms"] += result.get("stepDurationMs", 0)
         self._stats["llm_decision_duration_ms"] += result.get("llmDecisionDurationMs", 0)
+
+    def _accumulate_stats(self, result: dict[str, Any]) -> None:
+        """A successful AI call: its usage plus one AI step.
+
+        ai_steps counts committed calls only (matching the report's step
+        count); failed calls go through _accumulate_tokens alone.
+        """
+        self._stats["ai_steps"] += 1
+        self._accumulate_tokens(result)
 
     def wait_for(
         self,
@@ -1242,6 +1356,10 @@ class Qirabot:
             )
 
             if not result.get("success"):
+                # The engine attaches the failed step's usage to the error
+                # body (its decide attempts are real spend) — keep the
+                # tokens, but no step: none committed.
+                self._accumulate_tokens(result)
                 error_msg = result.get("error", "AI request failed")
                 if result.get("finished"):
                     logger.error("failed: %s", error_msg)
@@ -1321,12 +1439,7 @@ class Qirabot:
             step_result = StepResult.from_dict(result, step_num)
             steps.append(step_result)
 
-            self._stats["ai_steps"] += 1
-            self._stats["input_tokens"] += step_result.input_tokens
-            self._stats["output_tokens"] += step_result.output_tokens
-            self._stats["thinking_tokens"] += step_result.thinking_tokens
-            self._stats["step_duration_ms"] += step_result.step_duration_ms
-            self._stats["llm_decision_duration_ms"] += step_result.llm_decision_duration_ms
+            self._accumulate_stats(result)
 
             if self._overlay is not None:
                 self._overlay.step(step_result, max_steps)
@@ -1946,8 +2059,14 @@ class Qirabot:
             screenshot_bytes, request_body, self._screenshot_config.mime_type
         )
 
+        # Every one-shot AI call funnels through here — AI-located actions
+        # (click/type_text/…), verify/extract/locate — so this is the one
+        # place their usage reaches the session totals. Failed calls (each
+        # retry attempt lands here again) keep their tokens, just not a step.
         if not result.get("success"):
+            self._accumulate_tokens(result)
             raise ActionError(result.get("error", "AI request failed"))
+        self._accumulate_stats(result)
 
         coords = _extract_coords(result.get("params"))
         self._record_step(

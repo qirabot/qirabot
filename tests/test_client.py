@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import FakeBackend
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo, ScreenshotConfig
 from qirabot.client import (
     ExtractResult,
@@ -439,6 +440,128 @@ class TestAiLoopStatus:
         assert bot._section_errors["do thing"] == "session expired"
 
 
+class TestSessionUsage:
+    """bot.usage: the public session-wide token/step totals snapshot."""
+
+    def _bot(self, make_bot):
+        bot = make_bot()
+        bot._get_adapter = lambda target: _SettleFakeAdapter()
+        bot._execute_action = lambda *a, **k: None
+        return bot
+
+    def test_starts_at_zero(self, make_bot):
+        u = make_bot().usage
+        assert u.ai_steps == 0
+        assert u.total_tokens == 0
+
+    def test_ai_run_accumulates(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.results.extend([
+            {
+                "success": True, "finished": False, "actionType": "click",
+                "params": {}, "inputTokens": 100, "outputTokens": 20,
+                "thinkingTokens": 5,
+            },
+            {
+                "success": True, "finished": True, "actionType": "done",
+                "params": {"result": "ok", "success": True}, "output": "ok",
+                "inputTokens": 200, "outputTokens": 30, "thinkingTokens": 10,
+            },
+        ])
+        bot.ai(object(), "task", max_steps=3)
+        u = bot.usage
+        assert u.ai_steps == 2
+        assert u.input_tokens == 300
+        assert u.output_tokens == 50
+        assert u.thinking_tokens == 15
+        # thinking is already inside output (Anthropic semantics):
+        # total is input + output, thinking not added again.
+        assert u.total_tokens == 350
+
+    def test_standalone_verify_counts(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.results.append({
+            "success": True, "finished": True, "actionType": "done",
+            "output": "banner visible", "inputTokens": 500, "outputTokens": 60,
+            "thinkingTokens": 20,
+        })
+        bot.verify(object(), "the banner is visible")
+        u = bot.usage
+        assert u.ai_steps == 1
+        assert u.total_tokens == 560
+
+    def test_ai_located_action_counts(self, make_bot):
+        # click()/type_text()/… discard their /act result — the usage must
+        # still land in the session totals (pure bolt-on scripts would
+        # otherwise report ~0 tokens).
+        bot = self._bot(make_bot)
+        bot._backend.results.append({
+            "success": True, "finished": True, "actionType": "click",
+            "params": {"x": 10, "y": 20}, "inputTokens": 400, "outputTokens": 30,
+        })
+        bot.click(object(), "Login button")
+        u = bot.usage
+        assert u.ai_steps == 1
+        assert u.total_tokens == 430
+
+    def test_cache_tokens_join_the_totals(self, make_bot):
+        # input_tokens is the non-cached prompt only (both providers); the
+        # cached portion must reach the totals or Claude runs (cache_control
+        # on every step) understate their spend by the whole prompt.
+        bot = self._bot(make_bot)
+        bot._backend.results.append({
+            "success": True, "finished": True, "actionType": "done",
+            "params": {"result": "ok", "success": True}, "output": "ok",
+            "inputTokens": 100, "outputTokens": 50,
+            "cacheReadTokens": 9_000, "cacheWriteTokens": 1_000,
+        })
+        bot.ai(object(), "task", max_steps=2)
+        u = bot.usage
+        assert u.cache_read_tokens == 9_000
+        assert u.cache_write_tokens == 1_000
+        assert u.total_tokens == 100 + 9_000 + 1_000 + 50
+
+    def test_failed_call_keeps_tokens_but_not_the_step(self, make_bot):
+        # The engine attaches the failed attempt's usage to the error body;
+        # the spend counts, the step does not (none committed).
+        bot = self._bot(make_bot)
+        bot._backend.results.append({
+            "success": False, "finished": False, "error": "grounding failed",
+            "inputTokens": 900, "outputTokens": 45,
+        })
+        with pytest.raises(ActionError):
+            bot.verify(object(), "anything", retry=0)
+        u = bot.usage
+        assert u.ai_steps == 0
+        assert u.input_tokens == 900
+        assert u.output_tokens == 45
+
+    def test_failed_ai_step_keeps_tokens(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.results.append({
+            "success": False, "finished": True, "error": "session expired",
+            "inputTokens": 700, "outputTokens": 20,
+        })
+        result = bot.ai(object(), "task", max_steps=3)
+        assert result.status == "error"
+        u = bot.usage
+        assert u.ai_steps == 0
+        assert u.total_tokens == 720
+
+    def test_snapshot_is_frozen_and_does_not_track(self, make_bot):
+        bot = self._bot(make_bot)
+        before = bot.usage
+        with pytest.raises(Exception):  # dataclasses.FrozenInstanceError
+            before.input_tokens = 999  # type: ignore[misc]
+        bot._backend.results.append({
+            "success": True, "finished": True, "actionType": "done",
+            "output": "yes", "inputTokens": 10, "outputTokens": 2,
+        })
+        bot.verify(object(), "anything")
+        assert before.ai_steps == 0  # old snapshot untouched
+        assert bot.usage.ai_steps == 1
+
+
 class TestQirabotInit:
     def test_task_id_is_locally_generated(self, make_bot):
         # No server round-trip anymore: the run id is minted locally.
@@ -461,6 +584,20 @@ class TestQirabotInit:
         assert kwargs["model"] == "gemini-vertex/gemini-3-flash-preview"
         assert kwargs["vertex_project"] == "proj"
         assert kwargs["vertex_location"] == "us-central1"
+
+    def test_media_resolution_param_passthrough(self, make_bot):
+        bot = make_bot(media_resolution="medium")
+        assert bot._backend.init_kwargs["media_resolution"] == "medium"
+
+    def test_media_resolution_from_env(self, monkeypatch, make_bot):
+        monkeypatch.setenv("QIRA_MEDIA_RESOLUTION", "low")
+        bot = make_bot()
+        assert bot._backend.init_kwargs["media_resolution"] == "low"
+
+    def test_media_resolution_param_overrides_env(self, monkeypatch, make_bot):
+        monkeypatch.setenv("QIRA_MEDIA_RESOLUTION", "low")
+        bot = make_bot(media_resolution="ultra_high")
+        assert bot._backend.init_kwargs["media_resolution"] == "ultra_high"
 
     def test_report_dir_root_from_env(self, monkeypatch):
         monkeypatch.setenv("QIRA_REPORT_DIR", "/tmp/shots")
@@ -536,8 +673,10 @@ class TestQirabotInit:
 
 class TestCloudRemovedMigrationGuard:
     """A stale v2 setup (QIRA_API_KEY set, no v3 model configured) must fail
-    fast at construction with a migration pointer — before any backend is
-    built — instead of the old variable being silently ignored."""
+    at construction with a migration pointer instead of the old variable
+    being silently ignored. The guard fires *after* the provider handshake so
+    the message reflects the real credential state: working ADC points at the
+    leftover key, broken ADC keeps the full gcloud setup guidance."""
 
     def test_stale_api_key_without_model_raises(self, monkeypatch):
         monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
@@ -545,17 +684,75 @@ class TestCloudRemovedMigrationGuard:
             Qirabot(report=False)
         assert exc_info.value.code == "auth.cloud_removed"
 
-    def test_fails_before_backend_construction(self, monkeypatch):
+    def test_working_adc_message_points_at_the_key_not_adc(self, monkeypatch):
+        # Backend construction succeeds (conftest's FakeBackend): the user's
+        # GCP setup is fine, so the message must say so and direct them at
+        # the leftover key — not tell them to configure ADC again.
+        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
+        with pytest.raises(AuthenticationError) as exc_info:
+            Qirabot(report=False)
+        msg = str(exc_info.value)
+        assert "Google Cloud setup works" in msg
+        assert "remove QIRA_API_KEY" in msg
+        assert "gcloud auth application-default login" not in msg
+
+    def test_working_adc_backend_is_closed_before_raising(self, monkeypatch):
         import qirabot.client as client_mod
 
         monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
         built = []
         monkeypatch.setattr(
-            client_mod, "LocalBackend", lambda **kw: built.append(kw)
+            client_mod,
+            "LocalBackend",
+            lambda **kw: built.append(FakeBackend(**kw)) or built[-1],
         )
         with pytest.raises(AuthenticationError):
             Qirabot(report=False)
-        assert built == []
+        assert built and built[0].closed
+
+    def test_broken_adc_message_keeps_setup_guidance(self, monkeypatch):
+        import qirabot.client as client_mod
+        from qirabot.engine.providers.base import ProviderError
+
+        def _no_adc(**kw):
+            raise ProviderError("vertex", "could not resolve ADC credentials")
+
+        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
+        monkeypatch.setattr(client_mod, "LocalBackend", _no_adc)
+        with pytest.raises(AuthenticationError) as exc_info:
+            Qirabot(report=False)
+        assert exc_info.value.code == "auth.cloud_removed"
+        msg = str(exc_info.value)
+        assert "gcloud auth application-default login" in msg
+        assert "could not resolve ADC credentials" in msg
+
+    def test_broken_adc_without_stale_key_stays_credentials_error(self, monkeypatch):
+        import qirabot.client as client_mod
+        from qirabot.engine.providers.base import ProviderError
+
+        def _no_adc(**kw):
+            raise ProviderError("vertex", "could not resolve ADC credentials")
+
+        monkeypatch.setattr(client_mod, "LocalBackend", _no_adc)
+        with pytest.raises(AuthenticationError) as exc_info:
+            Qirabot(report=False)
+        assert exc_info.value.code == "auth.credentials"
+
+    def test_message_names_the_dotenv_file_when_key_came_from_one(
+        self, monkeypatch, tmp_path
+    ):
+        import qirabot._dotenv as dotenv_mod
+        from qirabot._dotenv import load_dotenv
+
+        envfile = tmp_path / ".env"
+        envfile.write_text("QIRA_API_KEY=stale_v2_key\n", encoding="utf-8")
+        monkeypatch.setattr(dotenv_mod, "_injected", {})
+        monkeypatch.delenv("QIRA_API_KEY", raising=False)
+        load_dotenv(str(envfile))
+        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")  # register cleanup
+        with pytest.raises(AuthenticationError) as exc_info:
+            Qirabot(report=False)
+        assert f"loaded from {envfile}" in str(exc_info.value)
 
     def test_explicit_model_arg_disarms_guard(self, monkeypatch, make_bot):
         monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import os
 import sys
 from collections.abc import Callable
@@ -22,6 +24,7 @@ def _make_bot(
     ctx: click.Context,
     model: str = "",
     thinking_level: str = "",
+    media_resolution: str = "",
     language: str = "",
     report: bool = True,
     report_dir: str = "",
@@ -32,6 +35,7 @@ def _make_bot(
     record_window: bool = False,
     task_name: str = "",
     overlay: bool = False,
+    output_format: str = "text",
 ) -> Any:
     from qirabot import Qirabot
 
@@ -41,6 +45,7 @@ def _make_bot(
             vertex_project=ctx.obj.get("vertex_project", ""),
             vertex_location=ctx.obj.get("vertex_location", ""),
             thinking_level=thinking_level,
+            media_resolution=media_resolution,
             language=language,
             task_name=task_name,
             report=report,
@@ -55,9 +60,98 @@ def _make_bot(
     except Exception as e:
         # Engine construction already produces actionable messages (missing
         # ADC credentials, unknown provider, missing project), so str(e)
-        # prints cleanly as-is.
-        click.echo(f"Error: {e}", err=True)
+        # prints cleanly as-is. No bot exists yet, so the machine-format
+        # result carries null task_id/usage/report.
+        if output_format in _MACHINE_FORMATS:
+            _emit_json(_json_result(None, success=False, status="error", output=str(e)))
+        else:
+            click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+def _print_usage(console: Any, bot: Any) -> None:
+    """One dim summary line after the run outcome: steps · tokens · duration.
+
+    Printed on every terminal path — success, failure and cancel alike (an
+    aborted run's tokens are still spent). Mirrors the report header's
+    format and token semantics (total = input + cache read/write + output;
+    thinking is already inside output). Silent when nothing ran, and never
+    lets a formatting problem mask the run outcome that was already printed.
+    """
+    from qirabot.report import _fmt_ms, _fmt_tokens
+
+    try:
+        u = bot.usage
+        if not u.ai_steps and not u.total_tokens:
+            return
+        bits = [f"{u.ai_steps} AI step{'s' if u.ai_steps != 1 else ''}"]
+        if u.total_tokens:
+            # Mirrors the report header: cache read/write shown as one
+            # number when present, think only when a provider reports it
+            # separately (Anthropic folds it into output, leaving 0).
+            cache = u.cache_read_tokens + u.cache_write_tokens
+            detail = [f"in {_fmt_tokens(u.input_tokens)}"]
+            if cache:
+                detail.append(f"cache {_fmt_tokens(cache)}")
+            detail.append(f"out {_fmt_tokens(u.output_tokens)}")
+            if u.thinking_tokens:
+                detail.append(f"think {_fmt_tokens(u.thinking_tokens)}")
+            bits.append(f"{_fmt_tokens(u.total_tokens)} tokens ({' / '.join(detail)})")
+        if u.step_duration_ms:
+            bits.append(_fmt_ms(u.step_duration_ms))
+        console.print(f"[dim]{' · '.join(bits)}[/dim]")
+    except Exception:
+        pass
+
+
+# Formats whose stdout carries machine-readable JSON only: "json" prints one
+# result object at the end of the run; "stream-json" additionally prints a
+# start line and one NDJSON line per step. All rich/human output is suppressed
+# in these formats so stdout stays parseable by scripts and CI.
+_MACHINE_FORMATS = ("json", "stream-json")
+
+
+def _emit_json(obj: dict[str, Any]) -> None:
+    # Flushed per line so stream-json consumers see steps as they happen,
+    # not when the pipe buffer fills.
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def _json_result(bot: Any, *, success: bool, status: str, output: str) -> dict[str, Any]:
+    """The terminal JSON object of a run — one schema on every exit path
+    (done / failed / error / cancelled), so scripts parse a single shape.
+
+    ``status`` extends the SDK's RunStatus with ``"cancelled"`` (Ctrl+C or the
+    ESC kill switch). Field names mirror the SDK's public attributes verbatim
+    (``task_id``, SessionUsage's fields) so the two surfaces never drift.
+    ``report`` is the path close() writes on exit — the emit happens *before*
+    that write, so consumers should read the file after the process exits.
+    ``bot`` is None only when engine construction itself failed.
+    """
+    usage = None
+    report = None
+    task_id = None
+    if bot is not None:
+        task_id = bot.task_id
+        u = bot.usage
+        usage = {**dataclasses.asdict(u), "total_tokens": u.total_tokens}
+        try:
+            # Mirror _write_report's own gate (report enabled + at least one
+            # recorded step) — otherwise close() writes nothing and the path
+            # would dangle. Never let this probe mask the run outcome.
+            if bot._report and bot._log:
+                report = str(Path(bot.report_dir) / "report.html")
+        except Exception:
+            report = None
+    return {
+        "type": "result",
+        "success": success,
+        "status": status,
+        "output": output,
+        "task_id": task_id,
+        "usage": usage,
+        "report": report,
+    }
 
 
 def _run_local(
@@ -66,17 +160,22 @@ def _run_local(
     instruction: str,
     max_steps: int,
     knowledge: str = "",
+    output_format: str = "text",
 ) -> None:
     from rich.console import Console
     from rich.markup import escape
 
+    machine = output_format in _MACHINE_FORMATS
+    stream = output_format == "stream-json"
     console = Console()
     indent = " " * (len(f"[{max_steps}/{max_steps}]") + 1)
 
-    if bot.task_id:
+    if bot.task_id and not machine:
         console.print(f"[dim]Run:[/dim] {bot.task_id}")
+    if stream:
+        _emit_json({"type": "start", "task_id": bot.task_id, "max_steps": max_steps})
 
-    def on_step(step: Any) -> None:
+    def on_step_text(step: Any) -> None:
         if step.action_type == "done":
             return
         params = step.params or {}
@@ -95,54 +194,95 @@ def _run_local(
         if step.decision:
             console.print(f"{indent}[dim]└ {escape(step.decision)}[/dim]")
 
+    def on_step_stream(step: Any) -> None:
+        # asdict keeps the NDJSON field names identical to StepResult's — and
+        # unlike the text callback the "done" step is included: its decision
+        # and output are data a consumer may want, not screen noise.
+        _emit_json({"type": "step", **dataclasses.asdict(step)})
+
+    on_step = on_step_stream if stream else None if machine else on_step_text
+
+    def finish(*, success: bool, status: str, output: str, code: int, text: str) -> NoReturn | None:
+        """One terminal line per run: the JSON result object in the machine
+        formats, the colored outcome line otherwise. code=0 returns so the
+        caller's finally (close → report write) still runs before exit 0."""
+        if machine:
+            _emit_json(_json_result(bot, success=success, status=status, output=output))
+        else:
+            console.print(text)
+        if code:
+            sys.exit(code)
+        return None
+
+    # The finally prints the usage summary after the outcome line on every
+    # exit path — Done, Failed, Error and both Cancelled forms (sys.exit's
+    # SystemExit passes through it). A cancelled run's tokens are still spent.
+    # (Machine formats skip it: usage is inside the JSON result object.)
     try:
-        result = bot.ai(
-            target, instruction, max_steps=max_steps, on_step=on_step,
-            knowledge=knowledge or None,
-        )
-    except KeyboardInterrupt:
-        # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT caught
-        # by `except Exception` below. Without this branch the interrupt would
-        # skip reporting and the caller's finally:bot.close() would complete the
-        # still-running task as succeeded. Report it as a deliberate cancel so
-        # the run lands in the 'cancelled' bucket, not 'failed' or 'succeeded'.
-        # (130 = 128 + SIGINT, the conventional Ctrl+C exit code.)
-        bot.cancel("aborted by user")
-        console.print("\n[bold yellow]Cancelled[/bold yellow]")
-        sys.exit(130)
-    except QirabotError as e:
-        if getattr(e, "code", "") == "user_abort":
-            # ESC-hold kill switch: the same deliberate cancel as Ctrl+C
-            # above, so it gets the same face — yellow, exit 130, never a
-            # red Error. ai() already routed it through cancel(), so the
-            # terminal state is recorded; no fail() here.
-            console.print("\n[bold yellow]Cancelled[/bold yellow] (ESC held)")
-            sys.exit(130)
-        bot.fail(str(e))
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        sys.exit(1)
-    except Exception as e:
-        # Report the client-side abort so the task is recorded as failed; without
-        # this the bot.close() in the caller's finally would complete the
-        # still-running task as succeeded. (Transport already collapses HTML
-        # error bodies to one-line summaries, so str(e) prints cleanly.)
-        bot.fail(str(e))
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        sys.exit(1)
-    if result.success:
-        console.print(f"[bold green]Done:[/bold green] {result.output}")
-    else:
-        # The server already set a terminal status for known failures (e.g. max
-        # steps); fail() is idempotent there and ensures other failure paths are
-        # not left to close()'s success default.
-        bot.fail(result.output)
-        console.print(f"[bold red]Failed:[/bold red] {result.output}")
-        # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
-        # bypasses the caller's `except Exception` and still runs its finally.
-        sys.exit(1)
+        try:
+            result = bot.ai(
+                target, instruction, max_steps=max_steps, on_step=on_step,
+                knowledge=knowledge or None,
+            )
+        except KeyboardInterrupt:
+            # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT caught
+            # by `except Exception` below. Without this branch the interrupt would
+            # skip reporting and the caller's finally:bot.close() would complete the
+            # still-running task as succeeded. Report it as a deliberate cancel so
+            # the run lands in the 'cancelled' bucket, not 'failed' or 'succeeded'.
+            # (130 = 128 + SIGINT, the conventional Ctrl+C exit code.)
+            bot.cancel("aborted by user")
+            finish(
+                success=False, status="cancelled", output="aborted by user",
+                code=130, text="\n[bold yellow]Cancelled[/bold yellow]",
+            )
+        except QirabotError as e:
+            if getattr(e, "code", "") == "user_abort":
+                # ESC-hold kill switch: the same deliberate cancel as Ctrl+C
+                # above, so it gets the same face — yellow, exit 130, never a
+                # red Error. ai() already routed it through cancel(), so the
+                # terminal state is recorded; no fail() here.
+                finish(
+                    success=False, status="cancelled", output="aborted by user (ESC held)",
+                    code=130, text="\n[bold yellow]Cancelled[/bold yellow] (ESC held)",
+                )
+            bot.fail(str(e))
+            finish(
+                success=False, status="error", output=str(e),
+                code=1, text=f"[bold red]Error:[/bold red] {escape(str(e))}",
+            )
+        except Exception as e:
+            # Report the client-side abort so the task is recorded as failed; without
+            # this the bot.close() in the caller's finally would complete the
+            # still-running task as succeeded. (Transport already collapses HTML
+            # error bodies to one-line summaries, so str(e) prints cleanly.)
+            bot.fail(str(e))
+            finish(
+                success=False, status="error", output=str(e),
+                code=1, text=f"[bold red]Error:[/bold red] {escape(str(e))}",
+            )
+        if result.success:
+            finish(
+                success=True, status=result.status, output=result.output,
+                code=0, text=f"[bold green]Done:[/bold green] {result.output}",
+            )
+        else:
+            # The server already set a terminal status for known failures (e.g. max
+            # steps); fail() is idempotent there and ensures other failure paths are
+            # not left to close()'s success default.
+            bot.fail(result.output)
+            # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
+            # bypasses the caller's `except Exception` and still runs its finally.
+            finish(
+                success=False, status=result.status, output=result.output,
+                code=1, text=f"[bold red]Failed:[/bold red] {result.output}",
+            )
+    finally:
+        if not machine:
+            _print_usage(console, bot)
 
 
-def _fail_setup(bot: Any, e: Exception) -> NoReturn:
+def _fail_setup(bot: Any, e: Exception, output_format: str = "text") -> NoReturn:
     """Report a setup-phase failure (before _run_local takes over) and exit.
 
     Setup — bot.open() for browser, Appium Remote() / device resolution for
@@ -150,10 +290,14 @@ def _fail_setup(bot: Any, e: Exception) -> NoReturn:
     server task is created but before _run_local starts reporting outcomes. An
     error there leaves the task un-terminalized, so the command's
     finally:bot.close() would otherwise complete it as *succeeded*. Record it as
-    failed instead, print the error, and exit 1.
+    failed instead, print the error, and exit 1. Machine formats get the same
+    JSON result object as a run failure, so scripts parse one schema.
     """
     bot.fail(str(e))
-    click.echo(f"Error: {e}", err=True)
+    if output_format in _MACHINE_FORMATS:
+        _emit_json(_json_result(bot, success=False, status="error", output=str(e)))
+    else:
+        click.echo(f"Error: {e}", err=True)
     sys.exit(1)
 
 
@@ -228,8 +372,15 @@ def _resolve_knowledge_cb(
 
 def _task_options(f: _FC) -> _FC:
     """Task options shared by browser/android/ios/desktop. Applied in reverse so
-    --help lists them in reading order (name, model, language, max-steps,
-    knowledge)."""
+    --help lists them in reading order (name, model, thinking-level,
+    media-resolution, language, max-steps, knowledge, output-format)."""
+    f = _option(
+        "--output-format", group=_TASK_GROUP, default="text",
+        type=click.Choice(["text", "json", "stream-json"]),
+        help="Output format: text (human-readable), json (stdout carries one final "
+        "JSON result object), stream-json (NDJSON: a start line, one line per step, "
+        "then the result object)",
+    )(f)
     # File paths only, never inline text: argv has no str/Path type split to
     # declare intent with, and sniffing is off the table (see _knowledge.py).
     # Inline snippets work through the shell: -k <(printf '...').
@@ -241,11 +392,12 @@ def _task_options(f: _FC) -> _FC:
     )(f)
     f = _option("--max-steps", group=_TASK_GROUP, default=20, help="Max steps for AI")(f)
     f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Language (e.g. zh, en)")(f)
+    f = _option("--media-resolution", group=_TASK_GROUP, default="", help="Screenshot resolution sent to the model: low, medium, high or ultra_high (env QIRA_MEDIA_RESOLUTION; gemini-vertex only)")(f)
     f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high")(f)
     f = _option(
         "--model", "-m", group=_TASK_GROUP, default="",
         help='Model as "{provider}/{model}" with provider one of claude-vertex / '
-        "gemini-vertex / vertex-openai (default: QIRA_MODEL or the built-in default)",
+        "gemini-vertex (default: QIRA_MODEL or the built-in default)",
     )(f)
     f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Run name shown in the report (default: derived from the instruction)")(f)
     return f
@@ -320,9 +472,8 @@ def models(ctx: click.Context) -> None:
     table.add_column("Default model")
     table.add_column("Example")
     for provider in SUPPORTED_PROVIDERS:
-        default = DEFAULT_MODELS.get(provider, "")
-        example = f"{provider}/{default}" if default else f"{provider}/<publisher>/<model>"
-        table.add_row(provider, default or "(explicit model required)", example)
+        default = DEFAULT_MODELS[provider]
+        table.add_row(provider, default, f"{provider}/{default}")
     console.print(table)
     console.print(f"Session default: [cyan]{resolve_default_model()}[/cyan]  (override with --model or QIRA_MODEL)")
 
@@ -547,6 +698,28 @@ def doctor(ctx: click.Context) -> None:
             f"model: {escape(resolve_default_model())})"
         )
 
+    # A leftover v2 cloud key is the one setup state where doctor could say
+    # "Ready" while every default run refuses to start: the SDK's migration
+    # guard trips on QIRA_API_KEY unless a model is chosen explicitly.
+    # Surface it here, where the user is already looking for setup problems.
+    if os.environ.get("QIRA_API_KEY") and not os.environ.get("QIRA_MODEL", "").strip():
+        from qirabot._dotenv import injected_from
+
+        src = injected_from("QIRA_API_KEY")
+        where = f"loaded from {escape(src)}" if src else "exported in the environment"
+        console.print(
+            f"{warn} leftover v2 QIRA_API_KEY ({where}) — the cloud backend is "
+            "gone, and runs will refuse to start until you remove it (and "
+            "QIRA_BASE_URL) or opt into v3 with --model / QIRA_MODEL"
+        )
+    from qirabot._userconfig import config_path, load_api_key
+
+    if load_api_key():
+        console.print(
+            f"{warn} v2 credentials in {escape(str(config_path()))} — unused "
+            "in v3; delete the file to clean up"
+        )
+
     # (label, ready, fix-hint). A missing Chromium download or missing system
     # libraries both count as not-ready: bot.open() would fail at launch even
     # though the import succeeds.
@@ -648,9 +821,11 @@ def browser(
     name: str,
     model: str,
     thinking_level: str,
+    media_resolution: str,
     language: str,
     max_steps: int,
     knowledge: str,
+    output_format: str,
     url: str,
     headless: bool,
     viewport: str,
@@ -672,10 +847,11 @@ def browser(
     vp = _parse_viewport(viewport)
 
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
     try:
         page = bot.open(
@@ -689,14 +865,14 @@ def browser(
         )
         _run_local(
             bot, page, instruction, max_steps,
-            knowledge=knowledge,
+            knowledge=knowledge, output_format=output_format,
         )
     except Exception as e:
         # Only setup (bot.open) reaches here: _run_local reports its own errors
         # and exits via SystemExit, which this `except Exception` deliberately
         # skips. Record the setup failure so close() below doesn't complete the
         # task as succeeded.
-        _fail_setup(bot, e)
+        _fail_setup(bot, e, output_format)
     finally:
         bot.close()
 
@@ -714,6 +890,7 @@ def _run_appium(
     name: str,
     model: str,
     thinking_level: str,
+    media_resolution: str,
     language: str,
     max_steps: int,
     appium_url: str,
@@ -724,6 +901,7 @@ def _run_appium(
     record: bool = False,
     knowledge: str = "",
     overlay: bool = False,
+    output_format: str = "text",
 ) -> None:
     """Shared android/ios body: build the bot, open an Appium session, run.
 
@@ -737,10 +915,12 @@ def _run_appium(
     # leak the remote session (driver.quit() lives in the finally below, which
     # never runs if _make_bot exits before the try is entered).
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, record_device=record,
         task_name=name or _default_task_name(instruction), overlay=overlay,
+        output_format=output_format,
     )
     try:
         try:
@@ -750,11 +930,11 @@ def _run_appium(
             # the failure so the outer finally:bot.close() doesn't complete the
             # task as succeeded. Scoped to Remote() only — a driver.quit() error
             # after a successful run must not be misreported as a task failure.
-            _fail_setup(bot, e)
+            _fail_setup(bot, e, output_format)
         try:
             _run_local(
                 bot, driver, instruction, max_steps,
-                knowledge=knowledge,
+                knowledge=knowledge, output_format=output_format,
             )
         finally:
             # The Appium recording lives in the session: flush it to disk
@@ -772,6 +952,7 @@ def _run_direct(
     name: str,
     model: str,
     thinking_level: str,
+    media_resolution: str,
     language: str,
     max_steps: int,
     connect: Callable[[], Any],
@@ -784,6 +965,7 @@ def _run_direct(
     record_window: bool = False,
     knowledge: str = "",
     overlay: bool = False,
+    output_format: str = "text",
 ) -> None:
     """Shared direct-engine body: build the bot, connect the device, run.
 
@@ -797,11 +979,13 @@ def _run_direct(
     window instead of grabbing the full screen.
     """
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, record_mjpeg_url=record_mjpeg_url,
         record_device=record_device, record_window=record_window,
         task_name=name or _default_task_name(instruction), overlay=overlay,
+        output_format=output_format,
     )
     try:
         try:
@@ -810,10 +994,10 @@ def _run_direct(
             # Same contract as _run_appium: a setup failure before _run_local
             # takes over reporting must be recorded, or the finally:bot.close()
             # would complete the task as succeeded.
-            _fail_setup(bot, e)
+            _fail_setup(bot, e, output_format)
         _run_local(
             bot, target, instruction, max_steps,
-            knowledge=knowledge,
+            knowledge=knowledge, output_format=output_format,
         )
     finally:
         bot.close()
@@ -853,7 +1037,7 @@ def _adb_launch_app(dev: Any, package: str, activity: str) -> None:
 @_option("--record", group="Android options", is_flag=True, help="Record the device screen to report-dir/recording.mp4 (direct engine: adb screenrecord, ffmpeg merges runs over 3 min; Appium engine: Appium's recording API)")
 @_debug_options(record=False)
 @click.pass_context
-def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, language: str, max_steps: int, knowledge: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an Android device (direct over adb; --appium-url for Appium).
 
     \b
@@ -884,9 +1068,10 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             options.app_activity = app_activity
 
         _run_appium(
-            ctx, instruction, name, model, thinking_level, language, max_steps, appium_url, options,
+            ctx, instruction, name, model, thinking_level, media_resolution,
+            language, max_steps, appium_url, options,
             report, report_dir, annotate, record=record, knowledge=knowledge,
-            overlay=overlay,
+            overlay=overlay, output_format=output_format,
         )
         return
 
@@ -903,10 +1088,11 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         return dev
 
     _run_direct(
-        ctx, instruction, name, model, thinking_level, language, max_steps, connect,
+        ctx, instruction, name, model, thinking_level, media_resolution,
+        language, max_steps, connect,
         report, report_dir, annotate,
         record=record, record_device=record, knowledge=knowledge,
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
 
 
@@ -973,7 +1159,7 @@ def _check_mjpeg_ready(mjpeg_url: str) -> None:
 @_option("--mjpeg-url", group="iOS options", default="", help="WDA MJPEG stream URL for --record (default: --wda-url's host on port 9100; direct engine only)")
 @_debug_options(record=False)
 @click.pass_context
-def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, language: str, max_steps: int, knowledge: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an iOS device (direct via WDA; --appium-url/--device for Appium).
 
     \b
@@ -1007,9 +1193,10 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
             options.bundle_id = bundle_id
 
         _run_appium(
-            ctx, instruction, name, model, thinking_level, language, max_steps, appium_url, options,
+            ctx, instruction, name, model, thinking_level, media_resolution,
+            language, max_steps, appium_url, options,
             report, report_dir, annotate, record=record, knowledge=knowledge,
-            overlay=overlay,
+            overlay=overlay, output_format=output_format,
         )
         return
 
@@ -1031,10 +1218,11 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
         return client
 
     _run_direct(
-        ctx, instruction, name, model, thinking_level, language, max_steps, connect,
+        ctx, instruction, name, model, thinking_level, media_resolution,
+        language, max_steps, connect,
         report, report_dir, annotate,
         record=record, record_mjpeg_url=record_mjpeg_url, knowledge=knowledge,
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
 
 
@@ -1060,7 +1248,7 @@ def _launch_desktop_app(app: str, app_wait: float) -> None:
 @_option("--app-wait", group="Desktop options", default=2.0, type=float, help="Seconds to wait after --app launch for the window to appear")
 @_debug_options()
 @click.pass_context
-def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, language: str, max_steps: int, knowledge: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
+def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
     """Run an AI task on the desktop (pyautogui; --window-title/--hwnd for one Windows window).
 
     \b
@@ -1110,9 +1298,10 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         # actually starts (--record here, or QIRA_RECORD=1 from the env), and
         # then makes it follow the bound window instead of the full screen.
         _run_direct(
-            ctx, instruction, name, model, thinking_level, language, max_steps, connect,
+            ctx, instruction, name, model, thinking_level, media_resolution,
+            language, max_steps, connect,
             report, report_dir, annotate, record=record, record_window=True,
-            knowledge=knowledge, overlay=overlay,
+            knowledge=knowledge, overlay=overlay, output_format=output_format,
         )
         return
 
@@ -1122,17 +1311,18 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
     # validates the credential setup, and a bad one must not launch the app
     # first and only then error out.
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
     if app:
         _launch_desktop_app(app, app_wait)
     try:
         _run_local(
             bot, pyautogui, instruction, max_steps,
-            knowledge=knowledge,
+            knowledge=knowledge, output_format=output_format,
         )
     finally:
         bot.close()

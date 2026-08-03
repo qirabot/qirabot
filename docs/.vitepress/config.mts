@@ -156,7 +156,7 @@ export default defineConfig({
         ],
         sidebar: enSidebar,
         editLink: {
-          pattern: 'https://github.com/qirabot/qirabot-python/edit/main/docs/:path',
+          pattern: 'https://github.com/qirabot/qirabot/edit/main/docs/:path',
           text: 'Edit this page on GitHub',
         },
         footer: {
@@ -179,7 +179,7 @@ export default defineConfig({
         ],
         sidebar: zhSidebar,
         editLink: {
-          pattern: 'https://github.com/qirabot/qirabot-python/edit/main/docs/:path',
+          pattern: 'https://github.com/qirabot/qirabot/edit/main/docs/:path',
           text: '在 GitHub 上编辑此页',
         },
         footer: {
@@ -197,7 +197,7 @@ export default defineConfig({
     },
   },
   themeConfig: {
-    socialLinks: [{ icon: 'github', link: 'https://github.com/qirabot/qirabot-python' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/qirabot/qirabot' }],
     search: {
       provider: 'local',
       options: {

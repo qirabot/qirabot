@@ -89,7 +89,7 @@ items = bot.extract(window, "列出背包中可见的物品名称")
 ```
 
 完整演练见
-[examples/game/](https://github.com/qirabot/qirabot-python/tree/main/examples/game),
+[examples/game/](https://github.com/qirabot/qirabot/tree/main/examples/game),
 其中包含自定义工具示例:AI 在任务中途调用你的 GM 后端(体力不足弹窗时
 加体力,然后继续日常任务循环)——如何注册这类工具见
 [AI 任务与自定义工具](/zh/advanced/ai-tasks)。

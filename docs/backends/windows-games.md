@@ -98,7 +98,7 @@ items = bot.extract(window, "list the item names visible in the inventory")
 ```
 
 See the full walkthrough in
-[examples/game/](https://github.com/qirabot/qirabot-python/tree/main/examples/game),
+[examples/game/](https://github.com/qirabot/qirabot/tree/main/examples/game),
 including a custom-tool example where the AI calls your GM backend mid-task
 (add energy on an out-of-energy popup, then continue the daily-quest loop) —
 how to register such tools is in

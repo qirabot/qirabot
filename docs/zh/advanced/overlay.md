@@ -91,7 +91,7 @@ with Overlay() as ov:
 已经有自己的 `on_step` 回调?`on_step=ov.wrap(my_cb)` 两个都会调。
 
 可运行示例:
-[overlay_progress.py](https://github.com/qirabot/qirabot-python/blob/main/examples/desktop/overlay_progress.py)。
+[overlay_progress.py](https://github.com/qirabot/qirabot/blob/main/examples/desktop/overlay_progress.py)。
 
 ## 平台说明与已知限制
 

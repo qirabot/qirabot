@@ -214,7 +214,7 @@ The [skills CLI](https://github.com/vercel-labs/skills) also works,
 installing from the repository's `main` branch:
 
 ```bash
-npx skills add qirabot/qirabot-python
+npx skills add qirabot/qirabot
 ```
 
 The skill's reference and templates are drift-tested against the live SDK in

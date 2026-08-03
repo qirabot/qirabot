@@ -2,7 +2,7 @@
 
 Drive any GUI with natural language — click, type, extract, and verify on web
 browsers, Android, iOS, desktop apps, and games — using the
-[Qirabot Python SDK](https://github.com/qirabot/qirabot-python) or the
+[Qirabot Python SDK](https://github.com/qirabot/qirabot) or the
 `qirabot` CLI it ships with.
 
 This directory is a self-contained Claude Code plugin. It bundles one Agent
@@ -27,7 +27,7 @@ Not on Claude Code? The same skill ships inside the `qirabot` Python package —
 `--dir <path>`) copies it into any Agent-Skills-compatible tool's skills
 directory, version-matched to the installed SDK. The
 [skills CLI](https://github.com/vercel-labs/skills) works too:
-`npx skills add qirabot/qirabot-python` (point it at the main repo — this
+`npx skills add qirabot/qirabot` (point it at the main repo — this
 marketplace repo holds only the manifest, no skill files). The mirror lives at
 `src/qirabot/skill-data/`, kept in sync by `scripts/sync_skill.py` and a CI
 drift guard — edit the skill here under `skills/qirabot/`, then run the sync.

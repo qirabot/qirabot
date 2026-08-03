@@ -68,7 +68,7 @@ register_adapter(MyAdapter)          # checked before the built-ins
 bot = Qirabot().bind(native_object)
 ```
 
-[examples/airtest/adapter.py](https://github.com/qirabot/qirabot-python/blob/main/examples/airtest/adapter.py)
+[examples/airtest/adapter.py](https://github.com/qirabot/qirabot/blob/main/examples/airtest/adapter.py)
 is a complete reference implementation.
 
 ## Migrating from Airtest (qirabot 1.x)
@@ -88,6 +88,6 @@ Keeping your airtest scripts? Copy the reference adapter above into your
 project (airtest stays *your* dependency, not qirabot's), `register_adapter`
 it once, and your 1.x `bind(connect_device(...))` calls run unchanged. The
 1.x series lives on the
-[`1.x` branch](https://github.com/qirabot/qirabot-python/tree/1.x) in
+[`1.x` branch](https://github.com/qirabot/qirabot/tree/1.x) in
 maintenance mode (bug and security fixes only); `pip install "qirabot<2"`
 always resolves to the newest 1.9.x patch.

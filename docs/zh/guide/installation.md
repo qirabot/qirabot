@@ -78,7 +78,7 @@ qirabot doctor
 ## 常见问题
 
 - 一行安装脚本也可直接从 GitHub 仓库获取:
-  `curl -LsSf https://raw.githubusercontent.com/qirabot/qirabot-python/main/scripts/install.sh | sh`
+  `curl -LsSf https://raw.githubusercontent.com/qirabot/qirabot/main/scripts/install.sh | sh`
 - `error: externally-managed-environment` —— 你在往系统 Python 安装
   (PEP 668);改用上面的 uv 方式,或创建/激活 virtualenv。
 - 全新 **Linux** 机器:先执行一次 `sudo playwright install-deps chromium`

@@ -66,7 +66,7 @@ installs the same skill from the repository's `main` branch (latest
 instructions, not pinned to the installed SDK version):
 
 ```bash
-npx skills add qirabot/qirabot-python
+npx skills add qirabot/qirabot
 ```
 
 Independently of the skill, two properties make Qirabot straightforward for

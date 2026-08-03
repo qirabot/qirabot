@@ -297,7 +297,7 @@ bot = Qirabot().bind(native_object)  # custom adapters are checked before built-
 
 A complete reference implementation (airtest — all three 1.x target shapes,
 cv2 screenshot encoding, Android keyevent mapping) lives at
-`examples/airtest/adapter.py` in the qirabot-python repo: copy it into your
+`examples/airtest/adapter.py` in the qirabot repo: copy it into your
 project; airtest stays your project's dependency, not qirabot's.
 
 ## Lifecycle

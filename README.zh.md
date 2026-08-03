@@ -183,7 +183,7 @@ Claude Code 用户推荐通过 plugin marketplace 安装（自动更新）：
 也可以通过 [skills CLI](https://github.com/vercel-labs/skills)，从仓库 `main` 分支安装：
 
 ```bash
-npx skills add qirabot/qirabot-python
+npx skills add qirabot/qirabot
 ```
 
 skill 的 API 参考与模板在 CI 中与 SDK 实时接口做防漂移校验（`tests/test_skill.py`）。详见 [plugins/qirabot/README.md](plugins/qirabot/README.md)。

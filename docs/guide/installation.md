@@ -82,7 +82,7 @@ exact command to fix anything missing. No credentials yet? The
 ## Troubleshooting
 
 - The one-line installer is also served directly from the GitHub repo:
-  `curl -LsSf https://raw.githubusercontent.com/qirabot/qirabot-python/main/scripts/install.sh | sh`
+  `curl -LsSf https://raw.githubusercontent.com/qirabot/qirabot/main/scripts/install.sh | sh`
 - `error: externally-managed-environment` — you're installing into the system
   Python (PEP 668); use the uv path above, or create/activate a virtualenv.
 - Fresh **Linux** box: run `sudo playwright install-deps chromium` once — the

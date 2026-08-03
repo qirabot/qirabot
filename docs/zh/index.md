@@ -16,7 +16,7 @@ hero:
       link: /zh/guide/installation
     - theme: alt
       text: GitHub
-      link: https://github.com/qirabot/qirabot-python
+      link: https://github.com/qirabot/qirabot
 
 features:
   - title: 浏览器自动化

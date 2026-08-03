@@ -87,9 +87,9 @@ def wait_for_human(reason: str) -> str:
 ```
 
 可运行示例:
-[custom_tool_gm.py](https://github.com/qirabot/qirabot-python/blob/main/examples/game/custom_tool_gm.py)
+[custom_tool_gm.py](https://github.com/qirabot/qirabot/blob/main/examples/game/custom_tool_gm.py)
 ·
-[06_human_in_the_loop.py](https://github.com/qirabot/qirabot-python/blob/main/examples/automation/06_human_in_the_loop.py)
+[06_human_in_the_loop.py](https://github.com/qirabot/qirabot/blob/main/examples/automation/06_human_in_the_loop.py)
 
 ## 模型与语言
 

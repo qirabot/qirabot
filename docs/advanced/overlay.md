@@ -106,7 +106,7 @@ Already have an `on_step` callback of your own? `on_step=ov.wrap(my_cb)`
 chains both.
 
 Runnable example:
-[overlay_progress.py](https://github.com/qirabot/qirabot-python/blob/main/examples/desktop/overlay_progress.py).
+[overlay_progress.py](https://github.com/qirabot/qirabot/blob/main/examples/desktop/overlay_progress.py).
 
 ## Platform notes & known limits
 

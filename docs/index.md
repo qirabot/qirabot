@@ -16,7 +16,7 @@ hero:
       link: /guide/installation
     - theme: alt
       text: GitHub
-      link: https://github.com/qirabot/qirabot-python
+      link: https://github.com/qirabot/qirabot
 
 features:
   - title: Browser automation

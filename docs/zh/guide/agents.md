@@ -56,7 +56,7 @@ qirabot skill install --dir <path>      # 其他任何兼容 Agent Skills 的工
 `main` 分支安装同一份 skill(指令最新,不与本机 SDK 版本绑定):
 
 ```bash
-npx skills add qirabot/qirabot-python
+npx skills add qirabot/qirabot
 ```
 
 即使不安装 skill,两个特性也使任意 agent 能够直接操作 Qirabot:

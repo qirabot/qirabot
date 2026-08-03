@@ -43,8 +43,8 @@ qirabot = "qirabot.cli.main:main"
 [project.urls]
 Homepage = "https://qirabot.com"
 Documentation = "https://qirabot.com/docs/"
-Repository = "https://github.com/qirabot/qirabot-python"
-Issues = "https://github.com/qirabot/qirabot-python/issues"
+Repository = "https://github.com/qirabot/qirabot"
+Issues = "https://github.com/qirabot/qirabot/issues"
 
 [project.optional-dependencies]
 browser = ["playwright>=1.40,<2.0"]

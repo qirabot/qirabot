@@ -64,7 +64,7 @@ register_adapter(MyAdapter)          # 优先于内置 adapter 检查
 bot = Qirabot().bind(native_object)
 ```
 
-[examples/airtest/adapter.py](https://github.com/qirabot/qirabot-python/blob/main/examples/airtest/adapter.py)
+[examples/airtest/adapter.py](https://github.com/qirabot/qirabot/blob/main/examples/airtest/adapter.py)
 是一份完整的参考实现。
 
 ## 从 Airtest 迁移(qirabot 1.x)
@@ -82,6 +82,6 @@ connect_device("Windows:///132456")            Window(hwnd=132456)
 想保留 airtest 脚本?把上面的参考 adapter 复制进你的项目(airtest 是
 *你的*依赖,不再是 qirabot 的),`register_adapter` 注册一次,1.x 的
 `bind(connect_device(...))` 调用原样运行。1.x 系列在
-[`1.x` 分支](https://github.com/qirabot/qirabot-python/tree/1.x)维护
+[`1.x` 分支](https://github.com/qirabot/qirabot/tree/1.x)维护
 (只修 bug 和安全问题);`pip install "qirabot<2"` 始终解析到最新的
 1.9.x 补丁版。

@@ -7,7 +7,7 @@ Install (your project):
     python -m pip install qirabot airtest
 
 Run:
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/airtest/quickstart.py
 """
 

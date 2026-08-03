@@ -2,10 +2,11 @@
 plus the wire/echo behavior in the ai() loop.
 
 Everything is client-side and offline: the resolver turns str/Path/list input
-into the plain text sent to the server, and every failure mode must raise
+into the plain text sent to the engine, and every failure mode must raise
 ``ValueError`` before any request goes out. The loop tests reuse the scripted
 harness from test_custom_tools — knowledge shares the same first-request
-registration and old-server-detection contract as tools.
+registration and missing-echo-detection contract as tools. Engine-side echo
+behavior lives in tests/engine/test_local_backend.py, not here.
 """
 
 from __future__ import annotations
@@ -107,18 +108,20 @@ class TestAiLoopKnowledge:
         assert "knowledge" not in h.bodies[0]["action"]["params"]
 
     def test_old_server_warning(self, caplog):
-        # Success response without knowledge_registered = old server.
+        # A successful step-1 response without the knowledge_registered echo
+        # means the backend ignored the knowledge param.
         h = _ToolLoopHarness([DONE])
         with caplog.at_level(logging.WARNING, logger="qirabot"):
             h.bot.ai(object(), "do it", max_steps=3, knowledge="规则文本")
         h.bot.close()
-        assert any("does not support knowledge" in r.message for r in caplog.records)
+        assert any("does not support knowledge" in r.getMessage() for r in caplog.records)
 
     def test_no_false_warning_when_echoed(self, caplog):
         done = dict(DONE)
         done["knowledge_registered"] = 12
         h = _ToolLoopHarness([done])
-        with caplog.at_level(logging.WARNING, logger="qirabot"):
+        with caplog.at_level(logging.INFO, logger="qirabot"):
             h.bot.ai(object(), "do it", max_steps=3, knowledge="规则文本")
         h.bot.close()
-        assert not any("does not support" in r.message for r in caplog.records)
+        assert not any("does not support" in r.getMessage() for r in caplog.records)
+        assert any("knowledge registered: 12 bytes" in r.getMessage() for r in caplog.records)

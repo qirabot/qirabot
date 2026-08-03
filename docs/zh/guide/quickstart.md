@@ -7,19 +7,29 @@ description: 两条命令跑通第一个 AI 驱动的 GUI 自动化任务,再用
 
 两条路,本页都覆盖:**CLI**——用一条 shell 命令跑自然语言任务,零代码;
 以及 **Python SDK**。即使你是冲着 SDK 来的,也建议先用 CLI 跑一条——一行
-命令即可验证环境。(无需配置任何模型 API key——视觉模型托管在服务端。)
+命令即可验证环境。
 
-两条命令——先登录一次(自动打开浏览器完成授权;无头机器上用任意设备
-打开打印出的链接即可),然后把任务交给 AI:
+决策引擎在 SDK 内本地运行,调用的是你自己 Google Cloud Vertex AI 端点上
+的视觉模型——没有 Qirabot 账号,也没有 API key。先完成一次 Google Cloud
+认证(Application Default Credentials),然后把任务交给 AI:
 
 ```bash
-qirabot login      # 浏览器授权;校验后保存,之后每次运行自动读取
+gcloud auth application-default login   # 一次即可;或将 GOOGLE_APPLICATION_CREDENTIALS 指向服务账号 JSON
 qirabot browser "搜索 SpaceX 并提取词条的第一句话" --url wikipedia.org
 ```
 
 这就是一次完整运行:浏览器打开,AI 完成任务,结果(和一份 HTML 报告)输出
-到终端。所有命令和选项见 [CLI 参考](/zh/guide/cli)。(想用环境变量?
-`QIRA_API_KEY` 和项目 `.env` 依然有效且优先级更高。)
+到终端。所有命令和选项见 [CLI 参考](/zh/guide/cli)。
+
+不做任何其他配置时,运行使用 `gemini-vertex/gemini-3.6-flash`,项目
+取自 ADC 凭据自身。要显式指定模型或项目,设置 `QIRA_MODEL` /
+`QIRA_VERTEX_PROJECT`(或向 `Qirabot()` 传 `model=` / `vertex_project=`,
+CLI 上用 `-m` / `--vertex-project`):
+
+```bash
+export QIRA_MODEL="claude-vertex/claude-sonnet-5"   # "{provider}/{model}"
+export QIRA_VERTEX_PROJECT="my-gcp-project"
+```
 
 browser 命令假定你走的是一行安装脚本或 `pip install "qirabot[browser]"`
 路径——如果为设备后端只装了核心 `qirabot`,各 extra 见

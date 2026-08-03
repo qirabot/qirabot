@@ -1,40 +1,44 @@
 ---
 title: Configuration
-description: Every Qirabot knob - API key resolution order, constructor options, environment variables, model aliases and per-call overrides, response language, and settle delay tuning.
+description: Every Qirabot knob - model and Vertex AI setup, Google Cloud credentials, constructor options, environment variables, thinking level and per-call overrides, response language, and settle delay tuning.
 ---
 
 # Configuration
 
-If you ran `qirabot login`, you're already configured — the SDK reads the
-same saved key:
+The decision engine runs locally inside the SDK and calls your own model
+endpoint on Google Vertex AI. Configuration is therefore two things: Google
+Cloud credentials, and which model to use.
 
 ```python
 from qirabot import Qirabot
 
-bot = Qirabot()  # api_key param > QIRA_API_KEY env var > `qirabot login` config
+bot = Qirabot()  # model param > QIRA_MODEL env var > gemini-vertex/gemini-3.6-flash
 ```
 
-An environment variable always wins over the login config (so CI and one-off
-overrides behave as expected). Settings can also live in a project `.env`:
-scripts opt in explicitly — `from qirabot import load_dotenv; load_dotenv()`
-— which reads `$QIRA_DOTENV` or `./.env` and never overrides exported
-variables. The CLI loads `.env` automatically; the SDK never reads it on its
-own.
+**Credentials** are standard Google Cloud Application Default Credentials
+(ADC): set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account JSON file,
+run `gcloud auth application-default login` once, or run on GCE where the
+metadata server provides them. `qirabot doctor` and `qirabot models` both
+report whether ADC resolves on the machine.
+
+Settings can also live in a project `.env`: scripts opt in explicitly —
+`from qirabot import load_dotenv; load_dotenv()` — which reads
+`$QIRA_DOTENV` or `./.env` and never overrides exported variables. The CLI
+loads `.env` automatically; the SDK never reads it on its own. Typical
+`.env` contents are `QIRA_MODEL` and `QIRA_VERTEX_PROJECT`.
 
 ## Constructor options
 
 | Parameter | Env Variable | Default | Description |
 |---|---|---|---|
-| `api_key` | `QIRA_API_KEY` | `qirabot login` config | API key |
-| `base_url` | `QIRA_BASE_URL` | `https://app.qirabot.com` | API server URL |
-| `timeout` | — | `120.0` | HTTP request timeout (seconds) |
-| `verify_ssl` | — | `True` | TLS verification (set `False` for self-hosted / self-signed) |
-| `model_alias` | — | `""` | Model alias for all operations; empty = the server picks its default |
-| `thinking_level` | — | `""` | Thinking level for all operations: `minimal` / `low` / `medium` / `high`; empty = the alias's configured level ([details](#thinking-level)) |
-| `language` | — | server default | Response language, e.g. `"zh"` / `"en"` |
-| `task_name` | — | `""` | Task name (visible in dashboard) |
-| `task_id` | — | `""` | Attach to an existing server task instead of creating one |
-| `source` | — | `"sdk"` | Task source tag shown in the dashboard |
+| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}` ([details](#model-language)) |
+| `vertex_project` | `QIRA_VERTEX_PROJECT` | see below | Google Cloud project for the Vertex call |
+| `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
+| `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
+| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
+| `language` | — | model default | Response language, e.g. `"zh"` / `"en"` |
+| `task_name` | — | `""` | Task name (shown in the HTML report) |
+| `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | Element-location output format; `bbox_yx_1000` switches to normalized y/x bounding boxes |
 | `report` | — | `True` | Write an HTML run report on close |
 | `report_dir` | `QIRA_REPORT_DIR` | `./qira_runs/...` | Report output root |
 | `record` | `QIRA_RECORD` | `False` | Record the screen (ffmpeg) |
@@ -50,55 +54,57 @@ own.
 | `retry` | — | `1` | Retries per action on transient failures (also a per-call kwarg: `bot.click(..., retry=3)`) |
 | `retry_delay` | — | `1.0` | Seconds between retries |
 | `settle_seconds` | `QIRA_SETTLE_SECONDS` | per-platform | Pause after each action before the next screenshot |
-| `heartbeat` | `QIRA_HEARTBEAT` | `True` | Background liveness ping so long-sleeping scripts aren't reclaimed as orphans; `QIRA_HEARTBEAT=0` is the kill switch |
-| `sync_local_steps` | — | `True` | Upload locally-executed steps to the server task timeline |
+| `overlay` | — | `False` | Always-on-top progress window + ESC kill switch ([details](/advanced/overlay)) |
 
 What the `record*` knobs actually produce (formats, per-platform mechanics,
 where the file lands) is covered in [Reports & Recording](/advanced/reports).
 
-A few env-only overrides with no constructor equivalent: `QIRA_ADB_PATH`
-(explicit adb binary for the Android backend), `QIRA_SCREEN_INDEX` (which
-monitor to record on multi-display machines), `QIRA_AUDIO_DEVICE` (recording
-audio device), `QIRA_DOTENV` (path `load_dotenv()` reads instead of `./.env`).
+**Project and location resolution.** The Vertex project is resolved as:
+`vertex_project=` param > `QIRA_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` >
+the project id carried by the ADC credentials themselves. The location:
+`vertex_location=` param > `QIRA_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION`
+> `"global"`. The CLI exposes the same pair as global flags before the
+subcommand: `qirabot --vertex-project my-proj --vertex-location us-east5
+browser "..."`.
+
+Env-only overrides with no constructor equivalent:
+
+| Env Variable | Description |
+|---|---|
+| `GOOGLE_APPLICATION_CREDENTIALS` | Standard Google variable: path to a service-account JSON for ADC |
+| `QIRA_ADB_PATH` | Explicit adb binary for the Android backend |
+| `QIRA_SCREEN_INDEX` | Which monitor to record on multi-display machines |
+| `QIRA_AUDIO_DEVICE` | Recording audio device (Windows) |
+| `QIRA_DOTENV` | Path `load_dotenv()` reads instead of `./.env` |
+| `QIRA_RECORD_WINDOW_NATIVE` | Windows: force legacy gdigrab per-window capture instead of the crop-from-desktop default |
+| `QIRA_TEXT_FALLBACK` | Windows: `unicode` reverts non-ASCII typing from clipboard-paste to unicode injection |
+| `QIRA_MODIFIER_LEAD` / `QIRA_MODIFIER_TAIL` | Seconds around a modifier-held click (desktop adapters) |
+| `QIRA_OVERLAY_DEBUG` | `1` lets the overlay helper's stderr through for diagnosis |
+| `QIRA_ENGINE_TRACE` | Debug: a directory; appends one JSONL record per model call and saves the step screenshots there |
 
 ## Model & language
 
-`model_alias` selects which model backs every operation:
+`model` selects which Vertex AI model backs every operation, in the form
+`"{provider}/{model}"`:
 
-| Alias | Trade-off |
-|---|---|
-| `fast` | Cheapest, lowest latency |
-| `balanced` | Good cost/quality balance |
-| `balanced_pro` | Stronger than `balanced` |
-| `high_quality` | Best quality, highest cost |
-
-```python
-bot = Qirabot(model_alias="high_quality")        # applies to all actions
-bot.click(page, "Login", model_alias="fast")     # or override per call
-```
-
-The models are hosted server-side — there is no API key or endpoint to
-configure, and the concrete model behind each alias is managed (and
-upgraded) by the platform. `qirabot models` lists the aliases your account
-can use; leave the alias empty for the server default.
-
-**Which alias when?** Rules of thumb:
-
-- **Leave it unset** until you have a reason not to — the server default is
-  tuned for general use.
-- **`fast`** — clean, high-contrast UIs with unambiguous targets: form
-  filling, standard web flows, big buttons. Cheapest and lowest latency.
-- **`high_quality`** — dense or low-contrast screens: small text, crowded
-  dashboards, game UIs, subtle visual assertions ("the icon is greyed out").
-- **Mix per call** — the pattern that keeps cost down without giving up
-  accuracy: default the bot to a cheap alias and raise only the hard calls:
+| Provider | Serves | Default model |
+|---|---|---|
+| `gemini-vertex` | Google Gemini models on Vertex AI | `gemini-3.6-flash` |
+| `claude-vertex` | Anthropic Claude models on Vertex AI | `claude-sonnet-5` |
 
 ```python
-bot = Qirabot(model_alias="fast")
-bot.click(page, "the Search button")                        # easy → fast
-data = bot.extract(page, "all prices in the results table",
-                   model_alias="high_quality")              # hard → upgrade
+bot = Qirabot(model="claude-vertex/claude-sonnet-5")
+bot = Qirabot(model="claude-vertex")  # bare provider → its default model
 ```
+
+A bare provider name resolves to that provider's default model. Unset
+everything and the SDK uses `gemini-vertex/gemini-3.6-flash`.
+`qirabot models` lists the providers, their default models, and whether
+ADC resolves.
+
+There is no per-step billing by Qirabot — model calls go directly from your
+machine to your Vertex AI project and are billed by Google Cloud at that
+model's rates.
 
 **Watching cost:** `extract()` / `verify()` results and each `StepResult`
 from `ai()` carry `input_tokens` / `output_tokens` fields — a call's spend
@@ -107,36 +113,29 @@ is their sum. See the
 
 ## Thinking level
 
-Each alias ships with a thinking level tuned by the platform.
-`thinking_level` overrides it — same model, different reasoning depth —
-so you can scale depth to task difficulty without switching aliases:
+`thinking_level` scales reasoning depth within the same model — deeper
+thinking for hard judgment calls, shallower for obvious ones:
 
 | Value | Trade-off |
 |---|---|
 | `minimal` | Fastest, cheapest — obvious targets, clean UIs |
-| `low` | Default territory for most aliases |
+| `low` | The default — fast steps, enough reasoning for routine UI decisions |
 | `medium` | Harder judgment calls |
 | `high` | Deepest reasoning — highest latency and thinking-token spend |
 
 ```python
-bot = Qirabot(model_alias="balanced_pro")                     # alias default
+bot = Qirabot(thinking_level="low")                           # task-wide default
 bot.verify(page, "the discount was applied to every row",
            thinking_level="high")                             # hard call → think more
 ```
 
-Same two levels as `model_alias`: the constructor sets the task-wide
-default, every action method takes a per-call override. Deeper thinking
-burns more thinking tokens (billed at the alias's thinking rate), so the
-cost-control pattern mirrors the alias one: stay low by default, raise
-only the hard calls.
+The constructor sets the task-wide default, every action method takes a
+per-call override. Deeper thinking burns more thinking tokens, so the
+cost-control pattern is: stay low by default, raise only the hard calls.
 
-Two caveats:
-
-- Requires a server that knows the field — older self-hosted servers
-  silently ignore it (no error, the alias default applies).
-- The effective granularity depends on the alias's underlying model; some
-  backends merge or clamp adjacent levels, so treat the value as an intent,
-  not a guarantee of four distinct depths.
+One caveat: the effective granularity depends on the underlying model; some
+models merge or clamp adjacent levels, so treat the value as an intent, not
+a guarantee of four distinct depths.
 
 `language` sets the language of AI responses (extracted text, reasoning) —
 a short tag like `"zh"` or `"en"`:
@@ -164,13 +163,13 @@ This is a blunt fixed delay. For "wait until X appears" prefer the auto-wait
 `timeout=` / `wait_for()` polling — it returns as soon as the condition
 holds.
 
-## Task lifecycle
+## Run lifecycle
 
-Each `Qirabot` instance manages a server-side task: created on construction
-(pass an existing `task_id` to attach instead), every call recorded as a
-step, marked complete on `close()` / context-manager exit. If `close()` is
-never called, `atexit` cleans up; a background heartbeat keeps the task
-alive while your process runs, and a silently-dead process is reclaimed by
-the server's orphan cleaner after ~5 minutes. To end a task as failed or
-cancelled instead of completed, see `fail()` / `cancel()` in the
+Each `Qirabot` instance manages a local run: a run id (`local-` plus 8 hex
+characters, readable via `bot.task_id`) is assigned on construction, every
+call is recorded as a step, and the HTML report is written on `close()` /
+context-manager exit. If `close()` is never called, `atexit` cleans up. The
+constructor validates the model configuration and Google Cloud credentials,
+so a bad setup fails at construction, not mid-run. To end a run as failed
+or cancelled instead of completed, see `fail()` / `cancel()` in the
 [API reference](/reference/api#task-lifecycle).

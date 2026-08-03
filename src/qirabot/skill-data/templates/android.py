@@ -3,7 +3,8 @@
 Fill in APP and TASK, then run:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install qirabot        # zero extra dependencies for Android
-    echo 'QIRA_API_KEY=qk_...' > .env    # load_dotenv() reads this (also QIRA_BASE_URL)
+    gcloud auth application-default login    # one-time Google Cloud auth (ADC)
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
     adb devices            # confirm a device/emulator is connected
     python android.py
 
@@ -14,7 +15,7 @@ The HTML report is written to ./qira_runs/<date>/<run>/report.html on close.
 
 from qirabot import AdbDevice, Qirabot, StepResult, load_dotenv
 
-# Read QIRA_API_KEY / QIRA_BASE_URL from ./.env (a real exported env var wins).
+# Read QIRA_MODEL (and other QIRA_* settings) from ./.env (a real exported env var wins).
 load_dotenv()
 
 # TODO: the app under test and what you want done
@@ -34,7 +35,7 @@ def on_step(step: StepResult) -> None:
 
 
 device.shell(f"monkey -p {APP} -c android.intent.category.LAUNCHER 1")  # launch
-with Qirabot(task_name="android-template", model_alias="balanced_pro").bind(device) as bot:
+with Qirabot(task_name="android-template").bind(device) as bot:
     # Default: hand the whole task to qirabot's agent loop (self-heals).
     result = bot.ai(TASK, max_steps=20, on_step=on_step)
     print("success:", result.success)

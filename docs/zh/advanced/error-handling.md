@@ -11,45 +11,51 @@ description: Qirabot 的异常体系、ai() 运行的四种 result.status 结果
 from qirabot import (
     Qirabot,
     QirabotError,              # 基类
-    AuthenticationError,       # API key 无效
-    InsufficientBalanceError,  # 积分不足
+    AuthenticationError,       # 凭据 / 迁移配置问题
     QirabotTimeoutError,       # wait_for / 自动等待超时
 )
 
 try:
-    # 构造函数本身就可能抛异常:它会校验 API key 并向服务器注册任务。
+    # 构造函数本身就可能抛异常:它会校验模型配置并解析 Google Cloud
+    # 凭据(ADC),配置有误在这里就失败,而不是运行到一半。
     # `with` 保证 close() 在——且仅在——构造成功时执行。
     with Qirabot() as bot:
         page = bot.open("https://example.com")
         bot.click(page, "登录按钮")
 except AuthenticationError:
-    print("API key 无效。")
-except InsufficientBalanceError:
-    print("积分不足。")
+    print("凭据配置问题——错误消息里有修复方法。")
 except QirabotTimeoutError:
     print("操作超时。")
 except QirabotError as e:
     print(f"错误: {e}")
 ```
 
-完整体系——所有异常都派生自 `QirabotError`,所以单独一个
+配置类错误在构造时暴露:`model="{provider}/{model}"` 里 provider 未知
+或缺少模型,以及缺少 Google Cloud 项目,会抛出带配置提示的
+`ValueError`;Google Cloud 凭据缺失或不可用时,错误消息会指向
+`GOOGLE_APPLICATION_CREDENTIALS` / `gcloud auth application-default
+login`。`AuthenticationError` 还会在构造时抛出于一种情况:设置了残留的
+v2 `QIRA_API_KEY` 却没有配置模型——消息解释 v3 迁移方法(配置 ADC 和
+模型,或固定 `qirabot<3` 保留旧的云端行为)。
+
+异常体系——所有异常都派生自 `QirabotError`,所以单独一个
 `except QirabotError` 永远是安全的兜底:
 
 | 异常 | 时机 |
 |---|---|
-| `AuthenticationError` | API key 缺失或无效(401)。不重试。 |
-| `InsufficientBalanceError` | 积分余额耗尽(402)。不重试。 |
-| `RateLimitError` | 请求过多(429)。SDK 内部会退避并重试;捕获它可加自己的退避策略。 |
+| `AuthenticationError` | 凭据配置问题——包括 v3 迁移守卫:设置了 `QIRA_API_KEY` 却没有配置模型。不重试。 |
+| `RateLimitError` | 模型提供方限流(429)。引擎内部会退避并重试;捕获它可加自己的退避策略。 |
 | `QirabotTimeoutError` | 客户端等待超时(`wait_for`、自动等待)。 |
-| `QirabotConnectionError` | 服务器不可达(DNS 解析失败、连接被拒)——请求根本没有完成,而不是慢。 |
-| `TaskTerminatedError` | 脚本还在运行时任务被服务端终止(控制台停止、孤儿清理器、最长时长上限)。`.task_status` 携带终态。不重试。 |
-| `ActionError` | AI 动作在服务端执行失败。 |
+| `ActionError` | AI 动作失败——包括你的 Vertex AI 端点报告的模型调用失败(消息携带提供方的详细信息)。 |
 | `MissingDependencyError` | 某个可选后端依赖(playwright、pyautogui 等)未安装——消息里给出要执行的确切 `pip install "qirabot[<extra>]"`。同时也是 `ImportError`。 |
+
+(`InsufficientBalanceError`、`QirabotConnectionError`、
+`TaskTerminatedError` 仍可导入,以兼容 v2 的捕获代码,但 v3 本地引擎
+不再抛出它们——已不存在 Qirabot 服务器、计费或服务端任务状态。)
 
 `verify()` 是"失败即抛异常"语义的刻意例外:**断言不成立**不抛异常——
 返回 falsy 结果(`VerifyResult`,其 `.reason` 说明原因),可直接用于
-`assert` 或 `if`。传输和服务器错误(连接丢失、鉴权、终止)仍像其他调用
-一样抛出。
+`assert` 或 `if`。模型调用和凭据错误仍像其他调用一样抛出。
 
 瞬时的动作失败会自动重试(默认 `retry=1`、`retry_delay=1.0`——见
 [配置](/zh/advanced/configuration))。
@@ -63,7 +69,7 @@ except QirabotError as e:
 | `"completed"` | 模型判定目标已达成 | `True` |
 | `"goal_failed"` | 模型判定目标不可达(登录墙、验证码) | `False` |
 | `"max_steps"` | 步数预算用尽——是截断,不是能力判定 | `False` |
-| `"error"` | 服务器报告终止性错误 | `False` |
+| `"error"` | 引擎遇到终止性错误(如模型调用失败) | `False` |
 
 `max_steps` 值得专门处理——它是预算问题,不是能力问题:
 
@@ -86,6 +92,10 @@ if result.status == "max_steps":
 
 报告头部的汇总:全部通过为绿色,只有 `MAX STEPS` 截断为琥珀色,存在真正
 失败为红色。
+
+要自行记录一次运行的终态——让报告显示失败或取消而不是成功——在关闭前
+调用 `bot.fail()` / `bot.cancel()`;两者都是本地的运行记账,见
+[API 参考](/zh/reference/api#任务生命周期)。
 
 ## 自定义工具的错误
 

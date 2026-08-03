@@ -21,7 +21,7 @@ your machine                                dedicated Windows VM (logged-in desk
 write & test myjob.py                       runner.py  (HTTP, port 8765)
         │  curl --data-binary @myjob.py             │
         ▼            POST /run                       ▼
-  ───────────────────────────────────▶       python myjob.py  ──▶  /act → Qira server
+  ───────────────────────────────────▶       python myjob.py  ──▶  Vertex AI (your GCP project)
   ◀──────── {returnCode, stdout, stderr} ──────────┘
 ```
 
@@ -80,10 +80,14 @@ powercfg /change monitor-timeout-ac 0
 > Auto-login stores credentials and drops the lock screen — only do it on a
 > dedicated, access-controlled VM.
 
-## 4. Set env vars and open the port
+## 4. Set up auth / env vars and open the port
+
+Auth is Google Cloud ADC. Either log in once **as the auto-login user** (`gcloud
+auth application-default login`), or point at a service-account key file:
 
 ```powershell
-[Environment]::SetEnvironmentVariable("QIRA_API_KEY",      "qk_...",            "User")
+[Environment]::SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", "C:\qira\sa.json", "User")
+[Environment]::SetEnvironmentVariable("QIRA_MODEL", "gemini-vertex/gemini-3.6-flash", "User")  # optional
 [Environment]::SetEnvironmentVariable("QIRA_RUNNER_TOKEN",  "some-shared-secret","User")
 # allow the port through the firewall (restrict RemoteAddress to your subnet/VPN!)
 New-NetFirewallRule -DisplayName "QiraRunner" -Direction Inbound -Action Allow `
@@ -134,7 +138,7 @@ export QIRA_RUNNER_TOKEN="some-shared-secret"
 Output streams line by line and ends with an exit marker:
 
 ```
-task_id: tsk_...
+task_id: local-1a2b3c4d
 step 1/10: ... -> click
 step 2/10: ... -> type_text
 success: True
@@ -197,7 +201,8 @@ in your Aqua session) — *not* a LaunchDaemon. Create
     <string>/Users/USER/qira/runner.py</string>
   </array>
   <key>EnvironmentVariables</key> <dict>
-    <key>QIRA_API_KEY</key>     <string>qk_...</string>
+    <!-- Google Cloud ADC: omit if you ran `gcloud auth application-default login` as this user -->
+    <key>GOOGLE_APPLICATION_CREDENTIALS</key> <string>/Users/USER/qira/sa.json</string>
     <key>QIRA_RUNNER_TOKEN</key><string>some-shared-secret</string>
   </dict>
   <key>RunAtLoad</key>        <true/>
@@ -219,10 +224,9 @@ checklist) is identical.
 
 You can't see the remote desktop, so:
 
-- **`task_id`** — have the script `print(bot.task_id)`; it streams back early,
-  and you can open that run in the **web console** to see each step's decision,
-  action, and screenshots (screenshots are uploaded server-side; `qira screenshot
-  <task_id>` also pulls them).
+- **`task_id`** — have the script `print(bot.task_id)`; it's the local run id
+  (`local-...`) and streams back early, so you can tell runs apart in the
+  output and match them to reports on the VM.
 - **live output** — the runner streams the script's stdout/stderr line by line as
   it runs; print whatever you need and you'll see it in real time.
 - **`on_step`** — `bot.ai(..., on_step=lambda s: print(s.step, s.decision, s.action_type))`

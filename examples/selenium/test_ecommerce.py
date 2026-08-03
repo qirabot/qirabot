@@ -26,9 +26,7 @@ def driver():
 def bot(driver):
     # bind(driver) once so AI calls drop the repeated first argument; the
     # with-block closes the Qirabot task after the last test.
-    with Qirabot(task_name="test-ecommerce-selenium", model_alias="fast").bind(
-        driver
-    ) as bot:
+    with Qirabot(task_name="test-ecommerce-selenium").bind(driver) as bot:
         yield bot
 
 

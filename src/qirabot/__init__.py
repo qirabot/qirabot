@@ -15,6 +15,7 @@ from qirabot.client import (
     Qirabot,
     RunResult,
     RunStatus,
+    SessionUsage,
     StepResult,
     VerifyResult,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "RunResult",
     "RunStatus",
     "ScreenRecorder",
+    "SessionUsage",
     "StepResult",
     "TaskTerminatedError",
     "VerifyResult",

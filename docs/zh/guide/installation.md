@@ -70,9 +70,10 @@ python -m pip install qirabot selenium     # Selenium 不是 extra——自带 d
 qirabot doctor
 ```
 
-`doctor` 会报告已安装、缺失(附修复命令)的组件,以及 API key 是否能连通
-服务器。还没保存 key?这一项会提示未设置——[快速开始](/zh/guide/quickstart)
-的第一条命令(`qirabot login`)就是修复方式。
+`doctor` 会报告 Python 版本、Google Cloud 凭据(ADC)能否解析及对应的
+项目,以及各后端依赖——缺失项附带确切的修复命令。还没有凭据?
+[快速开始](/zh/guide/quickstart)的第一条命令
+(`gcloud auth application-default login`)就是修复方式。
 
 ## 常见问题
 
@@ -88,5 +89,5 @@ qirabot doctor
 
 ## 下一步
 
-- [快速开始](/zh/guide/quickstart) —— 保存 API key,运行第一个任务
+- [快速开始](/zh/guide/quickstart) —— 完成 Google Cloud 认证,运行第一个任务
 - [CLI 参考](/zh/guide/cli) —— 不写代码,用一条命令运行自然语言任务

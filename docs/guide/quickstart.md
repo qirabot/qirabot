@@ -7,21 +7,31 @@ description: Run your first AI-driven GUI automation in two commands, then the s
 
 Two ways in, both on this page: the **CLI** — a natural-language task as a
 shell command, no code — and the **Python SDK**. Start with the CLI even if
-you came for the SDK: it proves your setup in one line. (No model API keys
-to configure — the vision models are hosted server-side.)
+you came for the SDK: it proves your setup in one line.
 
-Two commands — log in once (opens your browser to authorize; on a headless
-box, open the printed URL from any device), then hand the AI a task:
+The decision engine runs locally inside the SDK and calls a vision model on
+your own Google Cloud Vertex AI endpoint — there is no Qirabot account and
+no API key. Authenticate to Google Cloud once (Application Default
+Credentials), then hand the AI a task:
 
 ```bash
-qirabot login      # browser authorization; verified, stored, picked up by every later run
+gcloud auth application-default login   # once; or point GOOGLE_APPLICATION_CREDENTIALS at a service-account JSON
 qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org
 ```
 
 That's a complete run: the browser opens, the AI does the task, and the result
 (plus an HTML report) lands in your terminal. All commands and options are in
-the [CLI Reference](/guide/cli). (Prefer environment variables? `QIRA_API_KEY`
-and a project `.env` still work and take precedence.)
+the [CLI Reference](/guide/cli).
+
+With nothing else configured, runs use `gemini-vertex/gemini-3.6-flash`
+under your ADC credentials' own project. To pick a model or project
+explicitly, set `QIRA_MODEL` / `QIRA_VERTEX_PROJECT` (or pass `model=` /
+`vertex_project=` to `Qirabot()`, `-m` / `--vertex-project` on the CLI):
+
+```bash
+export QIRA_MODEL="claude-vertex/claude-sonnet-5"   # "{provider}/{model}"
+export QIRA_VERTEX_PROJECT="my-gcp-project"
+```
 
 The browser command assumes you took the one-line installer or
 `pip install "qirabot[browser]"` path — if you installed bare `qirabot` for a

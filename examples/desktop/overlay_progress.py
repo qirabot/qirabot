@@ -18,7 +18,7 @@ Install:
     python -m pip install "qirabot[desktop]"
 
 Run:
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/desktop/overlay_progress.py
 """
 

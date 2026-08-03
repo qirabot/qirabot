@@ -14,8 +14,11 @@ augmenting a test suite. For the "bolt AI onto my existing tests" style, see the
 ```bash
 python -m pip install "qirabot[browser]"
 playwright install chromium
-export QIRA_API_KEY="qk_..."
+gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```
+
+Pick a model via `QIRA_MODEL` or `Qirabot(model=...)`; the default is
+`gemini-vertex/gemini-3.6-flash`.
 
 ## Run
 

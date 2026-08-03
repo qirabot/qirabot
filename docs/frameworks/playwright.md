@@ -78,9 +78,11 @@ Qirabot adds no settle delay on Playwright (it trusts the framework).
 
 ## Under the hood
 
-Screenshots go to the Qirabot server for reasoning and element location;
-actions execute locally through your Playwright session. Your code, cookies,
-and credentials never leave the machine — only screenshots are uploaded.
+The decision engine runs locally inside the SDK: screenshots go directly
+from your machine to your configured model endpoint (Google Vertex AI) for
+reasoning and element location, and actions execute locally through your
+Playwright session. Your code, cookies, and credentials never leave the
+machine — only screenshots and instruction text are sent to the model.
 
 Related: [Browser backend](/backends/browser) (managed browser, CDP attach,
 persistent profiles) · [pytest integration](/frameworks/pytest)

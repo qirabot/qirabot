@@ -7,7 +7,7 @@ Install:
     python -m pip install qirabot
 
 Run (connect a device/emulator first — check with `adb devices`):
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/adb/quickstart.py
 """
 

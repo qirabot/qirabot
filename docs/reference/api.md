@@ -1,6 +1,6 @@
 ---
 title: API Reference — Actions & Platform Support
-description: Every Qirabot action - AI-located clicks and typing, extract/verify/wait_for, bot.ai(), non-billed navigation and key presses, the full per-platform support matrix, and the task lifecycle.
+description: Every Qirabot action - AI-located clicks and typing, extract/verify/wait_for, bot.ai(), direct navigation and key presses without a model call, the full per-platform support matrix, and the run lifecycle.
 ---
 
 # API Reference
@@ -11,7 +11,8 @@ are in the [Method Reference](/reference/methods).
 
 ## Simple actions (AI-located)
 
-Lightweight vision-based element location — fast and low-cost:
+Lightweight vision-based element location — each call is a single request
+to your configured model:
 
 ```python
 # Click on an element by description
@@ -60,7 +61,7 @@ Full coverage — step callbacks, `custom_tools`, `exclude_tools` — in
 [AI Tasks & Custom Tools](/advanced/ai-tasks); run outcomes in
 [Error Handling](/advanced/error-handling).
 
-## Navigation, scrolling & keys (no AI, no billing)
+## Navigation, scrolling & keys (no AI)
 
 Direct actions that don't need AI element location. `go_back`, `navigate`,
 `close_tab`, and `press_key` return the current page/target (may differ after
@@ -77,7 +78,7 @@ bot.press_key(page, "ctrl+c")       # a combo (join with "+")
 bot.press_key(target, "w", duration_seconds=2)  # hold for 2s (desktop only)
 page = bot.press_key(page, "ctrl+w")  # closes the tab, switches to another — reassign
 bot.type_text(page, "", "hello", press_enter=True)  # empty locate: type into the
-                                    # focused element directly (no AI, no billing)
+                                    # focused element directly (no AI, no model call)
 ```
 
 **Direct typing.** `type_text` with an **empty `locate`** skips AI location
@@ -147,7 +148,7 @@ framework — the matrix shows how each underlying action maps per platform.
 - ᵈ No element model over raw adb/WDA; `clear_text` is best-effort (caret-to-end + repeated delete on Android, backspace burst on iOS).
 - ᵉ The Windows window backend sends DirectInput scancodes (real hardware-level keys, incl. `ctrl`/`alt`/`win` combos); characters outside the scancode table are injected as unicode key events. `duration_seconds` (hold) works on pyautogui + the Windows window backend only; elsewhere it degrades to an instant tap.
 - ᶠ `long_press` is a touch-only gesture (Android/iOS). Browser/desktop adapters raise `NotImplementedError`.
-- ᵍ `mouse_down`/`mouse_up`/`key_down`/`key_up` are desktop-only split press/release primitives (pyautogui + the Windows window backend) for holding an input across other actions. Pair each press with its release; any input still held is auto-released at the end of an `ai()` run and on `close()`. `mouse_up`'s locate is optional (omit to release at the current cursor — deterministic, no AI, no billing). Browser/mobile adapters raise `NotImplementedError`.
+- ᵍ `mouse_down`/`mouse_up`/`key_down`/`key_up` are desktop-only split press/release primitives (pyautogui + the Windows window backend) for holding an input across other actions. Pair each press with its release; any input still held is auto-released at the end of an `ai()` run and on `close()`. `mouse_up`'s locate is optional (omit to release at the current cursor — deterministic, no AI). Browser/mobile adapters raise `NotImplementedError`.
 - ʰ iOS has no back button; `go_back` performs the universal left-edge swipe gesture.
 
 `navigate`/`go_back` raise `NotImplementedError` where unsupported;
@@ -182,10 +183,11 @@ executable directly. Also available standalone:
 
 ## Task lifecycle
 
-Each `Qirabot` instance manages a server-side task that tracks all
-operations: created on construction (pass an existing `task_id` to attach
-instead), every `click()` / `extract()` / `ai()` recorded as a step, marked
-complete on `close()` or context-manager exit:
+Each `Qirabot` instance manages a local run that tracks all operations:
+created on construction with a local run id (`bot.task_id`, of the form
+`local-<8 hex chars>`), every `click()` / `extract()` / `ai()` recorded as
+a step, marked complete on `close()` or context-manager exit. All run
+bookkeeping stays on your machine — it feeds the HTML report, nothing else:
 
 ```python
 with Qirabot(task_name="my automation") as bot:
@@ -194,17 +196,15 @@ with Qirabot(task_name="my automation") as bot:
 # bot.close() is called automatically
 ```
 
-If `close()` is never called, `atexit` cleans up on script exit. While the
-process is alive, a background **heartbeat** keeps the server task marked
-live (so sleeping between steps is safe); once the process dies silently,
-the server's orphan cleaner times the task out after ~5 minutes.
+If `close()` is never called, `atexit` cleans up on script exit.
 
-Two more lifecycle calls when you need a terminal status other than
-"completed": `bot.fail("what went wrong")` reports the task as failed, and
-`bot.cancel("why")` reports it as cancelled — both before/instead of the
-success-complete that `close()` records by default.
+Two more lifecycle calls when you need a terminal outcome other than
+"completed": `bot.fail("what went wrong")` records the run as failed, and
+`bot.cancel("why")` records it as cancelled — both before/instead of the
+success-complete that `close()` records by default. The outcome shows up in
+the run's HTML report.
 
 See also: [Configuration](/advanced/configuration) (constructor options,
-model aliases, settle delay) ·
+model selection, settle delay) ·
 [Error Handling](/advanced/error-handling) ·
 [Custom Adapters](/backends/custom-adapters) (`bind()`, `DeviceAdapter`)

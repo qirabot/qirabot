@@ -46,7 +46,7 @@ from qirabot import Qirabot
 def bot():
     b = Qirabot(report_dir="./artifacts")
     yield b
-    b.close()          # 写 HTML 报告,标记服务端任务完成
+    b.close()          # 写 HTML 报告
 
 def test_search(bot, page):
     page.goto("https://www.wikipedia.org")
@@ -54,9 +54,9 @@ def test_search(bot, page):
     assert bot.verify(page, "SpaceX 词条已显示")
 ```
 
-测试进程硬崩时还有 `atexit` 兜底调用 `close()`;服务端会在约 5 分钟无
-声息后清理孤儿任务(进程存活期间 SDK 发送后台心跳,步骤之间的长时间
-等待是安全的——见[配置](/zh/advanced/configuration))。
+测试进程硬崩时还有 `atexit` 兜底调用 `close()`。引擎在你的进程里本地
+运行,步骤之间的长时间等待是安全的——见
+[配置](/zh/advanced/configuration)。
 
 ## 断言模式
 
@@ -80,8 +80,10 @@ assert int(count) == 1
   `QIRA_REPORT_DIR`),失败时上传 `qira_runs/`——报告里能看到每一步的
   确切截图。
 - 只要断言不要报告:`Qirabot(report=False)`。
-- API key 用 `QIRA_API_KEY`(环境变量优先于 `qirabot login` 配置——CI
-  友好)。CLI 的退出码同样脚本友好:`0` 通过、`1` 失败、`130` 中断。
+- 凭据:在 runner 上把 `GOOGLE_APPLICATION_CREDENTIALS` 指向服务账号
+  JSON(标准 Google Cloud ADC),并以环境变量设置 `QIRA_MODEL` /
+  `QIRA_VERTEX_PROJECT`。CLI 的退出码同样脚本友好:`0` 通过、`1` 失败、
+  `130` 中断。
 - headless:无显示器的 runner 上,托管浏览器自动切 headless。
 
 相关:[Playwright](/zh/frameworks/playwright) ·

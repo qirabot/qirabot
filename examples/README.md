@@ -45,9 +45,17 @@ your local mouse. Write/test locally, then POST the script to the remote runner.
 
 ## Setup
 
+The v3 decision engine runs locally against your own Vertex AI endpoint — auth
+is Google Cloud ADC; no Qirabot account, no per-step billing:
+
 ```bash
-export QIRA_API_KEY="qk_..."
+gcloud auth application-default login          # once; or set GOOGLE_APPLICATION_CREDENTIALS
+export QIRA_VERTEX_PROJECT="my-gcp-project"    # if your ADC doesn't carry a project id
 ```
+
+Pick a model with `QIRA_MODEL` or `Qirabot(model="{provider}/{model}")` —
+provider one of `claude-vertex` / `gemini-vertex`; the
+default is `gemini-vertex/gemini-3.6-flash`.
 
 Install instructions are at the top of each script; the larger subdirectories
 also have a README with setup details.

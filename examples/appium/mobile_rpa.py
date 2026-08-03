@@ -10,7 +10,7 @@ Install:
     python -m pip install qirabot Appium-Python-Client
 
 Run (start the Appium server and a device first — see README.md):
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/appium/mobile_rpa.py
 
 Environment variables:
@@ -42,9 +42,9 @@ def on_step(step: StepResult) -> None:
 
 
 # The with-block reports the task as failed (or cancelled on Ctrl+C) if anything
-# raises, and completed otherwise — so the run shows the right status in Qirabot.
+# raises, and completed otherwise — so the run report shows the right status.
 try:
-    with Qirabot(task_name="mobile-rpa", model_alias="balanced_pro").bind(driver) as bot:
+    with Qirabot(task_name="mobile-rpa").bind(driver) as bot:
         result = bot.ai(TASK, max_steps=12, on_step=on_step)
 
     print(f"\nSuccess: {result.success}")

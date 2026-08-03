@@ -254,15 +254,23 @@ def _render_stats(stats: dict[str, int], model: str) -> str:
     inp = stats.get("input_tokens", 0)
     out = stats.get("output_tokens", 0)
     think = stats.get("thinking_tokens", 0)
-    # thinking tokens are already counted within output tokens (Anthropic
-    # semantics), so the total is input + output — do not add thinking again.
-    total = inp + out
+    cache = stats.get("cache_read_tokens", 0) + stats.get("cache_write_tokens", 0)
+    # input_tokens is the non-cached prompt portion only; the cached portion
+    # rides in the cache counters, so the total needs both. Thinking is
+    # already counted within output tokens (Anthropic semantics; the Gemini
+    # provider normalizes to match) — do not add it again.
+    total = inp + cache + out
     bits = [f"{total_steps} steps ({stats.get('ai_steps', 0)} AI)"]
     if total:
-        bits.append(
-            f"{_fmt_tokens(total)} tokens "
-            f"(in {_fmt_tokens(inp)} / out {_fmt_tokens(out)} / think {_fmt_tokens(think)})"
-        )
+        detail = [f"in {_fmt_tokens(inp)}"]
+        if cache:
+            detail.append(f"cache {_fmt_tokens(cache)}")
+        detail.append(f"out {_fmt_tokens(out)}")
+        if think:
+            # Anthropic reports no separate thinking count (it stays 0 there)
+            # — show the split only when a provider actually supplies it.
+            detail.append(f"think {_fmt_tokens(think)}")
+        bits.append(f"{_fmt_tokens(total)} tokens ({' / '.join(detail)})")
     if stats.get("step_duration_ms"):
         bits.append(_fmt_ms(stats["step_duration_ms"]))
     if model:

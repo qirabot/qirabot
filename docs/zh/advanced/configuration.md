@@ -1,37 +1,41 @@
 ---
 title: 配置
-description: Qirabot 的全部配置项——API key 解析顺序、构造函数参数、环境变量、模型档位与按调用覆盖、响应语言、settle 延迟调优。
+description: Qirabot 的全部配置项——模型与 Vertex AI 设置、Google Cloud 凭据、构造函数参数、环境变量、思考深度与按调用覆盖、响应语言、settle 延迟调优。
 ---
 
 # 配置
 
-跑过 `qirabot login` 就已经配置完成——SDK 读取同一份保存的 key:
+决策引擎在 SDK 内本地运行,直接调用你自己在 Google Vertex AI 上的模型
+端点。因此配置只有两件事:Google Cloud 凭据,以及用哪个模型。
 
 ```python
 from qirabot import Qirabot
 
-bot = Qirabot()  # api_key 参数 > QIRA_API_KEY 环境变量 > `qirabot login` 配置
+bot = Qirabot()  # model 参数 > QIRA_MODEL 环境变量 > gemini-vertex/gemini-3.6-flash
 ```
 
-环境变量始终优先于 login 配置(CI 和临时覆盖因此符合直觉)。配置也可以放
-项目 `.env`:脚本需显式启用——`from qirabot import load_dotenv;
-load_dotenv()`——读取 `$QIRA_DOTENV` 或 `./.env`,且从不覆盖已导出的环境
-变量。CLI 自动加载 `.env`;SDK 自身从不读它。
+**凭据**使用标准的 Google Cloud Application Default Credentials(ADC):
+把 `GOOGLE_APPLICATION_CREDENTIALS` 指向服务账号 JSON 文件,或执行一次
+`gcloud auth application-default login`,或在 GCE 上由元数据服务器自动
+提供。`qirabot doctor` 和 `qirabot models` 都会报告本机 ADC 是否可用。
+
+配置也可以放项目 `.env`:脚本需显式启用——`from qirabot import
+load_dotenv; load_dotenv()`——读取 `$QIRA_DOTENV` 或 `./.env`,且从不
+覆盖已导出的环境变量。CLI 自动加载 `.env`;SDK 自身从不读它。`.env` 里
+典型的内容是 `QIRA_MODEL` 和 `QIRA_VERTEX_PROJECT`。
 
 ## 构造函数参数
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
-| `api_key` | `QIRA_API_KEY` | `qirabot login` 配置 | API key |
-| `base_url` | `QIRA_BASE_URL` | `https://app.qirabot.com` | API 服务器地址 |
-| `timeout` | — | `120.0` | HTTP 请求超时(秒) |
-| `verify_ssl` | — | `True` | TLS 校验(自托管/自签证书设 `False`) |
-| `model_alias` | — | `""` | 所有操作的模型档位;留空 = 由服务器选默认 |
-| `thinking_level` | — | `""` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`;留空 = 使用档位自带设置([详情](#思考深度)) |
-| `language` | — | 服务器默认 | 响应语言,如 `"zh"` / `"en"` |
-| `task_name` | — | `""` | 任务名(控制台可见) |
-| `task_id` | — | `""` | 附加到已有的服务端任务,而不是新建 |
-| `source` | — | `"sdk"` | 控制台显示的任务来源标签 |
+| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`([详情](#模型与语言)) |
+| `vertex_project` | `QIRA_VERTEX_PROJECT` | 见下文 | Vertex 调用使用的 Google Cloud 项目 |
+| `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
+| `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
+| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
+| `language` | — | 模型默认 | 响应语言,如 `"zh"` / `"en"` |
+| `task_name` | — | `""` | 任务名(显示在 HTML 报告里) |
+| `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | 元素定位输出格式;`bbox_yx_1000` 切换为归一化 y/x 包围盒 |
 | `report` | — | `True` | 关闭时写 HTML 运行报告 |
 | `report_dir` | `QIRA_REPORT_DIR` | `./qira_runs/...` | 报告输出根目录 |
 | `record` | `QIRA_RECORD` | `False` | 录屏(ffmpeg) |
@@ -47,53 +51,54 @@ load_dotenv()`——读取 `$QIRA_DOTENV` 或 `./.env`,且从不覆盖已导出�
 | `retry` | — | `1` | 瞬时失败的每动作重试次数(也可按调用传:`bot.click(..., retry=3)`) |
 | `retry_delay` | — | `1.0` | 重试间隔(秒) |
 | `settle_seconds` | `QIRA_SETTLE_SECONDS` | 按平台 | 每个动作后等 UI 重绘的暂停 |
-| `heartbeat` | `QIRA_HEARTBEAT` | `True` | 后台存活心跳,长时间休眠的脚本不会被当作孤儿回收;`QIRA_HEARTBEAT=0` 可一键关闭 |
-| `sync_local_steps` | — | `True` | 把本地执行的步骤上传到服务端任务时间线 |
+| `overlay` | — | `False` | 置顶进度悬浮窗 + ESC 中止开关([详情](/zh/advanced/overlay)) |
 
 `record*` 各开关实际产出什么(格式、各平台机制、文件落在哪)见
 [报告与录屏](/zh/advanced/reports)。
 
-少数只有环境变量、没有构造参数对应的覆盖项:`QIRA_ADB_PATH`(Android
-后端显式指定 adb 可执行文件)、`QIRA_SCREEN_INDEX`(多显示器机器上录哪块
-屏)、`QIRA_AUDIO_DEVICE`(录音的音频设备)、`QIRA_DOTENV`
-(`load_dotenv()` 读取的路径,替代 `./.env`)。
+**项目与 location 的解析顺序。**Vertex 项目:`vertex_project=` 参数 >
+`QIRA_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` > ADC 凭据自带的项目 id。
+location:`vertex_location=` 参数 > `QIRA_VERTEX_LOCATION` >
+`GOOGLE_CLOUD_LOCATION` > `"global"`。CLI 以全局参数暴露同一对配置,
+写在子命令之前:`qirabot --vertex-project my-proj --vertex-location
+us-east5 browser "..."`。
+
+只有环境变量、没有构造参数对应的覆盖项:
+
+| 环境变量 | 说明 |
+|---|---|
+| `GOOGLE_APPLICATION_CREDENTIALS` | Google 标准变量:ADC 使用的服务账号 JSON 路径 |
+| `QIRA_ADB_PATH` | Android 后端显式指定 adb 可执行文件 |
+| `QIRA_SCREEN_INDEX` | 多显示器机器上录哪块屏 |
+| `QIRA_AUDIO_DEVICE` | 录音的音频设备(Windows) |
+| `QIRA_DOTENV` | `load_dotenv()` 读取的路径,替代 `./.env` |
+| `QIRA_RECORD_WINDOW_NATIVE` | Windows:强制旧式 gdigrab 逐窗口采集,替代默认的桌面裁剪方案 |
+| `QIRA_TEXT_FALLBACK` | Windows:设为 `unicode` 时非 ASCII 输入从剪贴板粘贴回退为 unicode 注入 |
+| `QIRA_MODIFIER_LEAD` / `QIRA_MODIFIER_TAIL` | 修饰键按住点击前后的等待秒数(桌面 adapter) |
+| `QIRA_OVERLAY_DEBUG` | 设为 `1` 放行悬浮窗辅助进程的 stderr,便于诊断 |
+| `QIRA_ENGINE_TRACE` | 调试用:指定一个目录;每次模型调用追加一条 JSONL 记录,并把该步截图存入该目录 |
 
 ## 模型与语言
 
-`model_alias` 决定所有操作背后的模型:
+`model` 决定所有操作背后的 Vertex AI 模型,格式为
+`"{provider}/{model}"`:
 
-| 档位 | 取舍 |
-|---|---|
-| `fast` | 最便宜、延迟最低 |
-| `balanced` | 质量与成本均衡 |
-| `balanced_pro` | 强于 `balanced` |
-| `high_quality` | 最高质量、成本最高 |
-
-```python
-bot = Qirabot(model_alias="high_quality")        # 全局生效
-bot.click(page, "登录", model_alias="fast")      # 或按调用覆盖
-```
-
-模型托管在服务端——没有 API key 或 endpoint 需要配置,各档位背后的具体
-模型由平台管理(并持续升级)。`qirabot models` 列出你的账号可用的档位;
-档位留空则使用服务器默认。
-
-**什么时候选哪个档位?**经验法则:
-
-- **先不设置**,除非有明确理由——服务器默认档位已为通用场景调优。
-- **`fast`**——干净、高对比度、目标明确的界面:表单填写、标准 web
-  流程、大按钮。最便宜、延迟最低。
-- **`high_quality`**——密集或低对比度的画面:小字号、拥挤的仪表盘、
-  游戏 UI、细微的视觉断言(“图标是置灰的”)。
-- **按调用混用**——既压低成本又不牺牲准确率的模式:bot 默认用便宜
-  档位,只给难的调用升档:
+| Provider | 提供 | 默认模型 |
+|---|---|---|
+| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | `gemini-3.6-flash` |
+| `claude-vertex` | Vertex AI 上的 Anthropic Claude 模型 | `claude-sonnet-5` |
 
 ```python
-bot = Qirabot(model_alias="fast")
-bot.click(page, "搜索按钮")                                 # 简单 → fast
-data = bot.extract(page, "结果表格里的所有价格",
-                   model_alias="high_quality")              # 难 → 升档
+bot = Qirabot(model="claude-vertex/claude-sonnet-5")
+bot = Qirabot(model="claude-vertex")  # 只写 provider → 该 provider 的默认模型
 ```
+
+只写 provider 名会解析为该 provider 的默认模型。什么都不配置时,
+SDK 使用 `gemini-vertex/gemini-3.6-flash`。`qirabot models` 列出
+各 provider、各自的默认模型,以及本机 ADC 是否可用。
+
+Qirabot 不按步计费——模型调用直接从你的机器发往你自己的 Vertex AI
+项目,由 Google Cloud 按该模型的价格计费。
 
 **关注成本:**`extract()` / `verify()` 的结果和 `ai()` 的每个
 `StepResult` 都带有 `input_tokens` / `output_tokens` 字段——一次调用的
@@ -101,33 +106,27 @@ data = bot.extract(page, "结果表格里的所有价格",
 
 ## 思考深度
 
-每个模型档位自带一个由平台调校的思考深度。`thinking_level` 可以覆盖
-它——同一个模型、不同的推理深度——让思考量随任务难度伸缩,而不必
-切换档位:
+`thinking_level` 在同一个模型内伸缩推理深度——难的判断多想,简单的
+目标少想:
 
 | 取值 | 权衡 |
 |---|---|
 | `minimal` | 最快最省——目标明显、界面干净 |
-| `low` | 多数档位的默认区间 |
+| `low` | 默认档——步进快,足够覆盖常规 UI 判断 |
 | `medium` | 需要更多判断的场景 |
 | `high` | 推理最深——延迟和思考 token 开销也最高 |
 
 ```python
-bot = Qirabot(model_alias="balanced_pro")                 # 档位默认深度
+bot = Qirabot(thinking_level="low")                       # 任务级默认
 bot.verify(page, "每一行都应用了折扣价",
            thinking_level="high")                         # 难的断言 → 多想想
 ```
 
-与 `model_alias` 同样的两层用法:构造函数设任务级默认,每个动作方法
-都可按调用覆盖。思考越深消耗的思考 token 越多(按档位的 thinking 单价
-计费),所以控成本的模式与档位混用一致:默认低档,只给难的调用升档。
+构造函数设任务级默认,每个动作方法都可按调用覆盖。思考越深消耗的思考
+token 越多,所以控成本的模式是:默认低档,只给难的调用升档。
 
-两点注意:
-
-- 需要服务端支持该字段——旧版自部署服务端会静默忽略(不报错,按
-  档位默认执行)。
-- 实际粒度取决于档位背后的模型;部分后端会合并或钳位相邻深度,应把
-  取值理解为意图,而非四个严格区分的深度保证。
+一点注意:实际粒度取决于底层模型;部分模型会合并或钳位相邻深度,应把
+取值理解为意图,而非四个严格区分的深度保证。
 
 `language` 设定 AI 响应(提取文本、推理)的语言——短语言标签如 `"zh"` /
 `"en"`:
@@ -153,11 +152,12 @@ bot = Qirabot(settle_seconds=0)     # 关闭;改用 wait_for()
 这是一刀切的固定延迟。"等 X 出现"请优先用自动等待的 `timeout=` /
 `wait_for()` 轮询——条件一成立立即返回。
 
-## 任务生命周期
+## 运行生命周期
 
-每个 `Qirabot` 实例管理一个服务端任务:构造时创建(传已有 `task_id` 可
-附加到既有任务),每次调用记录为一个步骤,`close()` / 上下文管理器退出时
-标记完成。忘了 `close()` 有 `atexit` 兜底;进程运行期间后台心跳会保持
-任务在线,悄然死掉的进程由服务端孤儿清理器约 5 分钟后回收。要以失败或
-取消而非完成结束任务,见
+每个 `Qirabot` 实例管理一次本地运行:构造时分配运行 id(`local-` 加
+8 位十六进制,可通过 `bot.task_id` 读取),每次调用记录为一个步骤,
+`close()` / 上下文管理器退出时写出 HTML 报告。忘了 `close()` 有
+`atexit` 兜底。构造函数会校验模型配置并解析 Google Cloud 凭据,配置
+有误在构造时就报错,而不是运行到一半才失败。要以失败或取消而非完成
+结束运行,见
 [API 参考](/zh/reference/api#任务生命周期)中的 `fail()` / `cancel()`。

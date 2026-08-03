@@ -14,7 +14,7 @@ Install:
     playwright install chromium
 
 Run:
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/automation/05_concurrent.py
 """
 

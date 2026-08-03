@@ -6,6 +6,8 @@ Cross-platform GUI automation, driven by multimodal AI vision. Drive browsers, m
 
 Run it standalone (`bot.open()` launches a browser for you; Android / iOS / Windows-window backends are built in with zero extra dependencies), bolt it onto your existing Playwright / Selenium / Appium / pyautogui session, drop it into a pytest suite, or bind by HWND to drive a Unity / Unreal / native desktop game. Same API across all of them.
 
+The decision engine runs locally inside the SDK: each screenshot goes directly from your machine to a vision model you configure on Google Vertex AI, authenticated with your own Google Cloud credentials. There is no Qirabot server in the loop — no account, no API key, no per-step billing.
+
 **📖 Full documentation: [qirabot.com/docs](https://qirabot.com/docs/)** ([中文](https://qirabot.com/docs/zh/))
 
 ## See it work
@@ -62,23 +64,39 @@ uv tool install qirabot        # Android + iOS + Windows window; zero extras
 pip, virtualenvs, per-framework extras, and troubleshooting:
 [Installation guide](https://qirabot.com/docs/guide/installation.html).
 Whichever path you took, `qirabot doctor` reports what is installed, what is
-missing (with the exact fix), and whether your API key reaches the server.
+missing (with the exact fix), and whether your Google Cloud credentials resolve.
+
+Upgrading from v2? The cloud backend (accounts, API keys) is gone in v3 — see
+[CHANGELOG.md](CHANGELOG.md) for the migration table, or pin
+`pip install "qirabot<3"` to stay on the v2 cloud behavior.
 
 ## Quick Start
 
-Log in once — this opens your browser to authorize the CLI and saves an
-API key locally (on a headless server, open the printed URL from any device;
-`--paste` enters a key from your [dashboard](https://app.qirabot.com) manually):
+Qirabot calls a vision model on Google Vertex AI with your own Google Cloud
+credentials. Set up Application Default Credentials (ADC) once:
 
 ```bash
-qirabot login
+gcloud auth application-default login
+# or, for service accounts / CI:
+# export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
+Optionally pick a model as `{provider}/{model}` — provider is one of
+`claude-vertex`, `gemini-vertex`; the default is
+`gemini-vertex/gemini-3.6-flash`. Set the Google Cloud project if your
+credentials don't already carry one:
+
+```bash
+export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # or Qirabot(model=...)
+export QIRA_VERTEX_PROJECT="my-gcp-project"                # or Qirabot(vertex_project=...)
+```
+
+`qirabot models` lists the providers and verifies your credentials.
 Then hand the AI a task. Real, unedited output:
 
 ```text
 $ qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org
-Task: 6237d4ff-b96b-4c7d-addb-30d8a0334970
+Run: local-6237d4ff
 [1/20] type_text  ← "SpaceX"
         └ Type 'SpaceX' into the Wikipedia search bar and press enter to search.
 Done: Space Exploration Technologies Corp., doing business as SpaceX, is an
@@ -89,8 +107,9 @@ Done: Space Exploration Technologies Corp., doing business as SpaceX, is an
 Every run writes an HTML report with per-step screenshots; `--record`
 captures a video of the whole run.
 
-For sites that need an account, log in once by hand — no API key, no tokens —
-and every later run that reuses the profile starts already signed in:
+For sites that need an account, log in once by hand — no site credentials in
+your scripts — and every later run that reuses the profile starts already
+signed in:
 
 ```bash
 qirabot open-browser --user-data-dir ~/.automation --url news.ycombinator.com/login
@@ -249,9 +268,10 @@ result = bot.ai(
 )
 ```
 
-The tool runs **locally on your machine** — the server never sees your
-endpoints or credentials — and its return value becomes the model's next
-observation. One instruction now spans systems that used to take a page of
+The tool runs locally in your process, like everything else in v3 — the model
+sees only the tool's name, description, parameters, and return value, never
+your endpoints or credentials — and that return value becomes the model's
+next observation. One instruction now spans systems that used to take a page of
 glue code: UI steps, backend calls, and human handoffs in a single flow.
 Details (schemas, error handling, pruning built-in tools):
 [AI Tasks & Custom Tools](https://qirabot.com/docs/advanced/ai-tasks.html).

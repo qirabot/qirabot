@@ -2,11 +2,11 @@
 
 Registers a gm_command tool with bot.ai(). When the model hits a blocker it
 can solve with a GM command (out of energy, missing items), it calls the tool;
-the SDK runs your function locally — the server never sees your GM endpoint
-or token — and feeds the return value back so the model continues the UI flow.
+the SDK runs your function locally — your GM endpoint and token stay in your
+script — and feeds the return value back so the model continues the UI flow.
 
 Run:
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/game/custom_tool_gm.py
 """
 

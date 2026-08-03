@@ -1,32 +1,38 @@
 ---
 title: FAQ — Common Questions about Qirabot
-description: Do you need your own model API key, which calls are billed, why recordings come out black, headless fallback, long waits between steps, and other frequently asked questions.
+description: Google Cloud credential setup, which calls invoke the model, why recordings come out black, headless fallback, long waits between steps, and other frequently asked questions.
 ---
 
 # FAQ
 
-## Do I need my own model API key (OpenAI, Anthropic, …)?
+## What credentials do I need?
 
-No. The vision models are hosted on Qirabot's servers — run `qirabot login`
-once (browser authorization) and every run works. There are no model endpoints
-or env-var matrices to configure; you pick a quality tier per call or per bot
-with a [model alias](/advanced/configuration#model-language) (`fast` ·
-`balanced` · `balanced_pro` · `high_quality`).
+Google Cloud Application Default Credentials (ADC) — no Qirabot account or
+API key. The decision engine runs locally inside the SDK and calls Google
+Vertex AI in your own project: set `GOOGLE_APPLICATION_CREDENTIALS` to a
+service-account JSON, or run `gcloud auth application-default login` once
+(on GCE the metadata server is used automatically). Pick the model with
+`Qirabot(model="{provider}/{model}")` or `QIRA_MODEL` — see
+[Configuration](/advanced/configuration#model-language). `qirabot doctor`
+verifies the setup.
 
-## Which calls are billed, and which are free?
+## Which calls invoke the model, and which don't?
 
-Calls that invoke the AI are billed: `ai()`, `extract`, `verify`, `wait_for`,
-and the AI-located actions (`click`, `type_text`, `double_click` with an
-element description). Direct actions never touch the AI and are free:
+Calls that invoke the AI send a screenshot to your Vertex AI endpoint (and
+consume tokens there): `ai()`, `extract`, `verify`, `wait_for`, and the
+AI-located actions (`click`, `type_text`, `double_click` with an element
+description). Direct actions never touch the AI and cost nothing:
 `navigate`, `go_back`, `close_tab`, `scroll`, `press_key`, `screenshot`,
 `launch_app`, `type_text` with an empty locate, and `mouse_up` without a
-locate. The [API reference](/reference/api) marks these "no AI, no billing".
-Your balance lives in the [dashboard](https://app.qirabot.com); running dry
-raises `InsufficientBalanceError`.
+locate. The [API reference](/reference/api) marks these "no AI". Model
+usage is billed by Google Cloud on your project — token counts are on
+every result object.
 
 ## What data leaves my machine?
 
-Screenshots, your instruction text, and step metadata — nothing else. Code,
+Screenshots, your instruction text, and step metadata — sent directly from
+your machine to the model endpoint you configured (Google Vertex AI, in
+your own Google Cloud project). No Qirabot server is involved. Code,
 cookies, and credentials stay local; actions execute on your machine. Full
 details in [Data & Privacy](/reference/privacy).
 
@@ -53,12 +59,11 @@ An optional backend dependency isn't installed. The error message contains
 the exact `pip install "qirabot[<extra>]"` to run; the extras are listed in
 [Installation](/guide/installation).
 
-## My script sleeps between steps — will the task time out?
+## My script sleeps between steps — will the run time out?
 
-No. The SDK sends a background heartbeat while your process is alive, so
-long waits between `bot.*` calls are safe. Only a silently-dead process is
-reclaimed, by the server's orphan cleaner after ~5 minutes. Details in
-[Configuration](/advanced/configuration#task-lifecycle).
+No. The engine runs locally in your process — there is no server session
+to keep alive, so long waits between `bot.*` calls are safe. Details in
+[Configuration](/advanced/configuration#run-lifecycle).
 
 ## Can I type Chinese or emoji on Android?
 
@@ -79,3 +84,11 @@ The built-in device backends are drop-in replacements
 (`connect_device(...)` → `AdbDevice` / `WdaClient` / `Window`), and a
 reference adapter keeps old scripts running unchanged. See
 [Migrating from Airtest](/backends/custom-adapters#migrating-from-airtest-qirabot-1-x).
+
+## I'm coming from qirabot 2.x (cloud engine)
+
+v3 replaced the cloud decision engine with a local one: no account, no
+`QIRA_API_KEY`, no `qirabot login` — configure Google Cloud ADC and a
+model instead. If `QIRA_API_KEY` is set but no model is configured,
+`Qirabot()` raises a clear error with migration steps at construction. To
+keep the old cloud behavior, pin `pip install "qirabot<3"`.

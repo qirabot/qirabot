@@ -6,9 +6,9 @@ constructor kwarg is dropped from the SDK, that code silently breaks — and the
 only signal is a failed automation run, far from this repo. These tests tie the
 skill's code back to the live API so drift fails CI here instead.
 
-No network and no devices: ``Qirabot(api_key=..., task_id=...)`` skips the
-``/tasks/create`` round-trip, and the templates are *parsed*, never executed, so
-nothing launches a browser, emulator, or desktop session.
+No network and no devices: only signatures are inspected (no ``Qirabot`` is
+ever constructed), and the templates are *parsed*, never executed, so nothing
+launches a browser, emulator, or desktop session.
 """
 
 from __future__ import annotations

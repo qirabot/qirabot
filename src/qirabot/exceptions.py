@@ -34,9 +34,9 @@ class InsufficientBalanceError(QirabotError):
 
 
 class RateLimitError(QirabotError):
-    """Too many requests; the client is being rate limited (429).
+    """Too many requests; the model provider is rate limiting (429).
 
-    Retryable: the SDK's internal retry loop backs off and retries these.
+    The engine's provider layer backs off and retries these internally.
     Exposed as its own type so callers can ``except RateLimitError`` to apply
     their own backoff or surface a "slow down" message.
     """

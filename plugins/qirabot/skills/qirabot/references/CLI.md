@@ -1,25 +1,24 @@
 # Qirabot CLI reference (condensed)
 
 The `qirabot` command ships with the package (any install/extra). Same auth as
-the SDK: `QIRA_API_KEY` from the environment, `./.env` (the CLI loads `.env`
-automatically; the SDK doesn't), or the `qirabot login` config file. One run
-command = one server task = one `ai()` run — there is no CLI equivalent of
-`extract`/`verify`/`wait_for` or of chaining several `ai()` calls in one
+the SDK: Google Cloud ADC — set `GOOGLE_APPLICATION_CREDENTIALS` to a
+service-account JSON or run `gcloud auth application-default login` once. The
+CLI also loads `./.env` automatically (the SDK doesn't), so `QIRA_MODEL` etc.
+can live there. One run command = one `ai()` run — there is no CLI equivalent
+of `extract`/`verify`/`wait_for` or of chaining several `ai()` calls in one
 session; those need the SDK.
 
 ## Global options — go BEFORE the subcommand
 
 ```bash
-qirabot --base-url https://self.hosted browser "..."   # right
-qirabot browser "..." --base-url https://self.hosted   # wrong (unknown option)
+qirabot --vertex-project my-proj browser "..."   # right
+qirabot browser "..." --vertex-project my-proj   # wrong (unknown option)
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `--api-key` | env `QIRA_API_KEY` | auth |
-| `--base-url` | env `QIRA_BASE_URL`, else `https://app.qirabot.com` | self-hosted/regional |
-| `--timeout` | `120` | HTTP timeout (seconds) |
-| `--verify-ssl/--no-verify-ssl` | verify | TLS verification |
+| `--vertex-project` | env `QIRA_VERTEX_PROJECT`, else `GOOGLE_CLOUD_PROJECT`, else the ADC credentials' own project | Google Cloud project for the Vertex providers |
+| `--vertex-location` | env `QIRA_VERTEX_LOCATION`, else `GOOGLE_CLOUD_LOCATION`, else `global` | Vertex location |
 
 `-h/--help` works everywhere and prints each option's default; `--version`
 prints the package version.
@@ -30,21 +29,34 @@ All four take the instruction as the positional argument and share:
 
 | Option | Default | Notes |
 |---|---|---|
-| `-n/--name` | derived from the instruction (first line, ≤60 chars) | task name in the web UI |
-| `-m/--model` | server default | model alias — list them with `qirabot models` |
-| `--thinking-level` | model alias's setting | thinking override: `minimal`/`low`/`medium`/`high` (needs a backend that knows the field; older servers silently ignore it) |
-| `-l/--language` | server default | e.g. `zh`, `en` |
+| `-n/--name` | derived from the instruction (first line, ≤60 chars) | run name shown in the report |
+| `-m/--model` | env `QIRA_MODEL`, else the built-in default | `"{provider}/{model}"`, e.g. `gemini-vertex/gemini-3.6-flash` — providers listed by `qirabot models` |
+| `--thinking-level` | model's setting | thinking override: `minimal`/`low`/`medium`/`high` |
+| `--media-resolution` | env `QIRA_MEDIA_RESOLUTION`, else `high` | screenshot detail the model sees: `low`/`medium`/`high`/`ultra_high` (Gemini only) |
+| `-l/--language` | engine default | e.g. `zh`, `en` |
 | `--max-steps` | `20` | AI step budget |
 | `--report/--no-report` | report | HTML run report |
 | `--report-dir` | env `QIRA_REPORT_DIR`, else `./qira_runs/<date>/<run>/` | output root |
 | `--annotate/--no-annotate` | annotate | crosshair on saved screenshots |
 | `--record` | off | see per-command semantics below — host screen on browser/desktop, **device** screen on android/ios |
+| `--output-format` | `text` | `json` = stdout carries one final JSON result object; `stream-json` = NDJSON, a `start` line + one line per step + the result object |
 
 **Exit codes** (CI-gateable): `0` = model achieved the goal · `1` = failed /
-error / max-steps exhausted · `130` = Ctrl+C (task recorded as *cancelled*
-server-side, not failed). Live per-step trace prints to stdout while running
+error / max-steps exhausted · `130` = Ctrl+C (run recorded as *cancelled* in
+the report, not failed). Live per-step trace prints to stdout while running
 (`[3/20] click "Login" └ reasoning…`), final line is `Done: <output>` or
 `Failed: <output>`.
+
+**Machine-readable output** — with `--output-format json`/`stream-json`,
+stdout carries only JSON (rich output is suppressed; exit codes unchanged).
+Every exit path ends with one result object:
+`{"type":"result","success":bool,"status":"completed|goal_failed|max_steps|error|cancelled","output":str,"task_id":str,"usage":{"ai_steps","input_tokens","output_tokens","thinking_tokens","cache_read_tokens","cache_write_tokens","step_duration_ms","total_tokens",…},"report":path|null}`.
+`report` is the `report.html` path, written when the process exits — read it
+after the CLI returns. `stream-json` additionally prints, one JSON object per
+line: `{"type":"start","task_id",…,"max_steps":…}` first, then a
+`{"type":"step",…}` line per AI step whose fields mirror the SDK's
+`StepResult` (`step`, `action_type`, `params`, `decision`, `output`,
+`finished`, per-step tokens/duration).
 
 ### `qirabot browser "<instruction>"`
 
@@ -126,12 +138,9 @@ window-relative screenshots).
 
 | Command | What it does |
 |---|---|
-| `qirabot login` | Save the API key once (verified, stored in the user config; flag/env/.env still win). `--status` shows the active key masked + its source layer. |
 | `qirabot install-browser` | One-time Chromium download for the browser backend (wraps `playwright install chromium`; required form in isolated `uv tool` installs, where playwright's own CLI is not on PATH). |
-| `qirabot doctor` | Environment check: Python, API key + server reachability, each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
-| `qirabot task <task_id>` | Server-side status + commands + steps tables for any task (CLI- or SDK-created). |
-| `qirabot screenshot <task_id> [-s N] [-o PATH] [-f]` | Download a task screenshot (`-s 0` = latest step). Refuses to overwrite without `-f`. |
-| `qirabot models` | List available model aliases — the valid `-m` values. |
+| `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC + project), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
+| `qirabot models` | List the built-in Vertex providers (`claude-vertex` / `gemini-vertex`), their default models, the session default, and whether ADC credentials resolve — the valid `-m`/`QIRA_MODEL` values. |
 
 ## When the CLI is the wrong tool → use the SDK
 
@@ -140,5 +149,3 @@ window-relative screenshots).
   instruction per invocation, and device state does not survive across runs.
 - **Custom targets**: your own Selenium driver / an already-built Appium
   session — `bind()` is SDK-only.
-- **Machine-parsing the result**: output is rich-formatted for humans
-  (`Done: <output>`); there is no `--json` mode. Parse the exit code only.

@@ -32,7 +32,7 @@ qirabot browser "..." --cdp-url http://localhost:9222                    # attac
 ### Log in once, reuse the session
 
 For sites that need an account, set the login up by hand — no AI task, no
-API key, no tokens spent. `open-browser` opens the profile in a visible
+model calls, no tokens spent. `open-browser` opens the profile in a visible
 browser; log in, close the window, and every later run that passes the same
 `--user-data-dir` starts already signed in:
 
@@ -79,7 +79,7 @@ pass your own object as the target — or `bind()` it once to stop repeating it
 One gotcha worth knowing up front: a click can open a **new tab**, and the
 returned page is the live one — keep the form `page = bot.click(page, ...)`.
 Details and the smart `go_back` behavior are in the
-[API reference](/reference/api#navigation-scrolling-keys-no-ai-no-billing).
+[API reference](/reference/api#navigation-scrolling-keys-no-ai).
 
 ## Notes
 

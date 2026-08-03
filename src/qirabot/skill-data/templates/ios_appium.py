@@ -20,7 +20,8 @@ Prereqs (real device):
 Install:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install "qirabot[appium]"
-    echo 'QIRA_API_KEY=qk_...' > .env    # load_dotenv() reads this (also QIRA_BASE_URL)
+    gcloud auth application-default login    # one-time Google Cloud auth (ADC)
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
 
 When to pick this over ios_wda.py:
     - Simulators (Appium can build WDA itself — see Variant A below).
@@ -38,7 +39,7 @@ from appium.options.ios import XCUITestOptions
 
 from qirabot import Qirabot, StepResult, load_dotenv
 
-# Read QIRA_API_KEY / QIRA_BASE_URL from ./.env (a real exported env var wins).
+# Read QIRA_MODEL (and other QIRA_* settings) from ./.env (a real exported env var wins).
 load_dotenv()
 
 # TODO: fill in your device + app, and the task.
@@ -74,7 +75,7 @@ def on_step(step: StepResult) -> None:
 
 # bind() once: the driver is stable for the whole session, so every call drops
 # the repeated first arg — bot.ai("...") instead of bot.ai(driver, "...").
-with Qirabot(task_name="ios-template", model_alias="balanced_pro").bind(driver) as bot:
+with Qirabot(task_name="ios-template").bind(driver) as bot:
     # Default: hand the whole task to qirabot's agent loop (self-heals).
     result = bot.ai(TASK, max_steps=20, on_step=on_step)
     print("success:", result.success)

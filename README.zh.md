@@ -6,6 +6,8 @@
 
 既可独立运行（`bot.open()` 自动启动浏览器；Android / iOS / Windows 窗口后端内置，零额外依赖），也可接入你现有的 Playwright / Selenium / Appium / pyautogui 会话、嵌入 pytest 测试套件，或按 HWND 绑定窗口驱动 Unity / Unreal / 原生桌面游戏。所有平台共用同一套 API。
 
+决策引擎在 SDK 本地运行：每张截图直接从你的机器发往你在 Google Vertex AI 上自行配置的视觉模型，使用你自己的 Google Cloud 凭据认证。全程没有 Qirabot 服务器参与——无账号、无 API key、无按步计费。
+
 **📖 完整文档：[qirabot.com/docs/zh](https://qirabot.com/docs/zh/)**
 
 ## 效果演示
@@ -54,21 +56,32 @@ powershell -ExecutionPolicy ByPass -c "irm https://qirabot.com/install.ps1 | iex
 uv tool install qirabot        # Android + iOS + Windows 窗口；零额外依赖
 ```
 
-pip、虚拟环境、各框架 extras 与故障排查见[安装指南](https://qirabot.com/docs/zh/guide/installation.html)。安装完成后运行 `qirabot doctor`，它会报告已安装与缺失的组件（并给出对应的修复命令），以及 API key 能否连通服务器。
+pip、虚拟环境、各框架 extras 与故障排查见[安装指南](https://qirabot.com/docs/zh/guide/installation.html)。安装完成后运行 `qirabot doctor`，它会报告已安装与缺失的组件（并给出对应的修复命令），以及 Google Cloud 凭据能否正常解析。
+
+从 v2 升级？v3 已移除云端后端（账号、API key），迁移对照表见 [CHANGELOG.md](CHANGELOG.md)；如需继续使用 v2 云端行为，可锁定 `pip install "qirabot<3"`。
 
 ## 快速上手
 
-先登录一次——会打开浏览器完成授权并在本地保存 API key（无头服务器上可用任意设备打开打印出的链接；也可用 `--paste` 手动粘贴[控制台](https://app.qirabot.com)里的 key）：
+Qirabot 使用你自己的 Google Cloud 凭据调用 Google Vertex AI 上的视觉模型。先配置一次 Application Default Credentials（ADC）：
 
 ```bash
-qirabot login
+gcloud auth application-default login
+# 服务账号 / CI 场景：
+# export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
-然后把任务交给 AI。下面是一次真实运行的完整输出——AI 自己导航、滚动、记录数据，最后按要求整理成表格：
+模型按 `{provider}/{model}` 格式指定，provider 为 `claude-vertex`、`gemini-vertex` 之一，默认 `gemini-vertex/gemini-3.6-flash`；如果凭据本身不带项目，再指定 Google Cloud 项目：
+
+```bash
+export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # 或 Qirabot(model=...)
+export QIRA_VERTEX_PROJECT="my-gcp-project"                # 或 Qirabot(vertex_project=...)
+```
+
+`qirabot models` 会列出全部 provider 并检测凭据是否可用。然后把任务交给 AI。下面是一次真实运行的完整输出——AI 自己导航、滚动、记录数据，最后按要求整理成表格：
 
 ```text
 $ qirabot browser "百度热搜中10条热点新闻，以表格形式返回" -l zh
-Task: d2631017-2612-4585-bca7-58409b67b9a5
+Run: local-d2631017
 [1/20] navigate
         └ 打开百度热搜页面
 [2/20] save_note
@@ -107,7 +120,7 @@ qirabot open-browser --user-data-dir ~/.automation --url bilibili.com
 
 ```text
 $ qirabot browser --user-data-dir ~/.automation "给B站影视飓风最新发布的第二个视频点赞和评论" -l zh
-Task: f123a9a8-3882-4e61-b354-9c34e8492657
+Run: local-f123a9a8
 [1/20] navigate
         └ 打开B站官网
         ⋯（略 4 步：搜索、进入主页、打开投稿列表）
@@ -213,7 +226,7 @@ result = bot.ai(
 )
 ```
 
-工具**在你的本地机器上执行**——服务端接触不到你的接口和凭据——返回值会作为模型下一步的观察结果。过去需要一整页胶水代码串联的跨系统流程（UI 操作、后端调用、人工介入），现在一句指令就能覆盖。更多细节（schema、错误处理、裁剪内置工具）见[AI 任务与自定义工具](https://qirabot.com/docs/zh/advanced/ai-tasks.html)；可运行示例：[custom_tool_gm.py](examples/game/custom_tool_gm.py) · [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py)。
+工具在你的进程内本地执行（v3 中其余一切也是如此）——模型只能看到工具的名称、描述、参数和返回值，接触不到你的接口和凭据——返回值会作为模型下一步的观察结果。过去需要一整页胶水代码串联的跨系统流程（UI 操作、后端调用、人工介入），现在一句指令就能覆盖。更多细节（schema、错误处理、裁剪内置工具）见[AI 任务与自定义工具](https://qirabot.com/docs/zh/advanced/ai-tasks.html)；可运行示例：[custom_tool_gm.py](examples/game/custom_tool_gm.py) · [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py)。
 
 ## 进度悬浮窗
 

@@ -16,7 +16,7 @@ Do both — the knowledge line saves the model a wasted attempt, the handler
 guard makes violation impossible.
 
 Run:
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     python examples/game/knowledge.py
 """
 

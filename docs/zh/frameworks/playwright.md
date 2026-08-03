@@ -74,8 +74,10 @@ Playwright 上不额外加 settle 延迟(信任框架)。
 
 ## 底层机制
 
-截图上传到 Qirabot 服务器做推理和元素定位;动作通过你的 Playwright 会话
-在本地执行。代码、cookie、凭据都不离开你的机器——只上传截图。
+决策引擎在 SDK 内本地运行:截图直接从你的机器发往你配置的模型端点
+(Google Vertex AI)做推理和元素定位;动作通过你的 Playwright 会话在
+本地执行。代码、cookie、凭据都不离开你的机器——发给模型的只有截图和
+指令文本。
 
 相关:[浏览器后端](/zh/backends/browser)(托管浏览器、CDP 接管、持久化
 profile) · [pytest 集成](/zh/frameworks/pytest)

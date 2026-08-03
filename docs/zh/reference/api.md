@@ -1,6 +1,6 @@
 ---
 title: API 参考——动作与平台支持
-description: Qirabot 全部动作——AI 定位的点击与输入、extract/verify/wait_for、bot.ai()、免计费的导航与按键、完整的平台支持矩阵,以及任务生命周期。
+description: Qirabot 全部动作——AI 定位的点击与输入、extract/verify/wait_for、bot.ai()、不经模型调用的直接导航与按键、完整的平台支持矩阵,以及运行生命周期。
 ---
 
 # API 参考
@@ -10,7 +10,7 @@ description: Qirabot 全部动作——AI 定位的点击与输入、extract/ver
 
 ## 简单动作(AI 定位)
 
-轻量的视觉元素定位——快且低成本:
+轻量的视觉元素定位——每次调用是对你配置的模型的一次请求:
 
 ```python
 # 按描述点击元素
@@ -59,7 +59,7 @@ print(result.success, result.status, result.output)
 [AI 任务与自定义工具](/zh/advanced/ai-tasks);运行结果见
 [错误处理](/zh/advanced/error-handling)。
 
-## 导航、滚动与按键(无 AI、不计费)
+## 导航、滚动与按键(无 AI)
 
 不需要 AI 元素定位的直接动作。`go_back`、`navigate`、`close_tab`、
 `press_key` 返回当前页面/目标(动作后可能变化);`scroll` 返回 `None`。
@@ -75,7 +75,7 @@ bot.press_key(page, "ctrl+c")       # 组合键(用 "+" 连接)
 bot.press_key(target, "w", duration_seconds=2)  # 按住 2 秒(仅桌面)
 page = bot.press_key(page, "ctrl+w")  # 关闭当前标签页,切到另一个——重新赋值
 bot.type_text(page, "", "hello", press_enter=True)  # 空 locate:直接输入到
-                                    # 当前焦点元素(无 AI、不计费)
+                                    # 当前焦点元素(无 AI、无模型调用)
 ```
 
 **直接输入。** `type_text` 传**空 `locate`** 会跳过 AI 定位,输入到当前
@@ -142,7 +142,7 @@ AI 定位的动作(`click`、`type_text`、`double_click`)和 AI 操作
 - ᵈ 纯 adb/WDA 没有元素模型;`clear_text` 是尽力而为(Android:光标到末尾 + 连续删除;iOS:连续退格)。
 - ᵉ Windows 窗口后端发送 DirectInput 扫描码(真正的硬件级按键,含 `ctrl`/`alt`/`win` 组合);扫描码表之外的字符以 unicode 键事件注入。`duration_seconds`(按住)仅在 pyautogui + Windows 窗口后端生效;其他平台降级为瞬时点按。
 - ᶠ `long_press` 是触屏专属手势(Android/iOS)。浏览器/桌面 adapter 抛 `NotImplementedError`。
-- ᵍ `mouse_down`/`mouse_up`/`key_down`/`key_up` 是桌面专属的按下/释放拆分原语(pyautogui + Windows 窗口后端),用于在执行其他动作时保持输入按住。按下与释放需配对;`ai()` 运行结束和 `close()` 时自动释放仍按住的输入。`mouse_up` 的 locate 可省略(省略则在当前光标处释放——确定性、无 AI、不计费)。浏览器/移动端 adapter 抛 `NotImplementedError`。
+- ᵍ `mouse_down`/`mouse_up`/`key_down`/`key_up` 是桌面专属的按下/释放拆分原语(pyautogui + Windows 窗口后端),用于在执行其他动作时保持输入按住。按下与释放需配对;`ai()` 运行结束和 `close()` 时自动释放仍按住的输入。`mouse_up` 的 locate 可省略(省略则在当前光标处释放——确定性、无 AI)。浏览器/移动端 adapter 抛 `NotImplementedError`。
 - ʰ iOS 没有返回键;`go_back` 执行通用的左边缘右滑手势。
 
 `navigate`/`go_back` 在不支持的平台抛 `NotImplementedError`;`close_tab`
@@ -176,9 +176,10 @@ macOS 用 `open -a`/`open -b`(已运行的应用会被激活),Windows 用
 
 ## 任务生命周期
 
-每个 `Qirabot` 实例管理一个跟踪所有操作的服务端任务:构造时创建(传已有
-`task_id` 可附加),每次 `click()` / `extract()` / `ai()` 记录为一个步骤,
-`close()` 或上下文管理器退出时标记完成:
+每个 `Qirabot` 实例管理一个跟踪所有操作的本地运行:构造时创建,并分配一个
+本地运行 id(`bot.task_id`,形如 `local-<8 位十六进制>`),每次
+`click()` / `extract()` / `ai()` 记录为一个步骤,`close()` 或上下文管理器
+退出时标记完成。所有运行记录都留在你的机器上——只用于生成 HTML 报告:
 
 ```python
 with Qirabot(task_name="my automation") as bot:
@@ -187,14 +188,13 @@ with Qirabot(task_name="my automation") as bot:
 # 自动调用 bot.close()
 ```
 
-忘了 `close()` 有 `atexit` 兜底,在脚本退出时清理。进程存活期间,后台
-**心跳**会让服务端任务保持在线(步骤之间长时间休眠也安全);进程悄然死掉
-后,服务端的孤儿清理器约 5 分钟后将任务超时回收。
+忘了 `close()` 有 `atexit` 兜底,在脚本退出时清理。
 
-需要以“completed”之外的终态结束任务时,还有两个生命周期调用:
-`bot.fail("哪里出了问题")` 把任务报告为失败,`bot.cancel("原因")` 把任务
-报告为取消——都用在 `close()` 默认记录的“成功完成”之前,或代替它。
+需要以“completed”之外的终态结束运行时,还有两个生命周期调用:
+`bot.fail("哪里出了问题")` 把运行记录为失败,`bot.cancel("原因")` 把运行
+记录为取消——都用在 `close()` 默认记录的“成功完成”之前,或代替它。终态
+会体现在该次运行的 HTML 报告里。
 
-另见:[配置](/zh/advanced/configuration)(构造参数、模型档位、settle
+另见:[配置](/zh/advanced/configuration)(构造参数、模型选择、settle
 延迟) · [错误处理](/zh/advanced/error-handling) ·
 [自定义 Adapter](/zh/backends/custom-adapters)(`bind()`、`DeviceAdapter`)

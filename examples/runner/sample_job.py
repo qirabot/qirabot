@@ -6,8 +6,9 @@ http://VM_HOST:8765/run`). It is a plain standalone Qirabot script — the
 runner just does `python sample_job.py` inside the remote machine's logged-in
 desktop session and streams stdout/stderr back to you live.
 
-Printing the task_id lets you open the run in the web console without
-watching the screen.
+Printing the task_id (a local run id, `local-...`) plus the streamed step log
+lets you follow the run without watching the screen; the full HTML report and
+per-step screenshots land on the runner machine under `bot.report_dir`.
 """
 
 import logging
@@ -23,8 +24,8 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 # "step N/10 ..." lines show, not a "HTTP Request: ..." line per call.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-bot = Qirabot(task_name="sample-browser-job", model_alias="balanced_pro")
-print("task_id:", bot.task_id, flush=True)  # open this run in the web console
+bot = Qirabot(task_name="sample-browser-job")
+print("task_id:", bot.task_id, flush=True)  # local run id — tells runs apart in the stream
 
 # pyautogui can't launch apps, so open the target first. launch_app resolves the
 # app by name cross-platform ("google chrome" here; e.g. "notepad" on Windows).

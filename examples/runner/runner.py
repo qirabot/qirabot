@@ -22,7 +22,7 @@ you see progress (and the task_id) as it runs. The stream ends with a
 Run it on the dedicated machine, inside a logged-in graphical session:
 
     python -m pip install "qirabot[desktop]"
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login           # auth: Google Cloud ADC, once
     export QIRA_RUNNER_TOKEN="some-shared-secret"   # required unless you set it empty
     python runner.py
 
@@ -97,7 +97,8 @@ class Handler(BaseHTTPRequestHandler):
         script = self.rfile.read(length)
 
         # Write to a temp .py and run it in this (GUI) session. The environment
-        # is inherited, so QIRA_API_KEY and the display vars pass straight through.
+        # is inherited, so Google Cloud ADC (GOOGLE_APPLICATION_CREDENTIALS),
+        # QIRA_MODEL, and the display vars pass straight through.
         with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as f:
             f.write(script)
             path = f.name
@@ -154,9 +155,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    if not os.environ.get("QIRA_API_KEY"):
-        sys.stderr.write("QIRA_API_KEY is not set — posted scripts will fail to authenticate\n")
-        return 2
+    # Auth is Google Cloud ADC; besides this env var it can also come from
+    # `gcloud auth application-default login` or the GCE metadata server, so
+    # an unset variable is only worth a note, not a hard failure.
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        sys.stderr.write(
+            "note: GOOGLE_APPLICATION_CREDENTIALS is not set — posted scripts "
+            "will rely on gcloud / metadata-server ADC for Vertex AI auth\n"
+        )
     if not TOKEN:
         sys.stderr.write("WARNING: QIRA_RUNNER_TOKEN is empty — /run is UNAUTHENTICATED\n")
 

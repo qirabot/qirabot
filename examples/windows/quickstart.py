@@ -11,8 +11,8 @@ For whole-desktop automation on any OS use the pyautogui backend instead
 Install:
     python -m pip install qirabot
 
-Run (Windows, with the target app open):
-    set QIRA_API_KEY=qk_...
+Run (Windows, with the target app open; auth is Google Cloud ADC — run
+`gcloud auth application-default login` once):
     python examples\\windows\\quickstart.py
 """
 

@@ -29,7 +29,7 @@ from typing import Any
 
 from qirabot import DeviceAdapter, DeviceInfo, ScreenshotConfig
 
-# Android keyevent names for the key vocabulary the qirabot server emits.
+# Android keyevent names for the key vocabulary the qirabot engine emits.
 # Non-Android airtest devices (Windows/iOS) receive the raw key string.
 _ANDROID_KEYEVENTS = {
     "enter": "KEYCODE_ENTER",

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import os
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar
@@ -15,46 +16,15 @@ from click.core import ParameterSource
 from qirabot._browser import launch_browser
 from qirabot._dotenv import load_dotenv
 from qirabot._optional import extra_install_hint, package_install_hint, require
-from qirabot._transport import Transport
 from qirabot.cli.skill import skill
 from qirabot.exceptions import QirabotError
-
-
-# Whether QIRA_API_KEY entered os.environ via ./.env (set by main() around
-# load_dotenv), so `login --status` can name the real source layer.
-_KEY_FROM_DOTENV = False
-
-
-def _require_api_key(ctx: click.Context) -> str:
-    """Single place for the missing-key error so every command says the same thing."""
-    api_key: str = ctx.obj["api_key"]
-    if not api_key:
-        click.echo(
-            "Error: API key is required. Run `qirabot login` to save one "
-            "(or set QIRA_API_KEY / pass --api-key).",
-            err=True,
-        )
-        sys.exit(1)
-    return api_key
-
-
-def _transport(ctx: click.Context) -> Transport:
-    """Get or create a shared Transport from the CLI context."""
-    if "transport" not in ctx.obj:
-        ctx.obj["transport"] = Transport(
-            base_url=ctx.obj["base_url"],
-            api_key=_require_api_key(ctx),
-            timeout=ctx.obj["timeout"],
-            verify_ssl=ctx.obj["verify_ssl"],
-        )
-    transport: Transport = ctx.obj["transport"]
-    return transport
 
 
 def _make_bot(
     ctx: click.Context,
     model: str = "",
     thinking_level: str = "",
+    media_resolution: str = "",
     language: str = "",
     report: bool = True,
     report_dir: str = "",
@@ -65,21 +35,19 @@ def _make_bot(
     record_window: bool = False,
     task_name: str = "",
     overlay: bool = False,
+    output_format: str = "text",
 ) -> Any:
     from qirabot import Qirabot
 
-    api_key = _require_api_key(ctx)
     try:
         return Qirabot(
-            api_key=api_key,
-            base_url=ctx.obj["base_url"],
-            timeout=ctx.obj["timeout"],
-            verify_ssl=ctx.obj["verify_ssl"],
-            model_alias=model,
+            model=model,
+            vertex_project=ctx.obj.get("vertex_project", ""),
+            vertex_location=ctx.obj.get("vertex_location", ""),
             thinking_level=thinking_level,
+            media_resolution=media_resolution,
             language=language,
             task_name=task_name,
-            source="cli",
             report=report,
             report_dir=report_dir,
             screenshot_annotate=annotate,
@@ -90,11 +58,100 @@ def _make_bot(
             overlay=overlay,
         )
     except Exception as e:
-        # No special-casing needed: Transport already maps connection failures to
-        # QirabotConnectionError with an actionable message (server URL +
-        # QIRA_BASE_URL hint), so str(e) is user-friendly as-is.
-        click.echo(f"Error: {e}", err=True)
+        # Engine construction already produces actionable messages (missing
+        # ADC credentials, unknown provider, missing project), so str(e)
+        # prints cleanly as-is. No bot exists yet, so the machine-format
+        # result carries null task_id/usage/report.
+        if output_format in _MACHINE_FORMATS:
+            _emit_json(_json_result(None, success=False, status="error", output=str(e)))
+        else:
+            click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+
+def _print_usage(console: Any, bot: Any) -> None:
+    """One dim summary line after the run outcome: steps · tokens · duration.
+
+    Printed on every terminal path — success, failure and cancel alike (an
+    aborted run's tokens are still spent). Mirrors the report header's
+    format and token semantics (total = input + cache read/write + output;
+    thinking is already inside output). Silent when nothing ran, and never
+    lets a formatting problem mask the run outcome that was already printed.
+    """
+    from qirabot.report import _fmt_ms, _fmt_tokens
+
+    try:
+        u = bot.usage
+        if not u.ai_steps and not u.total_tokens:
+            return
+        bits = [f"{u.ai_steps} AI step{'s' if u.ai_steps != 1 else ''}"]
+        if u.total_tokens:
+            # Mirrors the report header: cache read/write shown as one
+            # number when present, think only when a provider reports it
+            # separately (Anthropic folds it into output, leaving 0).
+            cache = u.cache_read_tokens + u.cache_write_tokens
+            detail = [f"in {_fmt_tokens(u.input_tokens)}"]
+            if cache:
+                detail.append(f"cache {_fmt_tokens(cache)}")
+            detail.append(f"out {_fmt_tokens(u.output_tokens)}")
+            if u.thinking_tokens:
+                detail.append(f"think {_fmt_tokens(u.thinking_tokens)}")
+            bits.append(f"{_fmt_tokens(u.total_tokens)} tokens ({' / '.join(detail)})")
+        if u.step_duration_ms:
+            bits.append(_fmt_ms(u.step_duration_ms))
+        console.print(f"[dim]{' · '.join(bits)}[/dim]")
+    except Exception:
+        pass
+
+
+# Formats whose stdout carries machine-readable JSON only: "json" prints one
+# result object at the end of the run; "stream-json" additionally prints a
+# start line and one NDJSON line per step. All rich/human output is suppressed
+# in these formats so stdout stays parseable by scripts and CI.
+_MACHINE_FORMATS = ("json", "stream-json")
+
+
+def _emit_json(obj: dict[str, Any]) -> None:
+    # Flushed per line so stream-json consumers see steps as they happen,
+    # not when the pipe buffer fills.
+    print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def _json_result(bot: Any, *, success: bool, status: str, output: str) -> dict[str, Any]:
+    """The terminal JSON object of a run — one schema on every exit path
+    (done / failed / error / cancelled), so scripts parse a single shape.
+
+    ``status`` extends the SDK's RunStatus with ``"cancelled"`` (Ctrl+C or the
+    ESC kill switch). Field names mirror the SDK's public attributes verbatim
+    (``task_id``, SessionUsage's fields) so the two surfaces never drift.
+    ``report`` is the path close() writes on exit — the emit happens *before*
+    that write, so consumers should read the file after the process exits.
+    ``bot`` is None only when engine construction itself failed.
+    """
+    usage = None
+    report = None
+    task_id = None
+    if bot is not None:
+        task_id = bot.task_id
+        u = bot.usage
+        usage = {**dataclasses.asdict(u), "total_tokens": u.total_tokens}
+        try:
+            # Mirror _write_report's own gate (report enabled + at least one
+            # recorded step) — otherwise close() writes nothing and the path
+            # would dangle. Never let this probe mask the run outcome.
+            if bot._report and bot._log:
+                report = str(Path(bot.report_dir) / "report.html")
+        except Exception:
+            report = None
+    return {
+        "type": "result",
+        "success": success,
+        "status": status,
+        "output": output,
+        "task_id": task_id,
+        "usage": usage,
+        "report": report,
+    }
 
 
 def _run_local(
@@ -102,23 +159,23 @@ def _run_local(
     target: Any,
     instruction: str,
     max_steps: int,
-    base_url: str = "",
     knowledge: str = "",
+    output_format: str = "text",
 ) -> None:
     from rich.console import Console
     from rich.markup import escape
 
+    machine = output_format in _MACHINE_FORMATS
+    stream = output_format == "stream-json"
     console = Console()
     indent = " " * (len(f"[{max_steps}/{max_steps}]") + 1)
 
-    if bot.task_id:
-        if base_url:
-            task_url = f"{base_url.rstrip('/')}/tasks/{bot.task_id}"
-            console.print(f"[dim]Task:[/dim] [link={task_url}]{bot.task_id}[/link]")
-        else:
-            console.print(f"[dim]Task:[/dim] {bot.task_id}")
+    if bot.task_id and not machine:
+        console.print(f"[dim]Run:[/dim] {bot.task_id}")
+    if stream:
+        _emit_json({"type": "start", "task_id": bot.task_id, "max_steps": max_steps})
 
-    def on_step(step: Any) -> None:
+    def on_step_text(step: Any) -> None:
         if step.action_type == "done":
             return
         params = step.params or {}
@@ -137,54 +194,95 @@ def _run_local(
         if step.decision:
             console.print(f"{indent}[dim]└ {escape(step.decision)}[/dim]")
 
+    def on_step_stream(step: Any) -> None:
+        # asdict keeps the NDJSON field names identical to StepResult's — and
+        # unlike the text callback the "done" step is included: its decision
+        # and output are data a consumer may want, not screen noise.
+        _emit_json({"type": "step", **dataclasses.asdict(step)})
+
+    on_step = on_step_stream if stream else None if machine else on_step_text
+
+    def finish(*, success: bool, status: str, output: str, code: int, text: str) -> NoReturn | None:
+        """One terminal line per run: the JSON result object in the machine
+        formats, the colored outcome line otherwise. code=0 returns so the
+        caller's finally (close → report write) still runs before exit 0."""
+        if machine:
+            _emit_json(_json_result(bot, success=success, status=status, output=output))
+        else:
+            console.print(text)
+        if code:
+            sys.exit(code)
+        return None
+
+    # The finally prints the usage summary after the outcome line on every
+    # exit path — Done, Failed, Error and both Cancelled forms (sys.exit's
+    # SystemExit passes through it). A cancelled run's tokens are still spent.
+    # (Machine formats skip it: usage is inside the JSON result object.)
     try:
-        result = bot.ai(
-            target, instruction, max_steps=max_steps, on_step=on_step,
-            knowledge=knowledge or None,
-        )
-    except KeyboardInterrupt:
-        # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT caught
-        # by `except Exception` below. Without this branch the interrupt would
-        # skip reporting and the caller's finally:bot.close() would complete the
-        # still-running task as succeeded. Report it as a deliberate cancel so
-        # the run lands in the 'cancelled' bucket, not 'failed' or 'succeeded'.
-        # (130 = 128 + SIGINT, the conventional Ctrl+C exit code.)
-        bot.cancel("aborted by user")
-        console.print("\n[bold yellow]Cancelled[/bold yellow]")
-        sys.exit(130)
-    except QirabotError as e:
-        if getattr(e, "code", "") == "user_abort":
-            # ESC-hold kill switch: the same deliberate cancel as Ctrl+C
-            # above, so it gets the same face — yellow, exit 130, never a
-            # red Error. ai() already routed it through cancel(), so the
-            # terminal state is recorded; no fail() here.
-            console.print("\n[bold yellow]Cancelled[/bold yellow] (ESC held)")
-            sys.exit(130)
-        bot.fail(str(e))
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        sys.exit(1)
-    except Exception as e:
-        # Report the client-side abort so the task is recorded as failed; without
-        # this the bot.close() in the caller's finally would complete the
-        # still-running task as succeeded. (Transport already collapses HTML
-        # error bodies to one-line summaries, so str(e) prints cleanly.)
-        bot.fail(str(e))
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        sys.exit(1)
-    if result.success:
-        console.print(f"[bold green]Done:[/bold green] {result.output}")
-    else:
-        # The server already set a terminal status for known failures (e.g. max
-        # steps); fail() is idempotent there and ensures other failure paths are
-        # not left to close()'s success default.
-        bot.fail(result.output)
-        console.print(f"[bold red]Failed:[/bold red] {result.output}")
-        # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
-        # bypasses the caller's `except Exception` and still runs its finally.
-        sys.exit(1)
+        try:
+            result = bot.ai(
+                target, instruction, max_steps=max_steps, on_step=on_step,
+                knowledge=knowledge or None,
+            )
+        except KeyboardInterrupt:
+            # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT caught
+            # by `except Exception` below. Without this branch the interrupt would
+            # skip reporting and the caller's finally:bot.close() would complete the
+            # still-running task as succeeded. Report it as a deliberate cancel so
+            # the run lands in the 'cancelled' bucket, not 'failed' or 'succeeded'.
+            # (130 = 128 + SIGINT, the conventional Ctrl+C exit code.)
+            bot.cancel("aborted by user")
+            finish(
+                success=False, status="cancelled", output="aborted by user",
+                code=130, text="\n[bold yellow]Cancelled[/bold yellow]",
+            )
+        except QirabotError as e:
+            if getattr(e, "code", "") == "user_abort":
+                # ESC-hold kill switch: the same deliberate cancel as Ctrl+C
+                # above, so it gets the same face — yellow, exit 130, never a
+                # red Error. ai() already routed it through cancel(), so the
+                # terminal state is recorded; no fail() here.
+                finish(
+                    success=False, status="cancelled", output="aborted by user (ESC held)",
+                    code=130, text="\n[bold yellow]Cancelled[/bold yellow] (ESC held)",
+                )
+            bot.fail(str(e))
+            finish(
+                success=False, status="error", output=str(e),
+                code=1, text=f"[bold red]Error:[/bold red] {escape(str(e))}",
+            )
+        except Exception as e:
+            # Report the client-side abort so the task is recorded as failed; without
+            # this the bot.close() in the caller's finally would complete the
+            # still-running task as succeeded. (Transport already collapses HTML
+            # error bodies to one-line summaries, so str(e) prints cleanly.)
+            bot.fail(str(e))
+            finish(
+                success=False, status="error", output=str(e),
+                code=1, text=f"[bold red]Error:[/bold red] {escape(str(e))}",
+            )
+        if result.success:
+            finish(
+                success=True, status=result.status, output=result.output,
+                code=0, text=f"[bold green]Done:[/bold green] {result.output}",
+            )
+        else:
+            # The server already set a terminal status for known failures (e.g. max
+            # steps); fail() is idempotent there and ensures other failure paths are
+            # not left to close()'s success default.
+            bot.fail(result.output)
+            # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
+            # bypasses the caller's `except Exception` and still runs its finally.
+            finish(
+                success=False, status=result.status, output=result.output,
+                code=1, text=f"[bold red]Failed:[/bold red] {result.output}",
+            )
+    finally:
+        if not machine:
+            _print_usage(console, bot)
 
 
-def _fail_setup(bot: Any, e: Exception) -> NoReturn:
+def _fail_setup(bot: Any, e: Exception, output_format: str = "text") -> NoReturn:
     """Report a setup-phase failure (before _run_local takes over) and exit.
 
     Setup — bot.open() for browser, Appium Remote() / device resolution for
@@ -192,27 +290,22 @@ def _fail_setup(bot: Any, e: Exception) -> NoReturn:
     server task is created but before _run_local starts reporting outcomes. An
     error there leaves the task un-terminalized, so the command's
     finally:bot.close() would otherwise complete it as *succeeded*. Record it as
-    failed instead, print the error, and exit 1.
+    failed instead, print the error, and exit 1. Machine formats get the same
+    JSON result object as a run failure, so scripts parse one schema.
     """
     bot.fail(str(e))
-    click.echo(f"Error: {e}", err=True)
+    if output_format in _MACHINE_FORMATS:
+        _emit_json(_json_result(bot, success=False, status="error", output=str(e)))
+    else:
+        click.echo(f"Error: {e}", err=True)
     sys.exit(1)
 
 
 def _default_task_name(instruction: str) -> str:
-    """Derive a task name from the instruction when --name is not given, so CLI
-    runs are distinguishable in the web UI instead of all sharing one name."""
+    """Derive a task name from the instruction when --name is not given, so
+    runs are distinguishable in the report header instead of sharing one name."""
     first_line = next((ln.strip() for ln in instruction.splitlines() if ln.strip()), "")
     return first_line[:60] or "cli"
-
-
-def _img_ext(data: bytes) -> str:
-    """Infer a screenshot file extension from magic bytes (server sends jpeg or png)."""
-    if data[:3] == b"\xff\xd8\xff":
-        return "jpg"
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return "png"
-    return "bin"
 
 
 # Accept -h alongside --help, and print each option's default in --help. The
@@ -279,8 +372,15 @@ def _resolve_knowledge_cb(
 
 def _task_options(f: _FC) -> _FC:
     """Task options shared by browser/android/ios/desktop. Applied in reverse so
-    --help lists them in reading order (name, model, language, max-steps,
-    knowledge)."""
+    --help lists them in reading order (name, model, thinking-level,
+    media-resolution, language, max-steps, knowledge, output-format)."""
+    f = _option(
+        "--output-format", group=_TASK_GROUP, default="text",
+        type=click.Choice(["text", "json", "stream-json"]),
+        help="Output format: text (human-readable), json (stdout carries one final "
+        "JSON result object), stream-json (NDJSON: a start line, one line per step, "
+        "then the result object)",
+    )(f)
     # File paths only, never inline text: argv has no str/Path type split to
     # declare intent with, and sniffing is off the table (see _knowledge.py).
     # Inline snippets work through the shell: -k <(printf '...').
@@ -292,9 +392,14 @@ def _task_options(f: _FC) -> _FC:
     )(f)
     f = _option("--max-steps", group=_TASK_GROUP, default=20, help="Max steps for AI")(f)
     f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Language (e.g. zh, en)")(f)
-    f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high (default: the model alias's setting)")(f)
-    f = _option("--model", "-m", group=_TASK_GROUP, default="", help="Model alias")(f)
-    f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Task name shown in the web UI (default: derived from the instruction)")(f)
+    f = _option("--media-resolution", group=_TASK_GROUP, default="", help="Screenshot resolution sent to the model: low, medium, high or ultra_high (env QIRA_MEDIA_RESOLUTION; gemini-vertex only)")(f)
+    f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high")(f)
+    f = _option(
+        "--model", "-m", group=_TASK_GROUP, default="",
+        help='Model as "{provider}/{model}" with provider one of claude-vertex / '
+        "gemini-vertex (default: QIRA_MODEL or the built-in default)",
+    )(f)
+    f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Run name shown in the report (default: derived from the instruction)")(f)
     return f
 
 
@@ -318,297 +423,84 @@ def _debug_options(record: bool = True) -> Callable[[_FC], _FC]:
 
 @click.group(context_settings=_CONTEXT_SETTINGS)
 @click.version_option(package_name="qirabot", prog_name="qirabot")
-@click.option("--api-key", envvar="QIRA_API_KEY", help="API key")
-@click.option("--base-url", envvar="QIRA_BASE_URL", default="https://app.qirabot.com", help="Server URL")
-@click.option("--timeout", type=float, default=120.0, help="HTTP request timeout (seconds)")
-@click.option("--verify-ssl/--no-verify-ssl", default=True, help="Verify the server's TLS certificate")
+@click.option(
+    "--vertex-project",
+    envvar="QIRA_VERTEX_PROJECT",
+    default="",
+    help="Google Cloud project for the Vertex providers "
+    "(default: GOOGLE_CLOUD_PROJECT or the ADC credentials' own project)",
+)
+@click.option(
+    "--vertex-location",
+    envvar="QIRA_VERTEX_LOCATION",
+    default="",
+    help="Vertex location (default: GOOGLE_CLOUD_LOCATION or global)",
+)
 @click.pass_context
-def cli(ctx: click.Context, api_key: str, base_url: str, timeout: float, verify_ssl: bool) -> None:
+def cli(ctx: click.Context, vertex_project: str, vertex_location: str) -> None:
     """Qirabot CLI — AI automation tool.
 
-    Global options (--api-key/--base-url/--timeout/--verify-ssl) go before the
-    subcommand, e.g. `qirabot --base-url ... browser "..."`.
+    The decision engine runs locally against Vertex AI with your Google Cloud
+    credentials (ADC): set GOOGLE_APPLICATION_CREDENTIALS to a service-account
+    JSON or run `gcloud auth application-default login` once.
+
+    Global options (--vertex-project/--vertex-location) go before the
+    subcommand, e.g. `qirabot --vertex-project my-proj browser "..."`.
     """
     ctx.ensure_object(dict)
-    # Key resolution order: --api-key flag > QIRA_API_KEY env var > ./.env
-    # (loaded into the environment by main()) > the `qirabot login` config
-    # file. The source tag feeds `qirabot login --status`.
-    source = ""
-    if api_key:
-        if ctx.get_parameter_source("api_key") == ParameterSource.COMMANDLINE:
-            source = "flag"
-        else:
-            source = ".env" if _KEY_FROM_DOTENV else "env"
-    else:
-        from qirabot._userconfig import load_api_key
-
-        stored = load_api_key()
-        if stored:
-            api_key, source = stored, "config"
-    ctx.obj["api_key"] = api_key
-    ctx.obj["api_key_source"] = source
-    ctx.obj["base_url"] = base_url
-    ctx.obj["timeout"] = timeout
-    ctx.obj["verify_ssl"] = verify_ssl
-
-
-@cli.command()
-@click.argument("task_id")
-@click.pass_context
-def task(ctx: click.Context, task_id: str) -> None:
-    """Get task status and steps."""
-    from rich.console import Console
-    from rich.table import Table
-
-    t = _transport(ctx)
-    console = Console()
-
-    resp = t.request("GET", f"/tasks/{task_id}")
-    console.print(f"Task: [cyan]{task_id}[/cyan]")
-    console.print(f"  Status: {resp.get('status', '')}")
-    console.print(f"  Step: {resp.get('currentStep', 0)}")
-
-    commands = t.request("GET", f"/tasks/{task_id}/commands")
-    if isinstance(commands, list) and commands:
-        cmd_table = Table(title="Commands")
-        cmd_table.add_column("#")
-        cmd_table.add_column("Type")
-        cmd_table.add_column("Instruction")
-        cmd_table.add_column("Status")
-        for c in commands:
-            cmd_table.add_row(
-                str(c.get("seq", "")),
-                c.get("commandType", ""),
-                c.get("instruction", ""),
-                c.get("status", ""),
-            )
-        console.print(cmd_table)
-
-        steps = [s for c in commands for s in (c.get("steps") or [])]
-        if steps:
-            table = Table(title="Steps")
-            table.add_column("#")
-            table.add_column("Action")
-            table.add_column("Status")
-            table.add_column("Duration")
-            for s in steps:
-                table.add_row(
-                    str(s.get("stepNumber", "")),
-                    s.get("actionType", ""),
-                    s.get("status", ""),
-                    f"{s.get('stepDurationMs', 0)}ms",
-                )
-            console.print(table)
-
-
-@cli.command()
-@click.argument("task_id")
-@click.option("--step", "-s", type=int, default=0, help="Step number (0 = latest)")
-@click.option("--output", "-o", default="", help="Output path (default: ./screenshot-<task_id>[-step<N>].<ext>)")
-@click.option("--force", "-f", is_flag=True, help="Overwrite the output file if it already exists")
-@click.pass_context
-def screenshot(ctx: click.Context, task_id: str, step: int, output: str, force: bool) -> None:
-    """Download a task screenshot."""
-    t = _transport(ctx)
-
-    path = f"/screenshots?taskId={task_id}"
-    if step > 0:
-        path += f"&step={step}"
-
-    data = t.get_bytes(path)
-    if not output:
-        suffix = f"-step{step}" if step > 0 else ""
-        output = f"screenshot-{task_id}{suffix}.{_img_ext(data)}"
-    if os.path.exists(output) and not force:
-        click.echo(f"Error: {output} already exists. Pass --force to overwrite.", err=True)
-        sys.exit(1)
-    with open(output, "wb") as f:
-        f.write(data)
-    click.echo(f"Saved to {output} ({len(data)} bytes)")
+    ctx.obj["vertex_project"] = vertex_project
+    ctx.obj["vertex_location"] = vertex_location
 
 
 @cli.command()
 @click.pass_context
 def models(ctx: click.Context) -> None:
-    """List available model aliases."""
+    """List the built-in Vertex providers, their default models, and whether
+    Google Cloud credentials (ADC) resolve on this machine."""
     from rich.console import Console
     from rich.table import Table
 
-    t = _transport(ctx)
-    resp = t.request("GET", "/model-aliases")
-    aliases = resp.get("aliases", []) if isinstance(resp, dict) else []
-
-    table = Table(title="Model Aliases")
-    table.add_column("Name", style="cyan")
-    table.add_column("Display")
-    table.add_column("Description")
-
-    for m in aliases:
-        table.add_row(
-            m.get("name", ""),
-            m.get("displayName", ""),
-            m.get("description", ""),
-        )
-
-    Console().print(table)
-
-
-@cli.command()
-@click.option("--status", is_flag=True, help="Show the configured key (masked) and which layer it comes from")
-@click.option("--paste", is_flag=True, help="Paste an API key manually instead of the browser flow")
-@click.pass_context
-def login(ctx: click.Context, status: bool, paste: bool) -> None:
-    """Log in via the browser — every later command picks the key up automatically.
-
-    Prints a short confirmation code and a URL (opening the browser when one
-    is available), waits for you to click Authorize on the web page, then
-    verifies the resulting API key against the server and writes it to the
-    user config file (chmod 600). The page can be opened on any device — the
-    browser doesn't have to run on this machine. Environment variables and
-    ./.env keep working and always take precedence. Use --paste to enter a
-    key from the dashboard manually instead.
-    """
-    from qirabot import _userconfig as user_config
-
-    if status:
-        key: str = ctx.obj["api_key"]
-        if not key:
-            click.echo(
-                "No API key configured. Run `qirabot login`, or set QIRA_API_KEY."
-            )
-            sys.exit(1)
-        origin = {
-            "flag": "--api-key flag",
-            "env": "QIRA_API_KEY environment variable",
-            ".env": "./.env file",
-            "config": f"login config ({user_config.config_path()})",
-        }.get(ctx.obj["api_key_source"], "unknown")
-        click.echo(f"API key: {user_config.mask_key(key)}  (from: {origin})")
-        return
-
-    if paste:
-        _login_paste(ctx)
-        return
-
-    import platform as platform_mod
-
-    transport = Transport(
-        base_url=ctx.obj["base_url"],
-        api_key="",
-        timeout=min(ctx.obj["timeout"], 10.0),
-        verify_ssl=ctx.obj["verify_ssl"],
+    from qirabot.engine.providers.registry import (
+        DEFAULT_MODELS,
+        SUPPORTED_PROVIDERS,
+        resolve_default_model,
     )
+
+    console = Console()
+    table = Table(title="Vertex providers")
+    table.add_column("Provider", style="cyan")
+    table.add_column("Default model")
+    table.add_column("Example")
+    for provider in SUPPORTED_PROVIDERS:
+        default = DEFAULT_MODELS[provider]
+        table.add_row(provider, default, f"{provider}/{default}")
+    console.print(table)
+    console.print(f"Session default: [cyan]{resolve_default_model()}[/cyan]  (override with --model or QIRA_MODEL)")
+
+    project, cred_err = _resolve_adc(ctx)
+    if cred_err:
+        console.print(f"[red]✗[/red] Google Cloud credentials: {cred_err}")
+    else:
+        console.print(f"[green]✓[/green] Google Cloud credentials OK (project: {project})")
+
+
+def _resolve_adc(ctx: click.Context) -> tuple[str, str]:
+    """(project, error) — probe ADC + project resolution without any LLM call.
+
+    Fetching an access token exercises the real credential path (service
+    account, gcloud, or metadata server) so `doctor`/`models` report the same
+    failure a task run would hit, at zero model cost.
+    """
+    from qirabot.engine.providers.registry import resolve_vertex_project
+    from qirabot.engine.providers.vertex_auth import VertexTokenSource
+
+    tokens = VertexTokenSource()
     try:
-        start = transport.request(
-            "POST", "/auth/cli/start", json_data={"clientName": platform_mod.node()}
-        )
-    except QirabotError as e:
-        # Only a missing route means "older server without browser login".
-        # Connection failures must NOT fall back to paste — the user would
-        # save a key for a server they can't reach and be confused later.
-        if getattr(e, "status_code", None) in (404, 405):
-            click.echo(
-                "This server doesn't support browser login; falling back to manual entry."
-            )
-            _login_paste(ctx)
-            return
-        click.echo(f"Error: could not start browser login ({e})", err=True)
-        sys.exit(1)
-
-    user_code = start.get("userCode", "")
-    uri_complete = start.get("verificationUriComplete") or start.get("verificationUri", "")
-    interval = max(1, int(start.get("interval", 3)))
-    expires_in = int(start.get("expiresIn", 600))
-
-    click.echo()
-    click.echo(f"  Confirmation code: {user_code}")
-    click.echo(f"  Open this page and check the code matches: {uri_complete}")
-    click.echo()
-
-    import webbrowser
-
-    try:
-        webbrowser.open(uri_complete)
-    except Exception:
-        pass  # headless is fine — the URL above works from any device
-
-    from rich.console import Console
-
-    key = ""
-    deadline = time.monotonic() + expires_in
-    with Console().status("Waiting for approval in the browser (Ctrl-C to cancel)..."):
-        while time.monotonic() < deadline:
-            time.sleep(interval)
-            try:
-                res = transport.request(
-                    "POST",
-                    "/auth/cli/poll",
-                    json_data={"deviceCode": start.get("deviceCode", "")},
-                )
-            except QirabotError as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
-            poll_status = res.get("status")
-            if poll_status == "pending":
-                continue
-            if poll_status == "approved":
-                key = res.get("apiKey") or ""
-                break
-            if poll_status == "denied":
-                click.echo(
-                    "Error: the request was denied in the browser; nothing saved.",
-                    err=True,
-                )
-                sys.exit(1)
-            click.echo(
-                "Error: the code expired before approval; run `qirabot login` again.",
-                err=True,
-            )
-            sys.exit(1)
-
-    if not key:
-        click.echo(
-            "Error: timed out waiting for approval; run `qirabot login` again.",
-            err=True,
-        )
-        sys.exit(1)
-
-    _verify_and_save(ctx, key)
-
-
-def _login_paste(ctx: click.Context) -> None:
-    """The pre-2.2 manual flow: prompt for a key pasted from the dashboard."""
-    key = click.prompt(
-        "API key (qk_..., from https://app.qirabot.com)", hide_input=True
-    ).strip()
-    if not key:
-        raise click.ClickException("empty API key; nothing saved")
-    _verify_and_save(ctx, key)
-
-
-def _verify_and_save(ctx: click.Context, key: str) -> None:
-    from qirabot import _userconfig as user_config
-
-    # Verify BEFORE writing — an unverified key must not silently poison every
-    # later command. Short timeout: this is a diagnostic-grade request.
-    try:
-        with_transport = Transport(
-            base_url=ctx.obj["base_url"],
-            api_key=key,
-            timeout=min(ctx.obj["timeout"], 10.0),
-            verify_ssl=ctx.obj["verify_ssl"],
-        )
-        with_transport.request("GET", "/model-aliases")
+        tokens.token()
+        project = resolve_vertex_project(ctx.obj.get("vertex_project", ""), tokens)
+        return project, ""
     except Exception as e:
-        click.echo(
-            f"Error: {ctx.obj['base_url']} rejected this key or is unreachable "
-            f"({e}); nothing saved.",
-            err=True,
-        )
-        sys.exit(1)
-    path = user_config.save_api_key(key)
-    click.echo(f"Key verified and saved to {path}.")
-    click.echo('You\'re set — try: qirabot browser "Search for SpaceX on Wikipedia"')
+        return "", str(e)
 
 
 @cli.command("install-browser")
@@ -769,7 +661,7 @@ def _chromium_status() -> str | None:
 @cli.command()
 @click.pass_context
 def doctor(ctx: click.Context) -> None:
-    """Check the environment: Python, API key + server, and each backend's deps.
+    """Check the environment: Python, Google Cloud credentials, and each backend's deps.
 
     Exits 0 when at least one backend can run end-to-end (key accepted, backend
     installed), 1 otherwise — so setup scripts and CI can gate on it.
@@ -790,32 +682,43 @@ def doctor(ctx: click.Context) -> None:
         console.print(f"{bad} Python {py} — qirabot requires 3.10+")
         problems += 1
 
-    if not ctx.obj["api_key"]:
-        console.print(
-            f"{bad} API key not set — run `qirabot login` "
-            "(or export QIRA_API_KEY=qk_... / put it in ./.env)"
-        )
+    # Google Cloud credentials: the engine runs locally, so ADC + a project
+    # are the whole "server" story now. Probing a token exercises the same
+    # credential path a task run would use, at zero model cost.
+    with console.status("checking Google Cloud credentials (ADC)..."):
+        project, cred_err = _resolve_adc(ctx)
+    if cred_err:
+        console.print(f"{bad} Google Cloud credentials: {escape(cred_err)}")
         problems += 1
     else:
-        # A diagnostic must fail fast: unless --timeout was passed explicitly,
-        # drop the 120s default (sized for AI task steps) to 10s so an
-        # unreachable server reports in seconds instead of looking like a hang.
-        # Must happen before _transport(), which caches a Transport built from
-        # ctx.obj["timeout"]. The status spinner is transient (and silent when
-        # output is not a terminal) — it names the server so a wrong base_url
-        # is visible while doctor waits, not only after the timeout.
-        if ctx.find_root().get_parameter_source("timeout") != ParameterSource.COMMANDLINE:
-            ctx.obj["timeout"] = 10.0
-        try:
-            with console.status(f"checking server ({ctx.obj['base_url']})..."):
-                _transport(ctx).request("GET", "/model-aliases")
-            console.print(f"{ok} API key set, server reachable ({ctx.obj['base_url']})")
-        except Exception as e:
-            console.print(
-                f"{bad} API key set but {ctx.obj['base_url']} rejected it or is "
-                f"unreachable: {escape(str(e))}"
-            )
-            problems += 1
+        from qirabot.engine.providers.registry import resolve_default_model
+
+        console.print(
+            f"{ok} Google Cloud credentials OK (project: {escape(project)}, "
+            f"model: {escape(resolve_default_model())})"
+        )
+
+    # A leftover v2 cloud key is the one setup state where doctor could say
+    # "Ready" while every default run refuses to start: the SDK's migration
+    # guard trips on QIRA_API_KEY unless a model is chosen explicitly.
+    # Surface it here, where the user is already looking for setup problems.
+    if os.environ.get("QIRA_API_KEY") and not os.environ.get("QIRA_MODEL", "").strip():
+        from qirabot._dotenv import injected_from
+
+        src = injected_from("QIRA_API_KEY")
+        where = f"loaded from {escape(src)}" if src else "exported in the environment"
+        console.print(
+            f"{warn} leftover v2 QIRA_API_KEY ({where}) — the cloud backend is "
+            "gone, and runs will refuse to start until you remove it (and "
+            "QIRA_BASE_URL) or opt into v3 with --model / QIRA_MODEL"
+        )
+    from qirabot._userconfig import config_path, load_api_key
+
+    if load_api_key():
+        console.print(
+            f"{warn} v2 credentials in {escape(str(config_path()))} — unused "
+            "in v3; delete the file to clean up"
+        )
 
     # (label, ready, fix-hint). A missing Chromium download or missing system
     # libraries both count as not-ready: bot.open() would fail at launch even
@@ -918,9 +821,11 @@ def browser(
     name: str,
     model: str,
     thinking_level: str,
+    media_resolution: str,
     language: str,
     max_steps: int,
     knowledge: str,
+    output_format: str,
     url: str,
     headless: bool,
     viewport: str,
@@ -942,10 +847,11 @@ def browser(
     vp = _parse_viewport(viewport)
 
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
     try:
         page = bot.open(
@@ -959,14 +865,14 @@ def browser(
         )
         _run_local(
             bot, page, instruction, max_steps,
-            base_url=ctx.obj["base_url"], knowledge=knowledge,
+            knowledge=knowledge, output_format=output_format,
         )
     except Exception as e:
         # Only setup (bot.open) reaches here: _run_local reports its own errors
         # and exits via SystemExit, which this `except Exception` deliberately
         # skips. Record the setup failure so close() below doesn't complete the
         # task as succeeded.
-        _fail_setup(bot, e)
+        _fail_setup(bot, e, output_format)
     finally:
         bot.close()
 
@@ -984,6 +890,7 @@ def _run_appium(
     name: str,
     model: str,
     thinking_level: str,
+    media_resolution: str,
     language: str,
     max_steps: int,
     appium_url: str,
@@ -994,6 +901,7 @@ def _run_appium(
     record: bool = False,
     knowledge: str = "",
     overlay: bool = False,
+    output_format: str = "text",
 ) -> None:
     """Shared android/ios body: build the bot, open an Appium session, run.
 
@@ -1007,10 +915,12 @@ def _run_appium(
     # leak the remote session (driver.quit() lives in the finally below, which
     # never runs if _make_bot exits before the try is entered).
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, record_device=record,
         task_name=name or _default_task_name(instruction), overlay=overlay,
+        output_format=output_format,
     )
     try:
         try:
@@ -1020,11 +930,11 @@ def _run_appium(
             # the failure so the outer finally:bot.close() doesn't complete the
             # task as succeeded. Scoped to Remote() only — a driver.quit() error
             # after a successful run must not be misreported as a task failure.
-            _fail_setup(bot, e)
+            _fail_setup(bot, e, output_format)
         try:
             _run_local(
                 bot, driver, instruction, max_steps,
-                base_url=ctx.obj["base_url"], knowledge=knowledge,
+                knowledge=knowledge, output_format=output_format,
             )
         finally:
             # The Appium recording lives in the session: flush it to disk
@@ -1042,6 +952,7 @@ def _run_direct(
     name: str,
     model: str,
     thinking_level: str,
+    media_resolution: str,
     language: str,
     max_steps: int,
     connect: Callable[[], Any],
@@ -1054,6 +965,7 @@ def _run_direct(
     record_window: bool = False,
     knowledge: str = "",
     overlay: bool = False,
+    output_format: str = "text",
 ) -> None:
     """Shared direct-engine body: build the bot, connect the device, run.
 
@@ -1067,11 +979,13 @@ def _run_direct(
     window instead of grabbing the full screen.
     """
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, record_mjpeg_url=record_mjpeg_url,
         record_device=record_device, record_window=record_window,
         task_name=name or _default_task_name(instruction), overlay=overlay,
+        output_format=output_format,
     )
     try:
         try:
@@ -1080,10 +994,10 @@ def _run_direct(
             # Same contract as _run_appium: a setup failure before _run_local
             # takes over reporting must be recorded, or the finally:bot.close()
             # would complete the task as succeeded.
-            _fail_setup(bot, e)
+            _fail_setup(bot, e, output_format)
         _run_local(
             bot, target, instruction, max_steps,
-            base_url=ctx.obj["base_url"], knowledge=knowledge,
+            knowledge=knowledge, output_format=output_format,
         )
     finally:
         bot.close()
@@ -1123,7 +1037,7 @@ def _adb_launch_app(dev: Any, package: str, activity: str) -> None:
 @_option("--record", group="Android options", is_flag=True, help="Record the device screen to report-dir/recording.mp4 (direct engine: adb screenrecord, ffmpeg merges runs over 3 min; Appium engine: Appium's recording API)")
 @_debug_options(record=False)
 @click.pass_context
-def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, language: str, max_steps: int, knowledge: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an Android device (direct over adb; --appium-url for Appium).
 
     \b
@@ -1154,9 +1068,10 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             options.app_activity = app_activity
 
         _run_appium(
-            ctx, instruction, name, model, thinking_level, language, max_steps, appium_url, options,
+            ctx, instruction, name, model, thinking_level, media_resolution,
+            language, max_steps, appium_url, options,
             report, report_dir, annotate, record=record, knowledge=knowledge,
-            overlay=overlay,
+            overlay=overlay, output_format=output_format,
         )
         return
 
@@ -1173,10 +1088,11 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         return dev
 
     _run_direct(
-        ctx, instruction, name, model, thinking_level, language, max_steps, connect,
+        ctx, instruction, name, model, thinking_level, media_resolution,
+        language, max_steps, connect,
         report, report_dir, annotate,
         record=record, record_device=record, knowledge=knowledge,
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
 
 
@@ -1243,7 +1159,7 @@ def _check_mjpeg_ready(mjpeg_url: str) -> None:
 @_option("--mjpeg-url", group="iOS options", default="", help="WDA MJPEG stream URL for --record (default: --wda-url's host on port 9100; direct engine only)")
 @_debug_options(record=False)
 @click.pass_context
-def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, language: str, max_steps: int, knowledge: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an iOS device (direct via WDA; --appium-url/--device for Appium).
 
     \b
@@ -1277,9 +1193,10 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
             options.bundle_id = bundle_id
 
         _run_appium(
-            ctx, instruction, name, model, thinking_level, language, max_steps, appium_url, options,
+            ctx, instruction, name, model, thinking_level, media_resolution,
+            language, max_steps, appium_url, options,
             report, report_dir, annotate, record=record, knowledge=knowledge,
-            overlay=overlay,
+            overlay=overlay, output_format=output_format,
         )
         return
 
@@ -1301,10 +1218,11 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
         return client
 
     _run_direct(
-        ctx, instruction, name, model, thinking_level, language, max_steps, connect,
+        ctx, instruction, name, model, thinking_level, media_resolution,
+        language, max_steps, connect,
         report, report_dir, annotate,
         record=record, record_mjpeg_url=record_mjpeg_url, knowledge=knowledge,
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
 
 
@@ -1330,7 +1248,7 @@ def _launch_desktop_app(app: str, app_wait: float) -> None:
 @_option("--app-wait", group="Desktop options", default=2.0, type=float, help="Seconds to wait after --app launch for the window to appear")
 @_debug_options()
 @click.pass_context
-def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, language: str, max_steps: int, knowledge: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
+def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
     """Run an AI task on the desktop (pyautogui; --window-title/--hwnd for one Windows window).
 
     \b
@@ -1363,17 +1281,16 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             )
         from qirabot.windows import Window
 
-        # Validate the key before the --app side effect (same contract as the
-        # pyautogui path below).
-        _require_api_key(ctx)
-        if app:
-            _launch_desktop_app(app, app_wait)
-
         window = Window(
             hwnd=hwnd or None, title_re=window_title or None, ambiguous=ambiguous,
         )
 
         def connect() -> Any:
+            # Launch the app only after _run_direct has built the bot: a bad
+            # credential setup must error out before the --app side effect,
+            # and a launch failure lands in _fail_setup's reporting.
+            if app:
+                _launch_desktop_app(app, app_wait)
             window.hwnd  # noqa: B018 — resolve now for actionable errors
             return window
 
@@ -1381,31 +1298,31 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         # actually starts (--record here, or QIRA_RECORD=1 from the env), and
         # then makes it follow the bound window instead of the full screen.
         _run_direct(
-            ctx, instruction, name, model, thinking_level, language, max_steps, connect,
+            ctx, instruction, name, model, thinking_level, media_resolution,
+            language, max_steps, connect,
             report, report_dir, annotate, record=record, record_window=True,
-            knowledge=knowledge, overlay=overlay,
+            knowledge=knowledge, overlay=overlay, output_format=output_format,
         )
         return
 
     pyautogui = require("pyautogui", "desktop")
 
-    # Validate the key before the --app side effect: without this, a missing
-    # key would launch the app first and only then error out.
-    _require_api_key(ctx)
-
-    if app:
-        _launch_desktop_app(app, app_wait)
-
+    # Build the bot before the --app side effect: engine construction
+    # validates the credential setup, and a bad one must not launch the app
+    # first and only then error out.
     bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level, language=language,
+        ctx, model=model, thinking_level=thinking_level,
+        media_resolution=media_resolution, language=language,
         report=report, report_dir=report_dir,
         annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
-        overlay=overlay,
+        overlay=overlay, output_format=output_format,
     )
+    if app:
+        _launch_desktop_app(app, app_wait)
     try:
         _run_local(
             bot, pyautogui, instruction, max_steps,
-            base_url=ctx.obj["base_url"], knowledge=knowledge,
+            knowledge=knowledge, output_format=output_format,
         )
     finally:
         bot.close()
@@ -1414,18 +1331,13 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
 def main() -> None:
     # The SDK never reads .env implicitly; the CLI is the "calling script" in
     # that contract, so it opts in here — before click parses options, so the
-    # envvar fallbacks (QIRA_API_KEY etc.) see the values. Best-effort, and
-    # exported variables always win over .env entries. Remember whether the
-    # key came from .env so `login --status` can say so.
-    global _KEY_FROM_DOTENV
-    had_env_key = "QIRA_API_KEY" in os.environ
+    # envvar fallbacks (QIRA_MODEL, QIRA_VERTEX_PROJECT,
+    # GOOGLE_APPLICATION_CREDENTIALS, ...) see the values. Best-effort, and
+    # exported variables always win over .env entries.
     load_dotenv()
-    _KEY_FROM_DOTENV = not had_env_key and "QIRA_API_KEY" in os.environ
     # Catch SDK errors that escape command bodies and print them as one line,
-    # no traceback: MissingDependencyError (install hint, may surface deep
-    # inside a command via lazy imports) and transport errors from the
-    # read-only commands (task/screenshot/models), which call the server
-    # directly without _make_bot/_run_local's handling.
+    # no traceback (e.g. MissingDependencyError's install hint, which may
+    # surface deep inside a command via lazy imports).
     try:
         cli()
     except QirabotError as e:

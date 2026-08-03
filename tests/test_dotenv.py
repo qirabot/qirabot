@@ -51,3 +51,34 @@ class TestLoadDotenv:
         monkeypatch.setenv("QIRA_DOTENV", path)
         assert load_dotenv() is True  # picks up $QIRA_DOTENV
         assert os.environ["QIRA_BASE_URL"] == "https://example.test"
+
+
+class TestInjectedFrom:
+    """load_dotenv records which keys it injected (and from which file), so
+    error messages can name the concrete source of a leftover variable."""
+
+    def _fresh(self, monkeypatch):
+        import qirabot._dotenv as dotenv_mod
+
+        monkeypatch.setattr(dotenv_mod, "_injected", {})
+        return dotenv_mod
+
+    def test_injected_key_reports_its_file(self, tmp_path, monkeypatch):
+        dotenv_mod = self._fresh(monkeypatch)
+        monkeypatch.delenv("SOME_KEY", raising=False)
+        path = _write(tmp_path, "SOME_KEY=v\n")
+        load_dotenv(path)
+        assert dotenv_mod.injected_from("SOME_KEY") == path
+
+    def test_shadowed_key_is_not_recorded(self, tmp_path, monkeypatch):
+        # A real exported variable wins over the .env entry, so the value in
+        # os.environ did NOT come from the file — injected_from must say so.
+        dotenv_mod = self._fresh(monkeypatch)
+        monkeypatch.setenv("SOME_KEY", "real")
+        path = _write(tmp_path, "SOME_KEY=fromfile\n")
+        load_dotenv(path)
+        assert dotenv_mod.injected_from("SOME_KEY") == ""
+
+    def test_unknown_key_is_empty(self, monkeypatch):
+        dotenv_mod = self._fresh(monkeypatch)
+        assert dotenv_mod.injected_from("NEVER_SET") == ""

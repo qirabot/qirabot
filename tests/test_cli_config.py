@@ -1,266 +1,118 @@
-"""Tests for `qirabot login` / `install-browser` and API-key resolution layers."""
+"""Tests for `qirabot install-browser` and Vertex configuration wiring.
+
+v3 dropped the cloud backend: `qirabot login` and the API-key resolution
+layers are gone. The whole credential story is now Google Cloud ADC plus the
+--vertex-project/--vertex-location globals (env: QIRA_VERTEX_PROJECT /
+QIRA_VERTEX_LOCATION), which _make_bot threads into Qirabot().
+"""
 
 from __future__ import annotations
 
-import json
-import stat
 import sys
 from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
 
-from qirabot import _userconfig as user_config
+
+def _invoke(args):
+    from qirabot.cli.main import cli
+
+    return CliRunner().invoke(cli, args)
+
+
+# ---------------------------------------------------------------------------
+# Vertex project/location/model wiring: CLI -> _make_bot -> Qirabot(...)
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def config_home(tmp_path, monkeypatch):
-    """Point the user config at a temp dir (both POSIX and Windows shapes)."""
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    return tmp_path
+def qirabot_kwargs(monkeypatch):
+    """Capture the kwargs the real _make_bot hands to Qirabot().
+
+    The Qirabot class itself is replaced (the constructor would otherwise
+    build the engine), and _run_local is stubbed so the browser command stops
+    after construction.
+    """
+    import qirabot
+    from qirabot.cli import main
+
+    captured = {}
+
+    def fake_qirabot(**kwargs):
+        captured.update(kwargs)
+        return MagicMock(name="bot")
+
+    monkeypatch.setattr(qirabot, "Qirabot", fake_qirabot)
+    monkeypatch.setattr(main, "_run_local", lambda *a, **k: None)
+    return captured
 
 
-def _invoke(args, input=None, env_key=False, monkeypatch=None):
-    from qirabot.cli.main import cli
+class TestVertexConfigWiring:
+    def test_flags_reach_qirabot(self, qirabot_kwargs):
+        result = _invoke([
+            "--vertex-project", "flag-proj",
+            "--vertex-location", "europe-west1",
+            "browser", "do it",
+        ])
 
-    argv = ([] if env_key else []) + args
-    return CliRunner().invoke(cli, argv, input=input)
-
-
-# ---------------------------------------------------------------------------
-# config file primitives
-# ---------------------------------------------------------------------------
-
-
-class TestConfigFile:
-    def test_save_creates_file_with_0600(self, config_home):
-        path = user_config.save_api_key("qk_secret")
-        assert path.exists()
-        assert json.loads(path.read_text())["api_key"] == "qk_secret"
-        if sys.platform != "win32":
-            assert stat.S_IMODE(path.stat().st_mode) == 0o600
-
-    def test_save_preserves_unrelated_fields(self, config_home):
-        path = user_config.config_path()
-        path.parent.mkdir(parents=True)
-        path.write_text(json.dumps({"other": 1, "api_key": "old"}))
-        user_config.save_api_key("qk_new")
-        data = json.loads(path.read_text())
-        assert data == {"other": 1, "api_key": "qk_new"}
-
-    def test_load_missing_or_broken_is_empty(self, config_home):
-        assert user_config.load_api_key() == ""
-        p = user_config.config_path()
-        p.parent.mkdir(parents=True)
-        p.write_text("{not json")
-        assert user_config.load_api_key() == ""
-
-    def test_mask(self):
-        assert user_config.mask_key("qk_abcdefyz") == "qk_ab…yz"
-        assert user_config.mask_key("short") == "*****"
-
-
-# ---------------------------------------------------------------------------
-# key resolution order: flag > env > (.env) > config
-# ---------------------------------------------------------------------------
-
-
-class TestKeyResolution:
-    def _api_key_seen(self, monkeypatch, argv):
-        """Run a command that echoes ctx.obj back via login --status."""
-        from qirabot.cli.main import cli
-
-        return CliRunner().invoke(cli, [*argv, "login", "--status"])
-
-    def test_flag_beats_env_and_config(self, config_home, monkeypatch):
-        user_config.save_api_key("qk_from_config")
-        monkeypatch.setenv("QIRA_API_KEY", "qk_from_env99")
-        result = self._api_key_seen(monkeypatch, ["--api-key", "qk_from_flag99"])
-        assert "qk_fr…99" in result.output
-        assert "--api-key flag" in result.output
-
-    def test_env_beats_config(self, config_home, monkeypatch):
-        user_config.save_api_key("qk_from_config")
-        monkeypatch.setenv("QIRA_API_KEY", "qk_from_env99")
-        result = self._api_key_seen(monkeypatch, [])
-        assert "environment variable" in result.output
-
-    def test_config_is_last_resort(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        user_config.save_api_key("qk_from_config")
-        result = self._api_key_seen(monkeypatch, [])
-        assert "login config" in result.output
-        assert str(user_config.config_path()) in result.output
-
-    def test_status_without_any_key_exits_1(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result = self._api_key_seen(monkeypatch, [])
-        assert result.exit_code == 1
-        assert "qirabot login" in result.output
-
-    def test_dotenv_source_is_labelled(self, config_home, monkeypatch):
-        # main() marks a key that entered os.environ via ./.env.
-        from qirabot.cli import main as cli_main
-
-        monkeypatch.setattr(cli_main, "_KEY_FROM_DOTENV", True)
-        monkeypatch.setenv("QIRA_API_KEY", "qk_from_dotenv")
-        result = self._api_key_seen(monkeypatch, [])
-        assert "./.env file" in result.output
-
-
-# ---------------------------------------------------------------------------
-# login --paste (manual write path)
-# ---------------------------------------------------------------------------
-
-
-class TestLoginPaste:
-    def _login(self, monkeypatch, key="qk_live_key99", server_ok=True):
-        from qirabot.cli import main as cli_main
-
-        transport = MagicMock(name="Transport")
-        if not server_ok:
-            transport.return_value.request.side_effect = RuntimeError("401 bad key")
-        monkeypatch.setattr(cli_main, "Transport", transport)
-        result = CliRunner().invoke(cli_main.cli, ["login", "--paste"], input=key + "\n")
-        return result, transport
-
-    def test_valid_key_is_verified_then_saved(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, transport = self._login(monkeypatch)
         assert result.exit_code == 0, result.output
-        # verified against the server with the entered key...
-        assert transport.call_args.kwargs["api_key"] == "qk_live_key99"
-        transport.return_value.request.assert_called_once_with("GET", "/model-aliases")
-        # ...and only then persisted
-        assert user_config.load_api_key() == "qk_live_key99"
-        assert "saved" in result.output
+        assert qirabot_kwargs["vertex_project"] == "flag-proj"
+        assert qirabot_kwargs["vertex_location"] == "europe-west1"
 
-    def test_rejected_key_is_not_saved(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, _ = self._login(monkeypatch, server_ok=False)
-        assert result.exit_code == 1
-        assert "nothing saved" in result.output
-        assert user_config.load_api_key() == ""
-        assert not user_config.config_path().exists()
+    def test_env_vars_are_the_fallback(self, qirabot_kwargs, monkeypatch):
+        monkeypatch.setenv("QIRA_VERTEX_PROJECT", "env-proj")
+        monkeypatch.setenv("QIRA_VERTEX_LOCATION", "us-central1")
 
-    def test_empty_key_is_rejected(self, config_home, monkeypatch):
-        from qirabot.cli.main import cli
+        result = _invoke(["browser", "do it"])
 
-        result = CliRunner().invoke(cli, ["login", "--paste"], input="   \n")
-        assert result.exit_code != 0
-        assert not user_config.config_path().exists()
-
-
-# ---------------------------------------------------------------------------
-# login (default browser device flow)
-# ---------------------------------------------------------------------------
-
-START_RESP = {
-    "deviceCode": "dev_code_123",
-    "userCode": "WDJB-MJHT",
-    "verificationUri": "https://app.example.com/cli-auth",
-    "verificationUriComplete": "https://app.example.com/cli-auth?code=WDJB-MJHT",
-    "expiresIn": 600,
-    "interval": 1,
-}
-
-
-class TestLoginDeviceFlow:
-    def _run(self, monkeypatch, responses, args=("login",), input=None):
-        """Invoke login with a Transport whose request() replays `responses`."""
-        import webbrowser
-
-        from qirabot.cli import main as cli_main
-
-        transport = MagicMock(name="Transport")
-        transport.return_value.request.side_effect = responses
-        monkeypatch.setattr(cli_main, "Transport", transport)
-        monkeypatch.setattr(cli_main.time, "sleep", lambda s: None)
-        opened = []
-        monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url))
-        result = CliRunner().invoke(cli_main.cli, list(args), input=input)
-        return result, transport, opened
-
-    def test_happy_path_polls_then_saves(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, transport, opened = self._run(
-            monkeypatch,
-            [
-                START_RESP,
-                {"status": "pending"},
-                {"status": "pending"},
-                {"status": "approved", "apiKey": "qk_devicekey99"},
-                {"modelAliases": []},  # GET /model-aliases verification
-            ],
-        )
         assert result.exit_code == 0, result.output
-        assert "WDJB-MJHT" in result.output
-        assert opened == [START_RESP["verificationUriComplete"]]
-        assert user_config.load_api_key() == "qk_devicekey99"
-        # last Transport was constructed with the delivered key for verification
-        assert transport.call_args.kwargs["api_key"] == "qk_devicekey99"
+        assert qirabot_kwargs["vertex_project"] == "env-proj"
+        assert qirabot_kwargs["vertex_location"] == "us-central1"
 
-    def test_old_server_404_falls_back_to_paste(self, config_home, monkeypatch):
-        from qirabot.exceptions import QirabotError
+    def test_flag_beats_env(self, qirabot_kwargs, monkeypatch):
+        monkeypatch.setenv("QIRA_VERTEX_PROJECT", "env-proj")
 
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, _, _ = self._run(
-            monkeypatch,
-            [QirabotError("not found", status_code=404), {"modelAliases": []}],
-            input="qk_pasted_key99\n",
-        )
+        result = _invoke(["--vertex-project", "flag-proj", "browser", "do it"])
+
         assert result.exit_code == 0, result.output
-        assert "doesn't support browser login" in result.output
-        assert user_config.load_api_key() == "qk_pasted_key99"
+        assert qirabot_kwargs["vertex_project"] == "flag-proj"
 
-    def test_connection_error_does_not_fall_back(self, config_home, monkeypatch):
-        from qirabot.exceptions import QirabotConnectionError
+    def test_unset_stays_empty_for_engine_resolution(self, qirabot_kwargs):
+        """No flag, no env: the CLI passes "" through so the engine's own
+        chain (GOOGLE_CLOUD_PROJECT, the ADC credentials' project) decides."""
+        result = _invoke(["browser", "do it"])
 
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, _, _ = self._run(
-            monkeypatch, [QirabotConnectionError("cannot connect")]
-        )
+        assert result.exit_code == 0, result.output
+        assert qirabot_kwargs["vertex_project"] == ""
+        assert qirabot_kwargs["vertex_location"] == ""
+
+    def test_model_flag_reaches_qirabot(self, qirabot_kwargs):
+        result = _invoke([
+            "browser", "do it", "-m", "claude-vertex/claude-sonnet-4-5@20250929",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert qirabot_kwargs["model"] == "claude-vertex/claude-sonnet-4-5@20250929"
+
+    def test_construction_failure_prints_engine_error(self, monkeypatch):
+        """Engine construction errors (missing ADC / unknown provider /
+        missing project) surface as a one-line Error and exit 1."""
+        import qirabot
+
+        def boom(**kwargs):
+            raise ValueError(
+                "no Google Cloud project configured; pass vertex_project=, set "
+                "QIRA_VERTEX_PROJECT / GOOGLE_CLOUD_PROJECT, or use credentials "
+                "that carry a project id"
+            )
+
+        monkeypatch.setattr(qirabot, "Qirabot", boom)
+
+        result = _invoke(["browser", "do it"])
+
         assert result.exit_code == 1
-        assert "could not start browser login" in result.output
-        assert not user_config.config_path().exists()
-
-    def test_denied_saves_nothing(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, _, _ = self._run(monkeypatch, [START_RESP, {"status": "denied"}])
-        assert result.exit_code == 1
-        assert "denied" in result.output
-        assert not user_config.config_path().exists()
-
-    def test_expired_saves_nothing(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, _, _ = self._run(monkeypatch, [START_RESP, {"status": "expired"}])
-        assert result.exit_code == 1
-        assert "expired" in result.output
-        assert not user_config.config_path().exists()
-
-    def test_timeout_saves_nothing(self, config_home, monkeypatch):
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        start = dict(START_RESP, expiresIn=0)  # deadline already passed
-        result, _, _ = self._run(monkeypatch, [start])
-        assert result.exit_code == 1
-        assert "timed out" in result.output
-        assert not user_config.config_path().exists()
-
-    def test_delivered_key_still_verified_before_save(self, config_home, monkeypatch):
-        # Even a server-minted key must pass verification before persisting.
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        result, _, _ = self._run(
-            monkeypatch,
-            [
-                START_RESP,
-                {"status": "approved", "apiKey": "qk_devicekey99"},
-                RuntimeError("verify blew up"),
-            ],
-        )
-        assert result.exit_code == 1
-        assert "nothing saved" in result.output
-        assert not user_config.config_path().exists()
+        assert "no Google Cloud project configured" in result.output
 
 
 # ---------------------------------------------------------------------------

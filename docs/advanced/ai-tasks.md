@@ -60,9 +60,10 @@ result = bot.ai(
 )
 ```
 
-When the model picks a tool, the SDK runs it **locally on your machine** —
-the server never sees your endpoint or credentials — and feeds the return
-value back as the observation for the next step.
+When the model picks a tool, the SDK runs it **locally on your machine**
+and feeds the return value back as the observation for the next step. The
+model only sees the tool's name, description, and parameters, plus whatever
+the tool returns — never the code, endpoint, or credentials behind it.
 
 ### Rules
 
@@ -101,17 +102,18 @@ Runnable examples:
 ·
 [06_human_in_the_loop.py](https://github.com/qirabot/qirabot-python/blob/main/examples/automation/06_human_in_the_loop.py)
 
-## Model & language per call
+## Model & language
 
 ```python
-bot = Qirabot(model_alias="high_quality", language="zh")   # defaults for all calls
-bot.click(page, "Login", model_alias="fast")               # override per call
+bot = Qirabot(model="claude-vertex", language="zh")        # defaults for all calls
 bot.verify(page, "every row shows the discounted price",
            thinking_level="high")                          # think harder on hard calls
 ```
 
-Aliases trade cost for quality: `fast` · `balanced` · `balanced_pro` ·
-`high_quality`; leave unset for the server default. `thinking_level`
+`model` selects the Vertex AI model (`"{provider}/{model}"`) for the whole
+bot; leave it unset for the default
+`gemini-vertex/gemini-3.6-flash`. `thinking_level`
 (`minimal`/`low`/`medium`/`high`) scales reasoning depth within the same
-alias. See [Configuration](/advanced/configuration). Deterministic single-step calls
+model and can be overridden per call. See
+[Configuration](/advanced/configuration). Deterministic single-step calls
 are covered in the [API reference](/reference/api).

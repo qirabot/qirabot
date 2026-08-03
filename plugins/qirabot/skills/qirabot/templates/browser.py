@@ -3,7 +3,8 @@
 Fill in the TODOs, then run:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install "qirabot[browser]" && playwright install chromium
-    echo 'QIRA_API_KEY=qk_...' > .env    # load_dotenv() reads this (also QIRA_BASE_URL)
+    gcloud auth application-default login    # one-time Google Cloud auth (ADC)
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
     python browser.py
 
 A self-contained HTML report (with screenshots) is written to
@@ -12,7 +13,7 @@ A self-contained HTML report (with screenshots) is written to
 
 from qirabot import Qirabot, StepResult, load_dotenv
 
-# Read QIRA_API_KEY / QIRA_BASE_URL from ./.env (a real exported env var wins).
+# Read QIRA_MODEL (and other QIRA_* settings) from ./.env (a real exported env var wins).
 load_dotenv()
 
 # TODO: starting URL + the task to perform
@@ -28,7 +29,7 @@ def on_step(step: StepResult) -> None:
     print(f"  step {step.step}: {label} {step.params} — {step.decision}")
 
 
-with Qirabot(task_name="browser-template", model_alias="balanced") as bot:
+with Qirabot(task_name="browser-template") as bot:
     page = bot.open(START_URL, headless=False)
 
     # Default: hand the whole task to qirabot's agent loop (self-heals).
@@ -37,8 +38,8 @@ with Qirabot(task_name="browser-template", model_alias="balanced") as bot:
     print("output:", result.output)
 
     # If a script (CI gate, conditional flow) must branch on success,
-    # uncomment. `verify` is a billed AI call — skip it when a human will
-    # read the report:
+    # uncomment. `verify` is an extra model call (token cost) — skip it when a
+    # human will read the report:
     # if not bot.verify(page, "an item is in the shopping cart"):
     #     bot.fail("item never made it into the cart")
 

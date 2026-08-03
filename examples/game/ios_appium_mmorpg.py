@@ -22,7 +22,7 @@ Run:
     appium --address 127.0.0.1 --port 4723
 
     # terminal 2
-    export QIRA_API_KEY="qk_..."
+    gcloud auth application-default login   # auth: Google Cloud ADC, once
     export IOS_UDID="00008030-..."      # `idevice_id -l`, or Xcode > Devices
     python examples/game/ios_appium_mmorpg.py
 
@@ -73,11 +73,12 @@ def on_step(step: StepResult) -> None:
 
 
 try:
-    # Game UIs push visual reasoning hard — pick a stronger model alias than
-    # the default. language="zh" returns step decisions in Chinese to match
-    # the game; drop it for English.
+    # Game UIs push visual reasoning hard — pick a stronger model than the
+    # default (a bare provider name uses that provider's default model).
+    # language="zh" returns step decisions in Chinese to match the game;
+    # drop it for English.
     with Qirabot(task_name="mmorpg-new-player",
-                 model_alias="balanced_pro",
+                 model="claude-vertex",
                  language="zh").bind(driver) as bot:
         record_path = os.path.join(bot.report_dir, "recording.mp4")
         # iOS on-device recording: h264 mp4, 1800s max per segment.

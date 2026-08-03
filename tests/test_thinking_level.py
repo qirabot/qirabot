@@ -1,10 +1,12 @@
 """Request-level thinking_level override: body construction, fallback
-semantics, auto-wait pass-through, bound proxy, and the CLI flag."""
+semantics, auto-wait pass-through, bound proxy, and the CLI flag.
 
-import json
+v3: request bodies go to the local engine via ``bot._backend.act`` — assert
+them on the FakeBackend's captured ``requests`` instead of multipart data.
+"""
+
 from unittest.mock import MagicMock
 
-from qirabot import Qirabot
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo
 from qirabot.bound import _BoundQirabot
 
@@ -12,10 +14,6 @@ from qirabot.bound import _BoundQirabot
 class _FakeAdapter(DeviceAdapter):
     def __init__(self):
         pass
-
-    @classmethod
-    def accepts(cls, target):
-        return False
 
     def screenshot(self, config=None):
         return b"img"
@@ -39,116 +37,103 @@ class _FakeAdapter(DeviceAdapter):
         return DeviceInfo(platform="test", width=100, height=100)
 
 
-def _extract_request(call_kwargs):
-    return json.loads(call_kwargs["data"]["request"])
-
-
 class TestSingleActionBody:
     """The four quadrants of the per-call vs instance-default fallback on the
     _ai_action_once request body."""
 
-    def _bot(self, **kwargs):
-        bot = Qirabot(api_key="k", task_id="t", **kwargs)
+    def _bot(self, make_bot, **kwargs):
+        bot = make_bot(**kwargs)
         bot._get_adapter = lambda target: _FakeAdapter()
-        bot._record_step = lambda *a, **k: None
-        bot._transport.post_multipart = MagicMock(return_value={
-            "success": True, "finished": True, "actionType": "extract",
-            "output": "42",
-        })
         return bot
 
     def _sent_body(self, bot):
-        return _extract_request(bot._transport.post_multipart.call_args.kwargs)
+        return bot._backend.requests[-1][1]
 
-    def test_both_empty_omits_field(self):
-        bot = self._bot()
+    def test_both_empty_omits_field(self, make_bot):
+        bot = self._bot(make_bot)
         bot.extract("target", "read it")
         assert "thinking_level" not in self._sent_body(bot)
-        bot.close()
 
-    def test_instance_default_applies(self):
-        bot = self._bot(thinking_level="low")
+    def test_instance_default_applies(self, make_bot):
+        bot = self._bot(make_bot, thinking_level="low")
         bot.extract("target", "read it")
         assert self._sent_body(bot)["thinking_level"] == "low"
-        bot.close()
 
-    def test_per_call_applies(self):
-        bot = self._bot()
+    def test_per_call_applies(self, make_bot):
+        bot = self._bot(make_bot)
         bot.extract("target", "read it", thinking_level="high")
         assert self._sent_body(bot)["thinking_level"] == "high"
-        bot.close()
 
-    def test_per_call_overrides_instance(self):
-        bot = self._bot(thinking_level="low")
+    def test_per_call_overrides_instance(self, make_bot):
+        bot = self._bot(make_bot, thinking_level="low")
         bot.extract("target", "read it", thinking_level="high")
         assert self._sent_body(bot)["thinking_level"] == "high"
-        bot.close()
 
 
 class TestAiLoopBody:
-    def _bot(self, **kwargs):
-        bot = Qirabot(api_key="k", task_id="t", **kwargs)
+    # A non-terminal first step so the run spans two requests, exercising the
+    # "sent with every step" contract (the second step gets the default done).
+    _CLICK_STEP = {
+        "success": True, "finished": False,
+        "actionType": "click", "params": {"x": 1, "y": 2},
+    }
+
+    def _bot(self, make_bot, **kwargs):
+        bot = make_bot(**kwargs)
         bot._get_adapter = lambda target: _FakeAdapter()
-        bot._record_step = lambda *a, **k: None
-        bot._sent = []
-
-        def post(**kw):
-            bot._sent.append(_extract_request(kw))
-            return {
-                "success": True, "finished": True, "actionType": "done",
-                "params": {"result": "ok", "success": True}, "output": "ok",
-            }
-
-        bot._post_act_retrying = post
+        bot._backend.results.append(dict(self._CLICK_STEP))
         return bot
 
-    def test_per_call_in_every_loop_request(self):
-        bot = self._bot()
+    def _bodies(self, bot):
+        return [request for _, request in bot._backend.requests]
+
+    def test_per_call_in_every_loop_request(self, make_bot):
+        bot = self._bot(make_bot)
         bot.ai(object(), "task", max_steps=2, thinking_level="medium")
-        assert bot._sent and all(b["thinking_level"] == "medium" for b in bot._sent)
-        bot.close()
+        bodies = self._bodies(bot)
+        assert len(bodies) == 2
+        assert all(b["thinking_level"] == "medium" for b in bodies)
 
-    def test_instance_default_in_loop(self):
-        bot = self._bot(thinking_level="minimal")
+    def test_instance_default_in_loop(self, make_bot):
+        bot = self._bot(make_bot, thinking_level="minimal")
         bot.ai(object(), "task", max_steps=2)
-        assert bot._sent and all(b["thinking_level"] == "minimal" for b in bot._sent)
-        bot.close()
+        bodies = self._bodies(bot)
+        assert len(bodies) == 2
+        assert all(b["thinking_level"] == "minimal" for b in bodies)
 
-    def test_absent_when_unset(self):
-        bot = self._bot()
+    def test_absent_when_unset(self, make_bot):
+        bot = self._bot(make_bot)
         bot.ai(object(), "task", max_steps=2)
-        assert bot._sent and all("thinking_level" not in b for b in bot._sent)
-        bot.close()
+        bodies = self._bodies(bot)
+        assert len(bodies) == 2
+        assert all("thinking_level" not in b for b in bodies)
 
 
 class TestAutoWaitChain:
     """The auto-wait verify of click(timeout>0) must run at the same thinking
     level as the click itself — both LLM calls belong to one user action."""
 
-    def _bot(self):
-        bot = Qirabot(api_key="k", task_id="t")
+    def _bot(self, make_bot):
+        bot = make_bot()
         bot._get_adapter = lambda target: _FakeAdapter()
-        bot._record_step = lambda *a, **k: None
         bot._ai_action = MagicMock(return_value={
             "success": True, "finished": True,
             "actionType": "click", "params": {"x": 1, "y": 2},
         })
         return bot
 
-    def test_click_auto_wait_carries_thinking_level(self):
-        bot = self._bot()
+    def test_click_auto_wait_carries_thinking_level(self, make_bot):
+        bot = self._bot(make_bot)
         bot.wait_for = MagicMock()
         bot.click("target", "OK", timeout=5, thinking_level="high")
         assert bot.wait_for.call_args.kwargs["thinking_level"] == "high"
         assert bot._ai_action.call_args.kwargs["thinking_level"] == "high"
-        bot.close()
 
-    def test_wait_for_passes_to_verify(self):
-        bot = self._bot()
+    def test_wait_for_passes_to_verify(self, make_bot):
+        bot = self._bot(make_bot)
         bot.verify = MagicMock()  # truthy -> met on first poll
         bot.wait_for("target", "cart shows 1 item", timeout=1, thinking_level="medium")
         assert bot.verify.call_args.kwargs["thinking_level"] == "medium"
-        bot.close()
 
 
 class TestBoundProxy:

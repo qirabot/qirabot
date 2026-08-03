@@ -30,8 +30,9 @@ def line(status: str, label: str, hint: str = "") -> None:
 def load_dotenv(path: str = ".env") -> None:
     """Populate os.environ from ./.env (stdlib only; mirrors qirabot.load_dotenv).
 
-    Runs before qirabot is importable, so the key check below sees a key that
-    lives only in .env. A real exported env var still wins (setdefault).
+    Runs before qirabot is importable, so the credential/model checks below see
+    QIRA_MODEL or GOOGLE_APPLICATION_CREDENTIALS values that live only in .env.
+    A real exported env var still wins (setdefault).
     """
     try:
         with open(path, encoding="utf-8") as f:
@@ -88,13 +89,46 @@ def main() -> int:
          "" if py_ok else "Install Python 3.10+.")
     hard_ok = hard_ok and py_ok
 
-    # 2. API key (also accept it from ./.env, like the templates' load_dotenv())
+    # 2. Google Cloud credentials (ADC) — the decision engine runs locally
+    # against your own Vertex AI model, so ADC is the whole auth story. Also
+    # accept GOOGLE_APPLICATION_CREDENTIALS from ./.env, like the templates'
+    # load_dotenv().
     load_dotenv()
-    has_key = bool(os.environ.get("QIRA_API_KEY"))
-    line(OK if has_key else NO, "QIRA_API_KEY is set",
-         "" if has_key else "Get a key at https://app.qirabot.com, then put it in ./.env: "
-         "echo 'QIRA_API_KEY=qk_...' > .env  (or export QIRA_API_KEY=qk_...)")
-    hard_ok = hard_ok and has_key
+    gac = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if is_windows:
+        adc_default = os.path.join(
+            os.environ.get("APPDATA", ""), "gcloud", "application_default_credentials.json"
+        )
+    else:
+        adc_default = os.path.expanduser(
+            "~/.config/gcloud/application_default_credentials.json"
+        )
+    adc_hint = ("Run `gcloud auth application-default login`, or set "
+                "GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON "
+                "(exported or in ./.env). On GCE/Cloud Run the metadata server "
+                "also provides credentials — this check can't probe it.")
+    if gac:
+        if os.path.isfile(gac):
+            line(OK, f"Google Cloud credentials (GOOGLE_APPLICATION_CREDENTIALS={gac})")
+        else:
+            line(NO, "GOOGLE_APPLICATION_CREDENTIALS points to a missing file",
+                 f"{gac} does not exist — fix the path or unset it. {adc_hint}")
+            hard_ok = False
+    elif os.path.isfile(adc_default):
+        line(OK, f"Google Cloud credentials (gcloud ADC at {adc_default})")
+    else:
+        line(NO, "Google Cloud credentials (ADC) not found", adc_hint)
+        hard_ok = False
+
+    # Model (informational — a missing QIRA_MODEL never fails preflight):
+    # Qirabot() falls back to the built-in default.
+    qira_model = os.environ.get("QIRA_MODEL", "").strip()
+    if qira_model:
+        line(OK, f"QIRA_MODEL={qira_model}")
+    else:
+        line(WARN, "QIRA_MODEL not set",
+             "Default model gemini-vertex/gemini-3.6-flash will be used "
+             "(override with QIRA_MODEL or Qirabot(model=...); list providers: qirabot models).")
 
     # 3. qirabot importable
     try:

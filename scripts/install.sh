@@ -42,7 +42,7 @@ say "downloading Chromium for the browser backend (one-time)"
 
 say "done. Next steps:"
 printf '\n'
-printf '    qirabot login       # paste your API key once (https://app.qirabot.com)\n'
+printf '    gcloud auth application-default login   # Google Cloud credentials (or set GOOGLE_APPLICATION_CREDENTIALS)\n'
 printf '    qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org\n'
 printf '\n'
 printf 'If `qirabot` is not found, open a new terminal (PATH was just updated).\n'

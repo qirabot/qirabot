@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qirabot"
-version = "2.6.2"
+version = "3.0.0"
 description = "AI vision-driven GUI automation across browsers, mobile, desktop, and games"
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,9 @@ dependencies = [
     "Pillow>=10.0",
     "click>=8.1",
     "rich>=13.0",
+    # ADC (service-account / gcloud / metadata-server) auth for the local
+    # decision engine's Vertex providers.
+    "google-auth>=2.30",
     # The progress overlay window, on by default in the CLI — macOS needs
     # AppKit for it (Windows uses stdlib tkinter, other platforms no-op).
     "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
@@ -67,6 +70,9 @@ where = ["src"]
 # The vendored ADBKeyboard IME (GPL-2.0, see ADBKEYBOARD_LICENSE.txt) that the
 # adb adapter installs on demand for non-ASCII text input.
 "qirabot.assets" = ["*.apk", "*.txt"]
+# Platform role prompts for the local decision engine, copied byte-for-byte
+# from the v2 server's internal/decision/prompts/*/standard.txt.
+"qirabot.engine" = ["prompt_data/*.txt"]
 # The bundled Agent Skill payload that `qirabot skill install` copies into an
 # agent's skills directory. Mirror of plugins/qirabot/skills/qirabot/ — edit
 # there and run scripts/sync_skill.py. The directory name is deliberately not
@@ -110,6 +116,8 @@ module = [
     "pyautogui",
     "pyperclip",
     "AppKit",
+    "google.auth.*",
+    "google.auth",
 ]
 ignore_missing_imports = true
 

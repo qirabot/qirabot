@@ -314,7 +314,7 @@ def test_client_edge_glow_follows_adapter_input_control(fake_spawn):
             pass
 
     adapter = _FakeAdapter()
-    bot = Qirabot(api_key="k", task_id="t", overlay=True)
+    bot = Qirabot(overlay=True)
     bot._get_adapter = lambda target: adapter
     bot._ai_loop = lambda *a, **k: RunResult(success=True, output="done")
 
@@ -384,18 +384,18 @@ def test_client_aborts_between_steps_on_esc_hold(fake_spawn):
             return 1.0
 
     executed = []
-    bot = Qirabot(api_key="k", task_id="t", overlay=True)
+    bot = Qirabot(overlay=True)
     bot._get_adapter = lambda target: _FakeAdapter()
     bot._record_step = lambda *a, **k: None
     bot._execute_action = lambda *a, **k: executed.append(1)
     assert bot._overlay is not None
 
-    def post(**kw):
+    def decide():
         # ESC held while the model was thinking
         bot._overlay._abort_event.set()
         return {"success": True, "finished": False, "actionType": "wait", "params": {}}
 
-    bot._post_act_retrying = post
+    bot._backend.results.append(decide)
     with pytest.raises(QirabotError) as excinfo:
         bot.ai(object(), "drive the desktop", max_steps=5)
     assert getattr(excinfo.value, "code", "") == "user_abort"
@@ -427,7 +427,7 @@ def test_clear_user_abort_re_allows_runs(fake_spawn):
             pass
 
     loops = []
-    bot = Qirabot(api_key="k", task_id="t", overlay=True)
+    bot = Qirabot(overlay=True)
     bot._get_adapter = lambda target: _FakeAdapter()
     bot._ai_loop = lambda *a, **k: loops.append(1) or RunResult(success=True, output="ok")
     bot._user_aborted = True  # as latched by an earlier ESC abort
@@ -490,7 +490,7 @@ def test_single_step_call_pulses_the_glow(fake_spawn):
         def current_target(self):
             return None
 
-    bot = Qirabot(api_key="k", task_id="t", overlay=True)
+    bot = Qirabot(overlay=True)
     bot._get_adapter = lambda target: _FakeAdapter()
     bot.press_key(object(), "Enter")
     lines = _sent_lines(fake_spawn[0])

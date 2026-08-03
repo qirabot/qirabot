@@ -136,9 +136,11 @@ class HistoryState:
     """Serializable snapshot of History (trace/debug and tests)."""
 
     entries: list[ConversationTurn] = field(default_factory=list)
-    summary: list[str] = field(default_factory=list)
+    summary: list[str] = field(default_factory=list)  # raw (uncompressed) lines
     max_entries: int = 0
     max_screenshots: int = 0
+    max_summary_lines: int = 0
+    summary_dropped: int = 0  # lines dropped beyond max_summary_lines
 
 
 @dataclass

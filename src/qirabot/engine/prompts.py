@@ -1,9 +1,13 @@
 """System-prompt assembly and conversation-message building.
 
-Mirrors internal/decision/prompts.go (+ knowledgeSection from knowledge.go).
-The system prompt is split into a cacheable half (constant within a task, so
-the provider prompt-cache prefix stays stable across steps) and a dynamic
-half (date, goal, summary, notes).
+Mirrors internal/decision/prompts.go (+ knowledgeSection from knowledge.go),
+with one deliberate deviation: v2 put the step summary and saved notes in the
+dynamic system prompt, which sits at the head of the token stream — every
+save_note or window truncation changed it and invalidated the whole provider
+prompt-cache prefix. Here BOTH system prompt halves are constant within a
+task, and summary/notes travel as a progress-context message near the tail
+of the conversation (see build_conversation_messages), so the cache prefix
+survives across steps.
 """
 
 from __future__ import annotations
@@ -78,21 +82,21 @@ def build_system_prompts(
     platform: str,
     instruction: str,
     knowledge: str,
-    summary: str,
-    notes: str,
     language: str,
     annotate_for_model: bool,
     exclude_tools: list[str],
     now: datetime | None = None,
 ) -> tuple[str, str]:
-    """Returns (cacheable, dynamic) halves of the system prompt."""
+    """Returns (cacheable, dynamic) halves of the system prompt. Both halves
+    are constant within a task — anything that changes step to step (summary,
+    notes) belongs in progress_context_section, not here."""
     cacheable = (
         resolve_prompt(PLATFORM_PROMPTS, platform)
         + grounding_guidance()
         + knowledge_section(knowledge)
         + excluded_tools_section(exclude_tools)
     )
-    dynamic = build_dynamic_prompt(instruction, summary, notes, language, annotate_for_model, now)
+    dynamic = build_dynamic_prompt(instruction, language, annotate_for_model, now)
     return cacheable, dynamic
 
 
@@ -152,27 +156,18 @@ def _format_date(d: _date) -> str:
 
 def build_dynamic_prompt(
     instruction: str,
-    summary: str,
-    notes: str,
     language: str,
     annotate_for_model: bool,
     now: datetime | None = None,
 ) -> str:
-    """Dynamic prompt filled with task context."""
+    """Dynamic prompt filled with task context. Everything here is constant
+    for the duration of a task (the date can flip at midnight — accepted)."""
     lang_name = get_language_display_name(language)
     moment = now if now is not None else datetime.now()
 
     parts = ["# Current task context\n## Current date\n", _format_date(moment.date())]
     parts.append("\n\n## User goal\n")
     parts.append(instruction)
-
-    if summary:
-        parts.append("\n\n## Summary of completed steps\n")
-        parts.append(summary)
-
-    if notes:
-        parts.append("\n\n## Saved notes\n")
-        parts.append(notes)
 
     if annotate_for_model:
         parts.append("\n\n## Screenshot annotations\n")
@@ -187,10 +182,33 @@ def build_dynamic_prompt(
     return "".join(parts)
 
 
+def progress_context_section(summary: str, notes: str) -> str:
+    """Step summary + saved notes as a conversation message body. Lives near
+    the TAIL of the contents (after the history triads, before the current
+    screenshot) because it changes during the task — putting it in the system
+    prompt would invalidate the provider cache prefix on every change. Section
+    headings match the ones the platform prompts reference ("completed-steps
+    summary", "saved notes")."""
+    if not summary and not notes:
+        return ""
+    parts = ["# Progress context"]
+    if summary:
+        parts.append("\n\n## Summary of completed steps\n" + summary)
+    if notes:
+        parts.append("\n\n## Saved notes\n" + notes)
+    return "".join(parts)
+
+
 def build_conversation_messages(input: DecisionInput) -> list[Message]:
     """Assemble the LLM message list from history and the current screenshot.
     History is replayed using tool call format: screenshot (user) ->
-    function call (model) -> function response (tool)."""
+    function call (model) -> function response (tool).
+
+    Ordering is cache-aware: [task, triads oldest→newest, progress context,
+    current screenshot, correction hint]. Everything up to the second-newest
+    triad is byte-stable across steps (triad text never changes once rendered;
+    only the attached screenshot hops forward), so the provider prefix cache
+    covers the system prompt, tools and the whole text history."""
     messages: list[Message] = []
     custom_names = custom_tool_names(input.custom_tools)
 
@@ -251,6 +269,12 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
     else:
         task_content = f"Task: {input.instruction}\n\nContinue from where you left off."
     messages.insert(0, Message(role="user", content=task_content))
+
+    # Mutable task context (summary/notes) goes after the stable history
+    # block, right before the current screenshot.
+    progress = progress_context_section(input.summary, format_notes(input.notes))
+    if progress:
+        messages.append(Message(role="user", content=progress))
 
     # Add current screenshot
     if input.current_screenshot:

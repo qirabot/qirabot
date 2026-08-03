@@ -107,8 +107,9 @@ class LocalAISession:
         self.step_count = 0
         self.notes: list[str] = []
         self.history = History(history_config_for_provider(model_config, max_steps))
-        # Cached screenshots for history replay, capped at the history window
-        # (same trim the server applied in Redis).
+        # Cached screenshots for history replay, capped at the history
+        # high-water mark (entries are batch-trimmed, so up to that many can
+        # be retained at once).
         self.screenshots: list[bytes] = []
         self._custom_names = {d.name for d in self.custom_tools}
 
@@ -116,7 +117,9 @@ class LocalAISession:
         if not screenshot:
             return
         self.screenshots.append(screenshot)
-        window = self.history.export().max_entries
+        # Cap at the history high-water mark so reverse alignment in
+        # attach_screenshots always has a screenshot for every retained entry.
+        window = self.history.high_water
         if len(self.screenshots) > window:
             self.screenshots = self.screenshots[-window:]
 

@@ -316,9 +316,18 @@ class TestSaveNoteAndDone:
         b = backend(fake)
         resp = b.act(PNG, ai_request())
         assert resp["output"] == "ok"
-        # Note lands in the next decide's dynamic prompt...
+        # Note lands in the next decide's progress-context message (near the
+        # tail of the contents — NOT the system prompt, which must stay
+        # byte-stable for the provider cache prefix)...
         b.act(PNG, ai_request(instruction=None, action_result="ok"))
-        assert "## Saved notes\n第一页内容" in fake.requests[1].system_prompt
+        assert "## Saved notes" not in fake.requests[1].system_prompt
+        progress = [
+            m.content
+            for m in fake.requests[1].messages
+            if m.content.startswith("# Progress context")
+        ]
+        assert len(progress) == 1
+        assert "## Saved notes\n第一页内容" in progress[0]
         # ...and the replayed turn's output is the pre-filled "ok".
         tool_msgs = [m for m in fake.requests[1].messages if m.role == "tool"]
         assert tool_msgs[0].tool_results[0].content.startswith("ok\n")

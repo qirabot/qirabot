@@ -41,7 +41,7 @@ class TestSystemPrompts:
         # — the prompt-cache prefix stays stable across steps — and never leak
         # into the dynamic half where it would be re-tokenized every step.
         cacheable, dynamic = build_system_prompts(
-            "android", "完成每日副本", "GM 命令整个任务只能使用一次", "", "", "zh", False, [], NOW
+            "android", "完成每日副本", "GM 命令整个任务只能使用一次", "zh", False, [], NOW
         )
         assert "# Domain knowledge" in cacheable
         assert "GM 命令整个任务只能使用一次" in cacheable
@@ -50,20 +50,18 @@ class TestSystemPrompts:
         assert "not the task goal" in cacheable
 
     def test_no_knowledge_no_section(self) -> None:
-        cacheable, _ = build_system_prompts(
-            "android", "完成每日副本", "", "", "", "zh", False, [], NOW
-        )
+        cacheable, _ = build_system_prompts("android", "完成每日副本", "", "zh", False, [], NOW)
         assert "# Domain knowledge" not in cacheable
 
     def test_grounding_guidance_always_present(self) -> None:
-        cacheable, _ = build_system_prompts("chrome", "goal", "", "", "", "zh", False, [], NOW)
+        cacheable, _ = build_system_prompts("chrome", "goal", "", "zh", False, [], NOW)
         assert "# Coordinate output" in cacheable
         assert NORMALIZED_COORD_RULE in cacheable
         assert "start_point_x" in cacheable
 
     def test_excluded_tools_in_cacheable_half(self) -> None:
         cacheable, dynamic = build_system_prompts(
-            "chrome", "goal", "", "", "", "zh", False, ["scroll", "hover"], NOW
+            "chrome", "goal", "", "zh", False, ["scroll", "hover"], NOW
         )
         assert "# Tool availability" in cacheable
         assert "`scroll`, `hover`" in cacheable
@@ -75,21 +73,26 @@ class TestSystemPrompts:
 
 class TestDynamicPrompt:
     def test_date_goal_language(self) -> None:
-        p = build_dynamic_prompt("买一杯咖啡", "", "", "zh-CN", False, NOW)
+        p = build_dynamic_prompt("买一杯咖啡", "zh-CN", False, NOW)
         assert "## Current date\n2026-08-02 Sunday" in p
         assert "## User goal\n买一杯咖啡" in p
         assert p.endswith("Respond in 中文")
-        assert "## Summary of completed steps" not in p
-        assert "## Saved notes" not in p
         assert "## Screenshot annotations" not in p
 
-    def test_summary_notes_annotate_sections(self) -> None:
-        p = build_dynamic_prompt("goal", "click: 打开设置", "第一页内容", "en", True, NOW)
-        assert "## Summary of completed steps\nclick: 打开设置" in p
-        assert "## Saved notes\n第一页内容" in p
+    def test_annotate_section(self) -> None:
+        p = build_dynamic_prompt("goal", "en", True, NOW)
         assert "## Screenshot annotations" in p
         assert "red crosshair" in p
         assert p.endswith("Respond in English")
+
+    def test_system_prompt_constant_within_task(self) -> None:
+        # Cache-stability invariant: nothing that changes step to step
+        # (summary, notes) may appear in either system-prompt half — a change
+        # at the head of the token stream invalidates the whole provider
+        # cache prefix. Summary/notes travel via progress_context_section.
+        cacheable, dynamic = build_system_prompts("chrome", "goal", "知识", "en", True, [], NOW)
+        assert "## Summary of completed steps" not in cacheable + dynamic
+        assert "## Saved notes" not in cacheable + dynamic
 
     def test_language_display_name(self) -> None:
         assert get_language_display_name("zh") == "中文"
@@ -193,6 +196,36 @@ class TestConversationMessages:
         )
         assert msgs[-1].content == "坐标越界，请重新输出"
         assert msgs[-2].images  # current screenshot right before the hint
+
+    def test_progress_context_between_history_and_screenshot(self) -> None:
+        # Summary/notes change during the task, so they must sit near the
+        # TAIL — after the stable history triads, before the current
+        # screenshot — never in the system prompt where a change would
+        # invalidate the whole cache prefix.
+        input = DecisionInput(
+            instruction="do it",
+            current_screenshot=PNG,
+            summary="click: 打开设置",
+            notes=["第一页内容", "第二页内容"],
+            history=[ConversationTurn(action_type="click", action_params="{}")],
+            correction_hint="重新输出",
+        )
+        msgs = build_conversation_messages(input)
+        # task, tool_call, tool result, progress context, screenshot, hint
+        assert [m.role for m in msgs] == ["user", "assistant", "tool", "user", "user", "user"]
+        progress = msgs[3].content
+        assert progress.startswith("# Progress context")
+        assert "## Summary of completed steps\nclick: 打开设置" in progress
+        assert "## Saved notes\n第一页内容\n---\n第二页内容" in progress
+        assert msgs[4].images  # current screenshot after progress context
+
+    def test_no_progress_context_when_empty(self) -> None:
+        msgs = build_conversation_messages(
+            DecisionInput(instruction="do it", current_screenshot=PNG)
+        )
+        assert not any(
+            m.content.startswith("# Progress context") for m in msgs if m.content
+        )
 
 
 class TestHelpers:

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+**Fixed**
+
+- Engine: history screenshots no longer accumulate across steps. A stale
+  screenshot stayed attached to every history entry instead of only the most
+  recent one, so each decide request carried up to 6 images instead of 2 —
+  roughly doubling per-step input tokens on multi-step tasks.
+
+**Changed**
+
+- Engine: the completed-steps summary is run-length compressed at render
+  time (13 consecutive scrolls become one `scroll ×13` line — cheaper and
+  makes loops more visible to the model) and capped at 200 lines: beyond
+  that the oldest lines are dropped and replaced with an
+  `(earliest N actions omitted)` marker, bounding per-step prompt growth on
+  very long (hundreds of steps) tasks.
+- Engine: cache-friendly prompt layout for Gemini implicit caching. The step
+  summary and saved notes moved from the (head-of-prompt) system instruction
+  to a progress-context message near the tail of the conversation, and the
+  history window now truncates in batches (at 2x `max_entries`, folding back
+  to `max_entries`) instead of sliding one entry per step. Both system-prompt
+  halves and the replayed text history are now byte-stable across steps, so
+  the provider prefix cache covers system + tools + text history on every
+  step and only breaks once per `max_entries` steps. Claude behavior is
+  unchanged (its window never truncates within a task).
+
 **Added**
 
 - CLI: `--output-format text|json|stream-json` on `browser` / `android` /

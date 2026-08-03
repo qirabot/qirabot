@@ -20,7 +20,6 @@ from .prompts import (
     LOCATE_SYSTEM_PROMPT,
     build_conversation_messages,
     build_system_prompts,
-    format_notes,
     get_language_display_name,
 )
 from .custom_tools import custom_tool_definitions, filter_excluded
@@ -81,8 +80,6 @@ class LocalEngine:
             input.platform,
             input.instruction,
             input.knowledge,
-            input.summary,
-            format_notes(input.notes),
             input.language,
             input.annotate_for_model,
             input.exclude_tools,

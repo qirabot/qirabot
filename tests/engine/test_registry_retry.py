@@ -10,6 +10,8 @@ from qirabot.engine.providers.registry import (
     create_provider,
     parse_model,
     resolve_default_model,
+    resolve_gemini_api_key,
+    resolve_vertex_api_key,
     resolve_vertex_location,
     resolve_vertex_project,
 )
@@ -48,8 +50,10 @@ class TestParseModel:
         assert spec.model == DEFAULT_MODELS["gemini-vertex"]
         spec = parse_model("claude-vertex")
         assert spec.model == DEFAULT_MODELS["claude-vertex"]
+        spec = parse_model("gemini")
+        assert spec.model == DEFAULT_MODELS["gemini"]
 
-    @pytest.mark.parametrize("bad", ["", "  ", "anthropic/claude-sonnet-4-5", "gemini/flash", "vertex-openai/qwen/qwen3-vl-plus"])
+    @pytest.mark.parametrize("bad", ["", "  ", "anthropic/claude-sonnet-4-5", "gemini-api/flash", "vertex-openai/qwen/qwen3-vl-plus"])
     def test_unknown_provider_lists_options(self, bad: str) -> None:
         with pytest.raises(ValueError) as ei:
             parse_model(bad)
@@ -97,6 +101,51 @@ class TestVertexConfig:
         for name, cls in cases:
             provider = create_provider(ModelSpec(name, "m"), "p", "global", tokens, client)  # type: ignore[arg-type]
             assert isinstance(provider, cls)
+
+    def test_api_key_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_VERTEX_API_KEY", "env-key")
+        assert resolve_vertex_api_key("explicit") == "explicit"
+        assert resolve_vertex_api_key("") == "env-key"
+        monkeypatch.delenv("QIRA_VERTEX_API_KEY")
+        assert resolve_vertex_api_key("") == ""
+        # GOOGLE_API_KEY commonly holds an AI Studio key that Vertex rejects;
+        # it is deliberately not read.
+        monkeypatch.setenv("GOOGLE_API_KEY", "studio-key")
+        assert resolve_vertex_api_key("") == ""
+
+    def test_gemini_api_key_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_GEMINI_API_KEY", "env-qira")
+        monkeypatch.setenv("GEMINI_API_KEY", "env-official")
+        assert resolve_gemini_api_key("explicit") == "explicit"
+        assert resolve_gemini_api_key("") == "env-qira"
+        monkeypatch.delenv("QIRA_GEMINI_API_KEY")
+        assert resolve_gemini_api_key("") == "env-official"
+        monkeypatch.delenv("GEMINI_API_KEY")
+        # GOOGLE_API_KEY stays unread here too (could be either key kind).
+        monkeypatch.setenv("GOOGLE_API_KEY", "ambiguous")
+        assert resolve_gemini_api_key("") == ""
+
+    def test_create_provider_gemini_requires_key(self) -> None:
+        from qirabot.engine.providers.gemini_api import GeminiApiProvider
+
+        client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+        provider = create_provider(
+            ModelSpec("gemini", "m"), "", "", None, client, api_key="sk"
+        )
+        assert isinstance(provider, GeminiApiProvider)
+        with pytest.raises(ValueError, match="QIRA_GEMINI_API_KEY"):
+            create_provider(ModelSpec("gemini", "m"), "", "", None, client)
+
+    def test_create_provider_api_key_gemini_only(self) -> None:
+        client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+        provider = create_provider(
+            ModelSpec("gemini-vertex", "m"), "", "", None, client, api_key="vk"
+        )
+        assert isinstance(provider, GeminiVertexProvider)
+        with pytest.raises(ValueError, match="claude-vertex requires ADC"):
+            create_provider(
+                ModelSpec("claude-vertex", "m"), "p", "global", FakeTokens(), client, api_key="vk"  # type: ignore[arg-type]
+            )
 
 
 class TestClassify:

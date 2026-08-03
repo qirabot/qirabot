@@ -81,8 +81,26 @@ gcloud auth application-default login
 # export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
+No gcloud setup? For `gemini-vertex` models a
+[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
+works instead of ADC — note this is a Google Cloud API key, not an
+AI Studio key. Google models only, global endpoint only:
+
+```bash
+export QIRA_VERTEX_API_KEY="..."   # or Qirabot(vertex_api_key=...)
+```
+
+No Google Cloud at all? The `gemini` provider calls the
+[Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key)
+with an AI Studio API key:
+
+```bash
+export QIRA_GEMINI_API_KEY="..."   # or GEMINI_API_KEY, or Qirabot(gemini_api_key=...)
+export QIRA_MODEL="gemini/gemini-3.6-flash"
+```
+
 Optionally pick a model as `{provider}/{model}` — provider is one of
-`claude-vertex`, `gemini-vertex`; the default is
+`claude-vertex`, `gemini-vertex`, `gemini`; the default is
 `gemini-vertex/gemini-3.6-flash`. Set the Google Cloud project if your
 credentials don't already carry one:
 

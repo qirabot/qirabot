@@ -51,7 +51,9 @@ class VertexTokenSource:
                 "vertex",
                 "no Google Cloud credentials found; set "
                 "GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON or run "
-                f"`gcloud auth application-default login` ({exc})",
+                "`gcloud auth application-default login` — or, for gemini-vertex "
+                "models, use a Vertex AI API key instead (vertex_api_key= / "
+                f"QIRA_VERTEX_API_KEY) ({exc})",
                 category=ErrorCategory.AUTH,
             ) from exc
         self._credentials = credentials

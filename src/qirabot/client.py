@@ -304,8 +304,13 @@ class Qirabot:
     """AI automation bolt-on for any framework.
 
     The decision engine runs locally (v3.0+): screenshots go straight to the
-    model you configure via Vertex AI with your own GCP credentials (ADC) —
-    no Qirabot server is involved.
+    model you configure via Vertex AI with your own GCP credentials — no
+    Qirabot server is involved. Authentication is ADC by default; for
+    gemini-vertex models a Vertex AI API key works instead
+    (``vertex_api_key=`` / ``QIRA_VERTEX_API_KEY``) — no gcloud setup, but
+    global endpoint only and Google models only. The ``gemini`` provider
+    calls the Gemini Developer API instead of Vertex and takes an AI Studio
+    key (``gemini_api_key=`` / ``QIRA_GEMINI_API_KEY`` / ``GEMINI_API_KEY``).
 
     Usage::
 
@@ -321,6 +326,8 @@ class Qirabot:
         model: str = "",
         vertex_project: str = "",
         vertex_location: str = "",
+        vertex_api_key: str = "",
+        gemini_api_key: str = "",
         thinking_level: str = "",
         media_resolution: str = "",
         language: str = "",
@@ -367,6 +374,8 @@ class Qirabot:
                 model=model or resolve_default_model(),
                 vertex_project=vertex_project,
                 vertex_location=vertex_location,
+                vertex_api_key=vertex_api_key,
+                gemini_api_key=gemini_api_key,
                 thinking_level=thinking_level,
                 media_resolution=media_resolution
                 or os.environ.get("QIRA_MEDIA_RESOLUTION", ""),

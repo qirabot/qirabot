@@ -30,6 +30,12 @@ from .base import (
 from .retry import with_retry
 from .vertex_auth import VertexTokenSource, vertex_base_url
 
+# API-key requests bypass project/location entirely: Vertex API keys are
+# bound to a project server-side and only the global endpoint accepts them,
+# so the path is the short publishers/... form (same wire format as
+# google-genai's Client(vertexai=True, api_key=...)).
+_API_KEY_BASE_URL = "https://aiplatform.googleapis.com/v1"
+
 _PROVIDER = "gemini-vertex"
 
 _SAFETY_OFF = [
@@ -54,31 +60,40 @@ class GeminiVertexProvider:
         self,
         project: str,
         location: str,
-        token_source: VertexTokenSource,
+        token_source: VertexTokenSource | None,
         http_client: httpx.Client,
+        api_key: str = "",
     ) -> None:
         self._project = project
         self._location = location
         self._tokens = token_source
         self._http = http_client
+        self._api_key = api_key
 
     def _url(self, model: str) -> str:
+        if self._api_key:
+            return f"{_API_KEY_BASE_URL}/publishers/google/models/{model}:generateContent"
         return (
             f"{vertex_base_url(self._location)}/projects/{self._project}"
             f"/locations/{self._location}/publishers/google/models/{model}:generateContent"
         )
+
+    def _auth_headers(self) -> dict[str, str]:
+        if self._api_key:
+            return {"x-goog-api-key": self._api_key}
+        assert self._tokens is not None
+        return {"Authorization": f"Bearer {self._tokens.token()}"}
 
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
         body = build_request_body(request)
         url = self._url(request.model)
 
         def call() -> dict[str, Any]:
-            token = self._tokens.token()
             try:
                 resp = self._http.post(
                     url,
                     json=body,
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers=self._auth_headers(),
                     timeout=timeout,
                 )
             except httpx.TimeoutException as exc:

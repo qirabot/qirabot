@@ -58,7 +58,7 @@ qirabot models
 | `install-browser` | 一次性下载浏览器后端所需的 Chromium |
 | `open-browser` | 打开浏览器手动登录网站——登录态保存在 `--user-data-dir`,供后续运行复用 |
 | `doctor` | 检查 Python、Google Cloud 凭据(ADC + 项目)与各后端依赖 |
-| `models` | 打印三个 Vertex provider 及其默认模型、本次会话的默认模型,以及 Google Cloud 凭据(ADC)能否解析(显示项目) |
+| `models` | 打印内置的 Vertex provider 及其默认模型、本次会话的默认模型,以及所配置的认证方式(API key 和/或 ADC)能否解析 |
 | `skill install [AGENT]` | 把自带的 [Agent Skill](/zh/guide/agents) 装进 AI agent 的 skills 目录 |
 | `skill uninstall [AGENT]` | 移除 `skill install` 装的 skill |
 | `skill list` | 列出已知 skills 目录与已安装的 skill 版本 |
@@ -75,6 +75,18 @@ qirabot --vertex-project my-gcp-project --vertex-location global browser "..."
 > `GOOGLE_CLOUD_PROJECT` > ADC 凭据自身的项目 id。位置(location):
 `--vertex-location` > `QIRA_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION` >
 `global`。另有 `--version`。
+
+`--vertex-api-key`(或 `QIRA_VERTEX_API_KEY`)使用
+[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
+认证,替代 ADC——无需安装配置 gcloud。注意这是 Google Cloud 的 API
+key,不是 AI Studio 的 key;仅支持 `gemini-vertex` 系列模型,固定走全局
+端点,并优先于 `--vertex-project`/`--vertex-location`。
+
+`--gemini-api-key`(或 `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`)是
+`gemini` provider 用的
+[AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)——该
+provider 直接调用 Gemini Developer API 而非 Vertex,完全不涉及 Google
+Cloud(`-m gemini/gemini-3.6-flash`)。
 
 模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
 `QIRA_MODEL` 环境变量 > 内置默认值

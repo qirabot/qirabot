@@ -12,6 +12,7 @@ import pytest
 
 from qirabot.engine.providers.base import ChatRequest, ErrorCategory, ProviderError
 from qirabot.engine.providers.claude_vertex import ClaudeVertexProvider
+from qirabot.engine.providers.gemini_api import GeminiApiProvider
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
 from qirabot.engine.types import Image, Message, TokenUsage, ToolCall, ToolDefinition, ToolResult
 
@@ -267,6 +268,20 @@ class TestGeminiVertex:
             "/publishers/google/models/gemini-2.5-flash:generateContent"
         )
 
+    def test_api_key_url_and_header(self) -> None:
+        # API-key auth: global endpoint, short publishers/ path (the key is
+        # project-bound server-side), x-goog-api-key instead of a Bearer token.
+        client, seen = capture_client(GEMINI_OK)
+        provider = GeminiVertexProvider("", "", None, client, api_key="vk-1")
+        provider.chat(self.base_request(), timeout=30)
+        req = seen[0]
+        assert str(req.url) == (
+            "https://aiplatform.googleapis.com/v1"
+            "/publishers/google/models/gemini-2.5-flash:generateContent"
+        )
+        assert req.headers["x-goog-api-key"] == "vk-1"
+        assert "Authorization" not in req.headers
+
     def test_system_concatenated_and_mode_any(self) -> None:
         provider, seen = self.make()
         provider.chat(self.base_request(), timeout=30)
@@ -393,3 +408,45 @@ class TestGeminiVertex:
         assert resp.finish_reason == "safety"
         assert resp.tool_calls == []
 
+
+
+class TestGeminiApi:
+    """Gemini Developer API (AI Studio keys): same body as gemini-vertex,
+    different host/path/auth."""
+
+    def base_request(self, **kwargs: Any) -> ChatRequest:
+        defaults: dict[str, Any] = dict(
+            model="gemini-2.5-flash",
+            messages=[Message(role="user", content="Task: go")],
+            tools=[ToolDefinition(name="click", description="c", parameters={"type": "object"})],
+            force_tool=True,
+            cacheable_system_prompt="CACHEABLE",
+            system_prompt="DYNAMIC",
+            params={"temperature": 0.2},
+        )
+        defaults.update(kwargs)
+        return ChatRequest(**defaults)
+
+    def test_url_auth_and_shared_body(self) -> None:
+        client, seen = capture_client(GEMINI_OK)
+        provider = GeminiApiProvider("sk-1", client)
+        resp = provider.chat(self.base_request(), timeout=30)
+        req = seen[0]
+        assert str(req.url) == (
+            "https://generativelanguage.googleapis.com/v1beta"
+            "/models/gemini-2.5-flash:generateContent"
+        )
+        assert req.headers["x-goog-api-key"] == "sk-1"
+        assert "Authorization" not in req.headers
+        body = sent_body(req)
+        assert body["systemInstruction"] == {"parts": [{"text": "CACHEABLEDYNAMIC"}]}
+        assert body["toolConfig"] == {"functionCallingConfig": {"mode": "ANY"}}
+        assert resp.tool_calls[0].name == "click"
+
+    def test_http_error_classified(self) -> None:
+        client, _ = capture_client({"error": "bad key"}, status=401)
+        provider = GeminiApiProvider("sk-bad", client)
+        with pytest.raises(ProviderError) as ei:
+            provider.chat(self.base_request(), timeout=30)
+        assert ei.value.category == ErrorCategory.AUTH
+        assert ei.value.provider == "gemini"

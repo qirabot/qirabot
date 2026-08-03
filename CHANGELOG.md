@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Vertex AI API key authentication (gemini-vertex)
+
+`gemini-vertex` models can now authenticate with a Vertex AI API key instead
+of ADC — no gcloud setup needed. Pass `Qirabot(vertex_api_key=...)`, set
+`QIRA_VERTEX_API_KEY`, or use the CLI's global `--vertex-api-key`.
+
+- This is a Google Cloud API key (created in the Cloud console or Vertex AI
+  express mode), **not** an AI Studio key. `GOOGLE_API_KEY` is deliberately
+  not read, since it commonly holds an AI Studio key that Vertex rejects.
+- API-key auth is project-bound server-side and only the global endpoint
+  accepts it: requests go to `aiplatform.googleapis.com` with the short
+  `publishers/google/...` path, and `vertex_project` / `vertex_location`
+  are ignored (logged) when a key is configured.
+- A configured key always wins over project/location settings. Exception:
+  `claude-vertex` — Vertex API keys only cover Google's own models, so an
+  env-provided key is ignored there (with a warning) and an explicit
+  `vertex_api_key=` on a claude model is an error.
+- `qirabot doctor` / `qirabot models` report key mode, and a missing ADC is
+  downgraded to a claude-vertex-only caveat when a key is configured.
+
+### New provider: `gemini` — Gemini Developer API with AI Studio keys
+
+`model="gemini/{model}"` (e.g. `gemini/gemini-3.6-flash`) calls the Gemini
+Developer API (`generativelanguage.googleapis.com`) instead of Vertex AI — no
+Google Cloud project, no ADC. Auth is an AI Studio API key:
+`Qirabot(gemini_api_key=...)`, `QIRA_GEMINI_API_KEY`, `GEMINI_API_KEY` (the
+official variable), or the CLI's global `--gemini-api-key`.
+
+- Same wire format and engine behavior as `gemini-vertex` (shared request
+  builder/parser); only host, path and auth differ.
+- The provider requires a key — there is no credential fallback — and the
+  missing-key error names the exact knobs.
+
 ## 3.0.0 (2026-08-03)
 
 ### Breaking: the decision engine now runs locally

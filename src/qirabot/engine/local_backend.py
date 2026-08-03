@@ -22,9 +22,13 @@ from . import actions
 from .engine import LocalEngine
 from .providers.base import Provider, ProviderError
 from .providers.registry import (
+    PROVIDER_CLAUDE_VERTEX,
+    PROVIDER_GEMINI,
     ModelSpec,
     create_provider,
     parse_model,
+    resolve_gemini_api_key,
+    resolve_vertex_api_key,
     resolve_vertex_location,
     resolve_vertex_project,
 )
@@ -75,6 +79,8 @@ class LocalBackend:
         model: str,
         vertex_project: str = "",
         vertex_location: str = "",
+        vertex_api_key: str = "",
+        gemini_api_key: str = "",
         thinking_level: str = "",
         media_resolution: str = "",
         locate_format: str = "",
@@ -90,19 +96,85 @@ class LocalBackend:
         self._http: httpx.Client | None = None
         self._trace: _Tracer | _NullTracer = _Tracer.from_env() or _NullTracer()
 
-        if provider is None:
-            tokens = VertexTokenSource()
-            location = resolve_vertex_location(vertex_location)
-            project = resolve_vertex_project(vertex_project, tokens)
+        if provider is None and self._spec.provider == PROVIDER_GEMINI:
+            # Gemini Developer API (AI Studio keys): no ADC, no
+            # project/location — the key is the whole auth story.
+            # create_provider raises the actionable error when no key
+            # resolves (param > QIRA_GEMINI_API_KEY > GEMINI_API_KEY).
             self._http = httpx.Client()
-            provider = create_provider(self._spec, project, location, tokens, self._http)
+            try:
+                provider = create_provider(
+                    self._spec,
+                    "",
+                    "",
+                    None,
+                    self._http,
+                    api_key=resolve_gemini_api_key(gemini_api_key),
+                )
+            except ValueError:
+                self._http.close()
+                self._http = None
+                raise
             logger.info(
-                "local engine: model=%s/%s project=%s location=%s",
+                "local engine: model=%s/%s auth=api-key endpoint=generativelanguage",
                 self._spec.provider,
                 self._spec.model,
-                project,
-                location,
             )
+        elif provider is None:
+            # A configured API key (param > QIRA_VERTEX_API_KEY) always wins:
+            # the variable is qirabot-scoped, so setting it is a deliberate
+            # choice — unlike project/location vars, which commonly linger
+            # from an ADC-era setup. One exception: claude-vertex, which
+            # Vertex API keys don't cover. An env key there is ignored with a
+            # warning (it may legitimately target gemini runs); an explicit
+            # vertex_api_key= param is a hard error (create_provider raises).
+            api_key = resolve_vertex_api_key(vertex_api_key)
+            if (
+                api_key
+                and self._spec.provider == PROVIDER_CLAUDE_VERTEX
+                and not vertex_api_key.strip()
+            ):
+                logger.warning(
+                    "QIRA_VERTEX_API_KEY ignored: Vertex AI API keys only "
+                    "cover Google's own models — claude-vertex uses ADC"
+                )
+                api_key = ""
+            if api_key:
+                if vertex_project.strip() or vertex_location.strip():
+                    logger.info(
+                        "vertex_project/vertex_location ignored: API-key auth "
+                        "is project-bound and global-endpoint only"
+                    )
+                self._http = httpx.Client()
+                try:
+                    provider = create_provider(
+                        self._spec, "", "", None, self._http, api_key=api_key
+                    )
+                except ValueError:
+                    # explicit vertex_api_key= on a claude-vertex model
+                    self._http.close()
+                    self._http = None
+                    raise
+                logger.info(
+                    "local engine: model=%s/%s auth=api-key endpoint=global",
+                    self._spec.provider,
+                    self._spec.model,
+                )
+            else:
+                tokens = VertexTokenSource()
+                location = resolve_vertex_location(vertex_location)
+                project = resolve_vertex_project(vertex_project, tokens)
+                self._http = httpx.Client()
+                provider = create_provider(
+                    self._spec, project, location, tokens, self._http
+                )
+                logger.info(
+                    "local engine: model=%s/%s project=%s location=%s",
+                    self._spec.provider,
+                    self._spec.model,
+                    project,
+                    location,
+                )
         self._engine = LocalEngine(provider, self._spec.model)
 
     @property

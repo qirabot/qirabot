@@ -59,7 +59,7 @@ qirabot models
 | `install-browser` | One-time Chromium download for the browser backend |
 | `open-browser` | Open a browser to log in to websites by hand — the session persists in `--user-data-dir` for later runs |
 | `doctor` | Check Python, Google Cloud credentials (ADC + project), and per-backend dependencies |
-| `models` | Print the three Vertex providers with their default models, the session default model, and whether Google Cloud credentials (ADC) resolve (shows the project) |
+| `models` | Print the built-in Vertex providers with their default models, the session default model, and whether the configured auth (API key and/or ADC) resolves |
 | `skill install [AGENT]` | Copy the bundled [Agent Skill](/guide/agents) into an AI agent's skills directory |
 | `skill uninstall [AGENT]` | Remove the skill installed by `skill install` |
 | `skill list` | Show known skills directories and the installed skill version |
@@ -78,6 +78,17 @@ The project resolves in this order: `--vertex-project` flag >
 credentials' own project id. The location: `--vertex-location` >
 `QIRA_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION` > `global`. Also
 available: `--version`.
+
+`--vertex-api-key` (or `QIRA_VERTEX_API_KEY`) authenticates with a
+[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
+instead of ADC — no gcloud setup needed. It's a Google Cloud API key, not an
+AI Studio key; it only covers `gemini-vertex` models, always uses the global
+endpoint, and overrides `--vertex-project`/`--vertex-location`.
+
+`--gemini-api-key` (or `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) is the
+[AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key) for the
+`gemini` provider, which calls the Gemini Developer API instead of Vertex —
+no Google Cloud involved (`-m gemini/gemini-3.6-flash`).
 
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default

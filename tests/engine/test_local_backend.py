@@ -584,3 +584,69 @@ class TestPlatformNormalization:
             "# Role\nYou are a UI automation agent for the Chrome browser platform"
         )
         assert any(t.name == "navigate" for t in fake.requests[0].tools)
+
+
+class TestAuthSelection:
+    """Constructor-time auth mode choice: Vertex API key vs ADC."""
+
+    def test_api_key_mode_never_touches_adc(self, monkeypatch) -> None:
+        import pytest
+
+        import qirabot.engine.local_backend as lb
+        from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
+
+        class ExplodingTokens:
+            def __init__(self) -> None:
+                pytest.fail("ADC must not be touched in API-key mode")
+
+        monkeypatch.setattr(lb, "VertexTokenSource", ExplodingTokens)
+        monkeypatch.delenv("QIRA_VERTEX_API_KEY", raising=False)
+        b = LocalBackend(model="gemini-vertex/gemini-test", vertex_api_key="vk")
+        try:
+            assert isinstance(b._engine._provider, GeminiVertexProvider)
+        finally:
+            b.close()
+
+    def test_env_key_ignored_for_claude(self, monkeypatch) -> None:
+        from qirabot.engine.providers.claude_vertex import ClaudeVertexProvider
+
+        monkeypatch.setenv("QIRA_VERTEX_API_KEY", "vk")
+        monkeypatch.setenv("QIRA_VERTEX_PROJECT", "proj")
+        b = LocalBackend(model="claude-vertex/claude-test")
+        try:
+            assert isinstance(b._engine._provider, ClaudeVertexProvider)
+        finally:
+            b.close()
+
+    def test_explicit_key_with_claude_raises(self, monkeypatch) -> None:
+        import pytest
+
+        monkeypatch.delenv("QIRA_VERTEX_PROJECT", raising=False)
+        with pytest.raises(ValueError, match="claude-vertex requires ADC"):
+            LocalBackend(model="claude-vertex/claude-test", vertex_api_key="vk")
+
+    def test_gemini_provider_never_touches_adc(self, monkeypatch) -> None:
+        import pytest
+
+        import qirabot.engine.local_backend as lb
+        from qirabot.engine.providers.gemini_api import GeminiApiProvider
+
+        class ExplodingTokens:
+            def __init__(self) -> None:
+                pytest.fail("ADC must not be touched by the gemini provider")
+
+        monkeypatch.setattr(lb, "VertexTokenSource", ExplodingTokens)
+        monkeypatch.delenv("QIRA_GEMINI_API_KEY", raising=False)
+        b = LocalBackend(model="gemini/gemini-test", gemini_api_key="sk")
+        try:
+            assert isinstance(b._engine._provider, GeminiApiProvider)
+        finally:
+            b.close()
+
+    def test_gemini_provider_without_key_raises(self, monkeypatch) -> None:
+        import pytest
+
+        monkeypatch.delenv("QIRA_GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        with pytest.raises(ValueError, match="QIRA_GEMINI_API_KEY"):
+            LocalBackend(model="gemini/gemini-test")

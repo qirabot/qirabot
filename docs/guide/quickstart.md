@@ -19,6 +19,14 @@ gcloud auth application-default login   # once; or point GOOGLE_APPLICATION_CRED
 qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org
 ```
 
+No gcloud? For `gemini-vertex` models a
+[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
+works instead of ADC — set `QIRA_VERTEX_API_KEY` (a Google Cloud API key,
+not an AI Studio key; Google models only, global endpoint only). No Google
+Cloud at all? The `gemini` provider (`QIRA_MODEL=gemini/gemini-3.6-flash`)
+calls the [Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key)
+with an AI Studio key — set `QIRA_GEMINI_API_KEY` (or `GEMINI_API_KEY`).
+
 That's a complete run: the browser opens, the AI does the task, and the result
 (plus an HTML report) lands in your terminal. All commands and options are in
 the [CLI Reference](/guide/cli).

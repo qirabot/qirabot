@@ -2,7 +2,12 @@
 
 The `qirabot` command ships with the package (any install/extra). Same auth as
 the SDK: Google Cloud ADC — set `GOOGLE_APPLICATION_CREDENTIALS` to a
-service-account JSON or run `gcloud auth application-default login` once. The
+service-account JSON or run `gcloud auth application-default login` once; for
+gemini-vertex models a Vertex AI API key works instead (`--vertex-api-key` or
+`QIRA_VERTEX_API_KEY` — a Google Cloud key, not an AI Studio key). The
+`gemini` provider (`-m gemini/<model>`) calls the Gemini Developer API with
+an AI Studio key (`--gemini-api-key`, `QIRA_GEMINI_API_KEY` or
+`GEMINI_API_KEY`) — no Google Cloud involved. The
 CLI also loads `./.env` automatically (the SDK doesn't), so `QIRA_MODEL` etc.
 can live there. One run command = one `ai()` run — there is no CLI equivalent
 of `extract`/`verify`/`wait_for` or of chaining several `ai()` calls in one

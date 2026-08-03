@@ -70,7 +70,25 @@ gcloud auth application-default login
 # export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
-模型按 `{provider}/{model}` 格式指定，provider 为 `claude-vertex`、`gemini-vertex` 之一，默认 `gemini-vertex/gemini-3.6-flash`；如果凭据本身不带项目，再指定 Google Cloud 项目：
+不想装 gcloud？`gemini-vertex` 系列模型可以改用
+[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
+认证——注意是 Google Cloud 的 API key，不是 AI Studio 的 key。仅支持
+Google 自家模型，且只走全局端点：
+
+```bash
+export QIRA_VERTEX_API_KEY="..."   # 或 Qirabot(vertex_api_key=...)
+```
+
+完全不想碰 Google Cloud？`gemini` provider 直接调用
+[Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key)，
+用 AI Studio 的 API key 认证：
+
+```bash
+export QIRA_GEMINI_API_KEY="..."   # 或 GEMINI_API_KEY、Qirabot(gemini_api_key=...)
+export QIRA_MODEL="gemini/gemini-3.6-flash"
+```
+
+模型按 `{provider}/{model}` 格式指定，provider 为 `claude-vertex`、`gemini-vertex`、`gemini` 之一，默认 `gemini-vertex/gemini-3.6-flash`；如果凭据本身不带项目，再指定 Google Cloud 项目：
 
 ```bash
 export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # 或 Qirabot(model=...)

@@ -18,6 +18,15 @@ gcloud auth application-default login   # 一次即可;或将 GOOGLE_APPLICATION
 qirabot browser "搜索 SpaceX 并提取词条的第一句话" --url wikipedia.org
 ```
 
+不想装 gcloud?`gemini-vertex` 系列模型可改用
+[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
+认证——设置 `QIRA_VERTEX_API_KEY` 即可(注意是 Google Cloud 的 API
+key,不是 AI Studio 的 key;仅支持 Google 自家模型,只走全局端点)。
+完全不想碰 Google Cloud?`gemini` provider
+(`QIRA_MODEL=gemini/gemini-3.6-flash`)直接调用
+[Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key),
+用 AI Studio 的 key——设置 `QIRA_GEMINI_API_KEY`(或 `GEMINI_API_KEY`)。
+
 这就是一次完整运行:浏览器打开,AI 完成任务,结果(和一份 HTML 报告)输出
 到终端。所有命令和选项见 [CLI 参考](/zh/guide/cli)。
 

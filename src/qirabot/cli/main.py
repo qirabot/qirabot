@@ -44,6 +44,8 @@ def _make_bot(
             model=model,
             vertex_project=ctx.obj.get("vertex_project", ""),
             vertex_location=ctx.obj.get("vertex_location", ""),
+            vertex_api_key=ctx.obj.get("vertex_api_key", ""),
+            gemini_api_key=ctx.obj.get("gemini_api_key", ""),
             thinking_level=thinking_level,
             media_resolution=media_resolution,
             language=language,
@@ -436,27 +438,55 @@ def _debug_options(record: bool = True) -> Callable[[_FC], _FC]:
     default="",
     help="Vertex location (default: GOOGLE_CLOUD_LOCATION or global)",
 )
+@click.option(
+    "--vertex-api-key",
+    envvar="QIRA_VERTEX_API_KEY",
+    default="",
+    help="Vertex AI API key — auth without ADC/gcloud (gemini-vertex models "
+    "only, global endpoint; overrides --vertex-project/--vertex-location)",
+)
+@click.option(
+    "--gemini-api-key",
+    envvar="QIRA_GEMINI_API_KEY",
+    default="",
+    help="Gemini Developer API (AI Studio) key for the gemini provider "
+    "(also read from GEMINI_API_KEY)",
+)
 @click.pass_context
-def cli(ctx: click.Context, vertex_project: str, vertex_location: str) -> None:
+def cli(
+    ctx: click.Context,
+    vertex_project: str,
+    vertex_location: str,
+    vertex_api_key: str,
+    gemini_api_key: str,
+) -> None:
     """Qirabot CLI — AI automation tool.
 
     The decision engine runs locally against Vertex AI with your Google Cloud
     credentials (ADC): set GOOGLE_APPLICATION_CREDENTIALS to a service-account
-    JSON or run `gcloud auth application-default login` once.
+    JSON or run `gcloud auth application-default login` once. For gemini-vertex
+    models a Vertex AI API key works instead (--vertex-api-key or
+    QIRA_VERTEX_API_KEY) — no gcloud setup needed. The gemini provider calls
+    the Gemini Developer API with an AI Studio key (--gemini-api-key,
+    QIRA_GEMINI_API_KEY or GEMINI_API_KEY).
 
-    Global options (--vertex-project/--vertex-location) go before the
-    subcommand, e.g. `qirabot --vertex-project my-proj browser "..."`.
+    Global options (--vertex-project/--vertex-location/--vertex-api-key/
+    --gemini-api-key) go before the subcommand, e.g.
+    `qirabot --vertex-project my-proj browser "..."`.
     """
     ctx.ensure_object(dict)
     ctx.obj["vertex_project"] = vertex_project
     ctx.obj["vertex_location"] = vertex_location
+    ctx.obj["vertex_api_key"] = vertex_api_key
+    ctx.obj["gemini_api_key"] = gemini_api_key
 
 
 @cli.command()
 @click.pass_context
 def models(ctx: click.Context) -> None:
-    """List the built-in Vertex providers, their default models, and whether
-    Google Cloud credentials (ADC) resolve on this machine."""
+    """List the built-in providers, their default models, and whether the
+    configured auth (API keys and/or Google Cloud ADC) resolves on this
+    machine."""
     from rich.console import Console
     from rich.table import Table
 
@@ -467,7 +497,7 @@ def models(ctx: click.Context) -> None:
     )
 
     console = Console()
-    table = Table(title="Vertex providers")
+    table = Table(title="Providers")
     table.add_column("Provider", style="cyan")
     table.add_column("Default model")
     table.add_column("Example")
@@ -477,11 +507,48 @@ def models(ctx: click.Context) -> None:
     console.print(table)
     console.print(f"Session default: [cyan]{resolve_default_model()}[/cyan]  (override with --model or QIRA_MODEL)")
 
+    if _vertex_api_key(ctx):
+        console.print(
+            "[green]✓[/green] Vertex AI API key configured — gemini-vertex via "
+            "the global endpoint, no ADC needed"
+        )
+    if _gemini_api_key(ctx):
+        console.print(
+            "[green]✓[/green] Gemini API key configured — the gemini provider "
+            "(Gemini Developer API / AI Studio), no ADC needed"
+        )
     project, cred_err = _resolve_adc(ctx)
-    if cred_err:
-        console.print(f"[red]✗[/red] Google Cloud credentials: {cred_err}")
-    else:
+    if not cred_err:
         console.print(f"[green]✓[/green] Google Cloud credentials OK (project: {project})")
+    elif _vertex_api_key(ctx) or _gemini_api_key(ctx):
+        console.print(
+            f"[yellow]![/yellow] Google Cloud credentials (ADC) unavailable — "
+            f"only needed for {_adc_only_providers(ctx)}: {cred_err}"
+        )
+    else:
+        console.print(f"[red]✗[/red] Google Cloud credentials: {cred_err}")
+
+
+def _vertex_api_key(ctx: click.Context) -> str:
+    """The effective Vertex AI API key (--vertex-api-key > QIRA_VERTEX_API_KEY),
+    empty when API-key auth is not configured."""
+    from qirabot.engine.providers.registry import resolve_vertex_api_key
+
+    return resolve_vertex_api_key(ctx.obj.get("vertex_api_key", ""))
+
+
+def _gemini_api_key(ctx: click.Context) -> str:
+    """The effective Gemini Developer API key (--gemini-api-key >
+    QIRA_GEMINI_API_KEY > GEMINI_API_KEY), empty when not configured."""
+    from qirabot.engine.providers.registry import resolve_gemini_api_key
+
+    return resolve_gemini_api_key(ctx.obj.get("gemini_api_key", ""))
+
+
+def _adc_only_providers(ctx: click.Context) -> str:
+    """Which providers still need ADC, given the configured API keys — for
+    the doctor/models caveat when ADC is missing but a key is present."""
+    return "claude-vertex" if _vertex_api_key(ctx) else "claude-vertex/gemini-vertex"
 
 
 def _resolve_adc(ctx: click.Context) -> tuple[str, str]:
@@ -682,21 +749,41 @@ def doctor(ctx: click.Context) -> None:
         console.print(f"{bad} Python {py} — qirabot requires 3.10+")
         problems += 1
 
-    # Google Cloud credentials: the engine runs locally, so ADC + a project
+    # Google Cloud credentials: the engine runs locally, so auth + a project
     # are the whole "server" story now. Probing a token exercises the same
-    # credential path a task run would use, at zero model cost.
+    # credential path a task run would use, at zero model cost. A configured
+    # Vertex AI API key covers gemini-vertex on its own, so a missing ADC is
+    # then a claude-vertex-only caveat, not a failure.
+    from qirabot.engine.providers.registry import resolve_default_model
+
+    api_key_mode = bool(_vertex_api_key(ctx)) or bool(_gemini_api_key(ctx))
+    if _vertex_api_key(ctx):
+        console.print(
+            f"{ok} Vertex AI API key configured (model: "
+            f"{escape(resolve_default_model())}) — gemini-vertex via the "
+            "global endpoint, no ADC needed"
+        )
+    if _gemini_api_key(ctx):
+        console.print(
+            f"{ok} Gemini API key configured (model: "
+            f"{escape(resolve_default_model())}) — the gemini provider "
+            "(Gemini Developer API / AI Studio), no ADC needed"
+        )
     with console.status("checking Google Cloud credentials (ADC)..."):
         project, cred_err = _resolve_adc(ctx)
-    if cred_err:
-        console.print(f"{bad} Google Cloud credentials: {escape(cred_err)}")
-        problems += 1
-    else:
-        from qirabot.engine.providers.registry import resolve_default_model
-
+    if not cred_err:
         console.print(
             f"{ok} Google Cloud credentials OK (project: {escape(project)}, "
             f"model: {escape(resolve_default_model())})"
         )
+    elif api_key_mode:
+        console.print(
+            f"{warn} Google Cloud credentials (ADC) unavailable — only needed "
+            f"for {_adc_only_providers(ctx)}: {escape(cred_err)}"
+        )
+    else:
+        console.print(f"{bad} Google Cloud credentials: {escape(cred_err)}")
+        problems += 1
 
     # A leftover v2 cloud key is the one setup state where doctor could say
     # "Ready" while every default run refuses to start: the SDK's migration

@@ -145,7 +145,7 @@ window-relative screenshots).
 |---|---|
 | `qirabot install-browser` | One-time Chromium download for the browser backend (wraps `playwright install chromium`; required form in isolated `uv tool` installs, where playwright's own CLI is not on PATH). |
 | `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC + project), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
-| `qirabot models` | List the built-in Vertex providers (`claude-vertex` / `gemini-vertex`), their default models, the session default, and whether ADC credentials resolve — the valid `-m`/`QIRA_MODEL` values. |
+| `qirabot models` | List the built-in providers (`gemini-vertex` / `gemini`), their default models, the session default, and whether the configured auth resolves — the valid `-m`/`QIRA_MODEL` values. |
 
 ## When the CLI is the wrong tool → use the SDK
 

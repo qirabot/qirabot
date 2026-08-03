@@ -359,19 +359,15 @@ class TestSaveNoteAndDone:
 
 
 class TestHistoryWindowByProvider:
-    def test_9_claude_vertex_gets_wide_window(self) -> None:
-        cfg = history_config_for_provider(
-            ModelConfig(provider="claude-vertex", model="m"), max_steps=20
-        )
-        assert cfg.max_entries == 40
-        assert cfg.max_screenshots == 40
-
-    def test_9_other_providers_default(self) -> None:
-        cfg = history_config_for_provider(
-            ModelConfig(provider="gemini-vertex", model="m"), max_steps=20
-        )
-        assert cfg.max_entries == 5
-        assert cfg.max_screenshots == 1
+    def test_9_all_providers_default(self) -> None:
+        # No prefix-cache provider is left, so everything takes the default
+        # window; the hook stays for Claude-style providers (see session.py).
+        for provider in ("gemini-vertex", "gemini"):
+            cfg = history_config_for_provider(
+                ModelConfig(provider=provider, model="m"), max_steps=20
+            )
+            assert cfg.max_entries == 5
+            assert cfg.max_screenshots == 1
 
 
 class TestSingleStepLocate:
@@ -606,24 +602,6 @@ class TestAuthSelection:
             assert isinstance(b._engine._provider, GeminiVertexProvider)
         finally:
             b.close()
-
-    def test_env_key_ignored_for_claude(self, monkeypatch) -> None:
-        from qirabot.engine.providers.claude_vertex import ClaudeVertexProvider
-
-        monkeypatch.setenv("QIRA_VERTEX_API_KEY", "vk")
-        monkeypatch.setenv("QIRA_VERTEX_PROJECT", "proj")
-        b = LocalBackend(model="claude-vertex/claude-test")
-        try:
-            assert isinstance(b._engine._provider, ClaudeVertexProvider)
-        finally:
-            b.close()
-
-    def test_explicit_key_with_claude_raises(self, monkeypatch) -> None:
-        import pytest
-
-        monkeypatch.delenv("QIRA_VERTEX_PROJECT", raising=False)
-        with pytest.raises(ValueError, match="claude-vertex requires ADC"):
-            LocalBackend(model="claude-vertex/claude-test", vertex_api_key="vk")
 
     def test_gemini_provider_never_touches_adc(self, monkeypatch) -> None:
         import pytest

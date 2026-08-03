@@ -84,23 +84,23 @@ Env-only overrides with no constructor equivalent:
 
 ## Model & language
 
-`model` selects which Vertex AI model backs every operation, in the form
+`model` selects which model backs every operation, in the form
 `"{provider}/{model}"`:
 
-| Provider | Serves | Default model |
-|---|---|---|
-| `gemini-vertex` | Google Gemini models on Vertex AI | `gemini-3.6-flash` |
-| `claude-vertex` | Anthropic Claude models on Vertex AI | `claude-sonnet-5` |
+| Provider | Serves | Auth | Default model |
+|---|---|---|---|
+| `gemini-vertex` | Google Gemini models on Vertex AI | ADC, or a Vertex AI API key (`vertex_api_key=` / `QIRA_VERTEX_API_KEY`) | `gemini-3.6-flash` |
+| `gemini` | Google Gemini models via the Gemini Developer API | AI Studio API key (`gemini_api_key=` / `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) | `gemini-3.6-flash` |
 
 ```python
-bot = Qirabot(model="claude-vertex/claude-sonnet-5")
-bot = Qirabot(model="claude-vertex")  # bare provider → its default model
+bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
+bot = Qirabot(model="gemini")  # bare provider → its default model
 ```
 
 A bare provider name resolves to that provider's default model. Unset
 everything and the SDK uses `gemini-vertex/gemini-3.6-flash`.
 `qirabot models` lists the providers, their default models, and whether
-ADC resolves.
+the configured auth resolves.
 
 There is no per-step billing by Qirabot — model calls go directly from your
 machine to your Vertex AI project and are billed by Google Cloud at that

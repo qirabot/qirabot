@@ -22,7 +22,6 @@ from . import actions
 from .engine import LocalEngine
 from .providers.base import Provider, ProviderError
 from .providers.registry import (
-    PROVIDER_CLAUDE_VERTEX,
     PROVIDER_GEMINI,
     ModelSpec,
     create_provider,
@@ -121,24 +120,11 @@ class LocalBackend:
                 self._spec.model,
             )
         elif provider is None:
-            # A configured API key (param > QIRA_VERTEX_API_KEY) always wins:
-            # the variable is qirabot-scoped, so setting it is a deliberate
-            # choice — unlike project/location vars, which commonly linger
-            # from an ADC-era setup. One exception: claude-vertex, which
-            # Vertex API keys don't cover. An env key there is ignored with a
-            # warning (it may legitimately target gemini runs); an explicit
-            # vertex_api_key= param is a hard error (create_provider raises).
+            # gemini-vertex: a configured API key (param > QIRA_VERTEX_API_KEY)
+            # always wins over ADC — the variable is qirabot-scoped, so
+            # setting it is a deliberate choice, unlike project/location
+            # vars, which commonly linger from an ADC-era setup.
             api_key = resolve_vertex_api_key(vertex_api_key)
-            if (
-                api_key
-                and self._spec.provider == PROVIDER_CLAUDE_VERTEX
-                and not vertex_api_key.strip()
-            ):
-                logger.warning(
-                    "QIRA_VERTEX_API_KEY ignored: Vertex AI API keys only "
-                    "cover Google's own models — claude-vertex uses ADC"
-                )
-                api_key = ""
             if api_key:
                 if vertex_project.strip() or vertex_location.strip():
                     logger.info(
@@ -146,15 +132,9 @@ class LocalBackend:
                         "is project-bound and global-endpoint only"
                     )
                 self._http = httpx.Client()
-                try:
-                    provider = create_provider(
-                        self._spec, "", "", None, self._http, api_key=api_key
-                    )
-                except ValueError:
-                    # explicit vertex_api_key= on a claude-vertex model
-                    self._http.close()
-                    self._http = None
-                    raise
+                provider = create_provider(
+                    self._spec, "", "", None, self._http, api_key=api_key
+                )
                 logger.info(
                     "local engine: model=%s/%s auth=api-key endpoint=global",
                     self._spec.provider,

@@ -37,7 +37,7 @@ explicitly, set `QIRA_MODEL` / `QIRA_VERTEX_PROJECT` (or pass `model=` /
 `vertex_project=` to `Qirabot()`, `-m` / `--vertex-project` on the CLI):
 
 ```bash
-export QIRA_MODEL="claude-vertex/claude-sonnet-5"   # "{provider}/{model}"
+export QIRA_MODEL="gemini-vertex/gemini-3.6-pro"   # "{provider}/{model}"
 export QIRA_VERTEX_PROJECT="my-gcp-project"
 ```
 

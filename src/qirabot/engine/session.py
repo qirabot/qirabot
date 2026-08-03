@@ -71,12 +71,11 @@ class StepOutcome:
 
 
 def history_config_for_provider(cfg: ModelConfig | None, max_steps: int) -> HistoryConfig:
-    """History sizing by provider. Claude benefits from a buffer large enough
-    that prefix-cache truncation never fires mid-task, so the conversation
-    cache prefix stays stable. (Cloud matched "claude"/"claude-vertex"; the
-    anthropic direct provider should join this branch when it lands.)"""
-    if cfg is not None and cfg.provider in ("claude", "claude-vertex"):
-        return HistoryConfig(max_entries=max_steps * 2, max_screenshots=max_steps * 2)
+    """History sizing by provider. Gemini's implicit caching needs no
+    provider-specific buffer, so everything takes the default today. The
+    hook stays because prefix-cache providers (Claude-style explicit
+    breakpoints) need max_steps-sized buffers to keep the prefix stable —
+    that's what the cloud engine did for its claude aliases."""
     return default_history_config()
 
 

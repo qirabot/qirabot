@@ -398,8 +398,8 @@ def _task_options(f: _FC) -> _FC:
     f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high")(f)
     f = _option(
         "--model", "-m", group=_TASK_GROUP, default="",
-        help='Model as "{provider}/{model}" with provider one of claude-vertex / '
-        "gemini-vertex (default: QIRA_MODEL or the built-in default)",
+        help='Model as "{provider}/{model}" with provider one of gemini-vertex / '
+        "gemini (default: QIRA_MODEL or the built-in default)",
     )(f)
     f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Run name shown in the report (default: derived from the instruction)")(f)
     return f
@@ -523,7 +523,7 @@ def models(ctx: click.Context) -> None:
     elif _vertex_api_key(ctx) or _gemini_api_key(ctx):
         console.print(
             f"[yellow]![/yellow] Google Cloud credentials (ADC) unavailable — "
-            f"only needed for {_adc_only_providers(ctx)}: {cred_err}"
+            f"{_adc_caveat(ctx, cred_err)}"
         )
     else:
         console.print(f"[red]✗[/red] Google Cloud credentials: {cred_err}")
@@ -545,10 +545,13 @@ def _gemini_api_key(ctx: click.Context) -> str:
     return resolve_gemini_api_key(ctx.obj.get("gemini_api_key", ""))
 
 
-def _adc_only_providers(ctx: click.Context) -> str:
-    """Which providers still need ADC, given the configured API keys — for
-    the doctor/models caveat when ADC is missing but a key is present."""
-    return "claude-vertex" if _vertex_api_key(ctx) else "claude-vertex/gemini-vertex"
+def _adc_caveat(ctx: click.Context, err: str) -> str:
+    """The doctor/models caveat when ADC is missing but an API key is
+    present: with a Vertex key nothing needs ADC anymore; with only a
+    Gemini (AI Studio) key, gemini-vertex still does."""
+    if _vertex_api_key(ctx):
+        return "not needed with the configured API key"
+    return f"only needed for gemini-vertex: {err}"
 
 
 def _resolve_adc(ctx: click.Context) -> tuple[str, str]:
@@ -752,8 +755,8 @@ def doctor(ctx: click.Context) -> None:
     # Google Cloud credentials: the engine runs locally, so auth + a project
     # are the whole "server" story now. Probing a token exercises the same
     # credential path a task run would use, at zero model cost. A configured
-    # Vertex AI API key covers gemini-vertex on its own, so a missing ADC is
-    # then a claude-vertex-only caveat, not a failure.
+    # API key covers its provider on its own, so a missing ADC is then a
+    # caveat, not a failure.
     from qirabot.engine.providers.registry import resolve_default_model
 
     api_key_mode = bool(_vertex_api_key(ctx)) or bool(_gemini_api_key(ctx))
@@ -778,8 +781,8 @@ def doctor(ctx: click.Context) -> None:
         )
     elif api_key_mode:
         console.print(
-            f"{warn} Google Cloud credentials (ADC) unavailable — only needed "
-            f"for {_adc_only_providers(ctx)}: {escape(cred_err)}"
+            f"{warn} Google Cloud credentials (ADC) unavailable — "
+            f"{escape(_adc_caveat(ctx, cred_err))}"
         )
     else:
         console.print(f"{bad} Google Cloud credentials: {escape(cred_err)}")

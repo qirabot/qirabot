@@ -16,7 +16,6 @@ from qirabot.engine.providers.registry import (
     resolve_vertex_project,
 )
 from qirabot.engine.providers.retry import with_retry
-from qirabot.engine.providers.claude_vertex import ClaudeVertexProvider
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
 
 
@@ -48,20 +47,18 @@ class TestParseModel:
     def test_bare_provider_uses_default_model(self) -> None:
         spec = parse_model("gemini-vertex")
         assert spec.model == DEFAULT_MODELS["gemini-vertex"]
-        spec = parse_model("claude-vertex")
-        assert spec.model == DEFAULT_MODELS["claude-vertex"]
         spec = parse_model("gemini")
         assert spec.model == DEFAULT_MODELS["gemini"]
 
-    @pytest.mark.parametrize("bad", ["", "  ", "anthropic/claude-sonnet-4-5", "gemini-api/flash", "vertex-openai/qwen/qwen3-vl-plus"])
+    @pytest.mark.parametrize("bad", ["", "  ", "anthropic/claude-sonnet-4-5", "claude-vertex/claude-sonnet-5", "gemini-api/flash", "vertex-openai/qwen/qwen3-vl-plus"])
     def test_unknown_provider_lists_options(self, bad: str) -> None:
         with pytest.raises(ValueError) as ei:
             parse_model(bad)
-        assert "claude-vertex, gemini-vertex" in str(ei.value)
+        assert "gemini-vertex, gemini" in str(ei.value)
 
     def test_default_model_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("QIRA_MODEL", "claude-vertex/claude-opus-4-6")
-        assert resolve_default_model() == "claude-vertex/claude-opus-4-6"
+        monkeypatch.setenv("QIRA_MODEL", "gemini/gemini-9-flash")
+        assert resolve_default_model() == "gemini/gemini-9-flash"
         monkeypatch.delenv("QIRA_MODEL")
         assert parse_model(resolve_default_model())  # built-in default parses
 
@@ -94,13 +91,8 @@ class TestVertexConfig:
     def test_create_provider_dispatch(self) -> None:
         client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
         tokens = FakeTokens()
-        cases = [
-            ("claude-vertex", ClaudeVertexProvider),
-            ("gemini-vertex", GeminiVertexProvider),
-        ]
-        for name, cls in cases:
-            provider = create_provider(ModelSpec(name, "m"), "p", "global", tokens, client)  # type: ignore[arg-type]
-            assert isinstance(provider, cls)
+        provider = create_provider(ModelSpec("gemini-vertex", "m"), "p", "global", tokens, client)  # type: ignore[arg-type]
+        assert isinstance(provider, GeminiVertexProvider)
 
     def test_api_key_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("QIRA_VERTEX_API_KEY", "env-key")
@@ -136,16 +128,12 @@ class TestVertexConfig:
         with pytest.raises(ValueError, match="QIRA_GEMINI_API_KEY"):
             create_provider(ModelSpec("gemini", "m"), "", "", None, client)
 
-    def test_create_provider_api_key_gemini_only(self) -> None:
+    def test_create_provider_vertex_api_key(self) -> None:
         client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
         provider = create_provider(
             ModelSpec("gemini-vertex", "m"), "", "", None, client, api_key="vk"
         )
         assert isinstance(provider, GeminiVertexProvider)
-        with pytest.raises(ValueError, match="claude-vertex requires ADC"):
-            create_provider(
-                ModelSpec("claude-vertex", "m"), "p", "global", FakeTokens(), client, api_key="vk"  # type: ignore[arg-type]
-            )
 
 
 class TestClassify:

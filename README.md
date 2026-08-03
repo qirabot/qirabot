@@ -100,7 +100,7 @@ export QIRA_MODEL="gemini/gemini-3.6-flash"
 ```
 
 Optionally pick a model as `{provider}/{model}` — provider is one of
-`claude-vertex`, `gemini-vertex`, `gemini`; the default is
+`gemini-vertex`, `gemini`; the default is
 `gemini-vertex/gemini-3.6-flash`. Set the Google Cloud project if your
 credentials don't already carry one:
 

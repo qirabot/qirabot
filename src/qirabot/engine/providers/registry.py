@@ -2,9 +2,8 @@
 construction.
 
 The user-facing model format is "{provider}/{model}" with provider one of
-claude-vertex / gemini-vertex / gemini (the Gemini Developer API, AI Studio
-keys). The model part may itself contain slashes, so the split is on the
-first slash only.
+gemini-vertex / gemini (the Gemini Developer API, AI Studio keys). The model
+part may itself contain slashes, so the split is on the first slash only.
 """
 
 from __future__ import annotations
@@ -15,17 +14,14 @@ from dataclasses import dataclass
 import httpx
 
 from .base import Provider
-from .claude_vertex import ClaudeVertexProvider
 from .gemini_api import GeminiApiProvider
 from .gemini_vertex import GeminiVertexProvider
 from .vertex_auth import VertexTokenSource
 
-PROVIDER_CLAUDE_VERTEX = "claude-vertex"
 PROVIDER_GEMINI_VERTEX = "gemini-vertex"
 PROVIDER_GEMINI = "gemini"
 
 SUPPORTED_PROVIDERS = (
-    PROVIDER_CLAUDE_VERTEX,
     PROVIDER_GEMINI_VERTEX,
     PROVIDER_GEMINI,
 )
@@ -36,7 +32,6 @@ SUPPORTED_PROVIDERS = (
 # verified against Vertex.
 DEFAULT_MODELS: dict[str, str] = {
     PROVIDER_GEMINI_VERTEX: "gemini-3.6-flash",
-    PROVIDER_CLAUDE_VERTEX: "claude-sonnet-5",
     PROVIDER_GEMINI: "gemini-3.6-flash",
 }
 
@@ -151,16 +146,6 @@ def create_provider(
     http_client: httpx.Client,
     api_key: str = "",
 ) -> Provider:
-    if spec.provider == PROVIDER_CLAUDE_VERTEX:
-        if api_key:
-            raise ValueError(
-                "Vertex AI API keys only cover Google's own models; "
-                "claude-vertex requires ADC (gcloud auth application-default "
-                "login or GOOGLE_APPLICATION_CREDENTIALS)"
-            )
-        if token_source is None:
-            raise ValueError("claude-vertex requires a token source (ADC)")
-        return ClaudeVertexProvider(project, location, token_source, http_client)
     if spec.provider == PROVIDER_GEMINI_VERTEX:
         return GeminiVertexProvider(
             project, location, token_source, http_client, api_key=api_key

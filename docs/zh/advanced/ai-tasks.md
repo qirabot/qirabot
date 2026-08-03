@@ -94,7 +94,7 @@ def wait_for_human(reason: str) -> str:
 ## 模型与语言
 
 ```python
-bot = Qirabot(model="claude-vertex", language="zh")        # 全局默认
+bot = Qirabot(model="gemini-vertex/gemini-3.6-pro", language="zh")        # 全局默认
 bot.verify(page, "每一行都显示折扣价",
            thinking_level="high")                          # 难的调用 → 多想想
 ```

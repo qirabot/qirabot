@@ -93,7 +93,7 @@ no Google Cloud involved (`-m gemini/gemini-3.6-flash`).
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default
 `gemini-vertex/gemini-3.6-flash`. A bare provider name selects that
-provider's default model (`claude-vertex` → `claude-sonnet-5`).
+provider's default model (`gemini` → `gemini-3.6-flash`).
 
 ## Exit codes
 
@@ -158,7 +158,7 @@ a consumer always sees one terminal line.
 | Option | Default | What it does |
 |---|---|---|
 | `-n, --name` | derived from the instruction | Run name shown in the HTML report |
-| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}`, provider one of `claude-vertex` / `gemini-vertex` (see [Configuration](/advanced/configuration)) |
+| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}`, provider one of `gemini-vertex` / `gemini` (see [Configuration](/advanced/configuration)) |
 | `--thinking-level` | engine default | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
 | `-l, --language` | — | Response language, e.g. `zh`, `en` |

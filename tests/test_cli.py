@@ -803,7 +803,7 @@ class TestModelsCommand:
         result = _invoke(["models"])
 
         assert result.exit_code == 0, result.output
-        for provider in ("claude-vertex", "gemini-vertex"):
+        for provider in ("gemini-vertex", "gemini"):
             assert provider in result.output
 
     def test_adc_ok_prints_project(self, monkeypatch):

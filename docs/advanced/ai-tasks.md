@@ -105,7 +105,7 @@ Runnable examples:
 ## Model & language
 
 ```python
-bot = Qirabot(model="claude-vertex", language="zh")        # defaults for all calls
+bot = Qirabot(model="gemini-vertex/gemini-3.6-pro", language="zh")        # defaults for all calls
 bot.verify(page, "every row shows the discounted price",
            thinking_level="high")                          # think harder on hard calls
 ```

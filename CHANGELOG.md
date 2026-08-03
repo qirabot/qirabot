@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Breaking: claude-vertex removed
+
+The `claude-vertex` provider is gone; `gemini-vertex` and `gemini` are the
+two remaining providers. A `model="claude-vertex/..."` value now fails at
+construction with the standard unknown-provider hint. Pin `qirabot<3.1` if
+you still need Claude on Vertex.
+
 ### Vertex AI API key authentication (gemini-vertex)
 
 `gemini-vertex` models can now authenticate with a Vertex AI API key instead

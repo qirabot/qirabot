@@ -80,22 +80,22 @@ us-east5 browser "..."`。
 
 ## 模型与语言
 
-`model` 决定所有操作背后的 Vertex AI 模型,格式为
+`model` 决定所有操作背后的模型,格式为
 `"{provider}/{model}"`:
 
-| Provider | 提供 | 默认模型 |
-|---|---|---|
-| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | `gemini-3.6-flash` |
-| `claude-vertex` | Vertex AI 上的 Anthropic Claude 模型 | `claude-sonnet-5` |
+| Provider | 提供 | 认证 | 默认模型 |
+|---|---|---|---|
+| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | ADC,或 Vertex AI API key(`vertex_api_key=` / `QIRA_VERTEX_API_KEY`) | `gemini-3.6-flash` |
+| `gemini` | Gemini Developer API 上的 Google Gemini 模型 | AI Studio API key(`gemini_api_key=` / `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) | `gemini-3.6-flash` |
 
 ```python
-bot = Qirabot(model="claude-vertex/claude-sonnet-5")
-bot = Qirabot(model="claude-vertex")  # 只写 provider → 该 provider 的默认模型
+bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
+bot = Qirabot(model="gemini")  # 只写 provider → 该 provider 的默认模型
 ```
 
 只写 provider 名会解析为该 provider 的默认模型。什么都不配置时,
 SDK 使用 `gemini-vertex/gemini-3.6-flash`。`qirabot models` 列出
-各 provider、各自的默认模型,以及本机 ADC 是否可用。
+各 provider、各自的默认模型,以及所配置的认证能否解析。
 
 Qirabot 不按步计费——模型调用直接从你的机器发往你自己的 Vertex AI
 项目,由 Google Cloud 按该模型的价格计费。

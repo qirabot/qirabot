@@ -74,11 +74,10 @@ def on_step(step: StepResult) -> None:
 
 try:
     # Game UIs push visual reasoning hard — pick a stronger model than the
-    # default (a bare provider name uses that provider's default model).
-    # language="zh" returns step decisions in Chinese to match the game;
-    # drop it for English.
+    # default. language="zh" returns step decisions in Chinese to match the
+    # game; drop it for English.
     with Qirabot(task_name="mmorpg-new-player",
-                 model="claude-vertex",
+                 model="gemini-vertex/gemini-3.6-pro",
                  language="zh").bind(driver) as bot:
         record_path = os.path.join(bot.report_dir, "recording.mp4")
         # iOS on-device recording: h264 mp4, 1800s max per segment.

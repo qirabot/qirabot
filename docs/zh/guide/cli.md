@@ -91,8 +91,8 @@ Cloud(`-m gemini/gemini-3.6-flash`)。
 模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
 `QIRA_MODEL` 环境变量 > 内置默认值
 `gemini-vertex/gemini-3.6-flash`。只写 provider 名会选用该
-provider 的默认模型(`claude-vertex` →
-`claude-sonnet-5`)。
+provider 的默认模型(`gemini` →
+`gemini-3.6-flash`)。
 
 ## 退出码
 
@@ -154,7 +154,7 @@ setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消�
 | 选项 | 默认值 | 作用 |
 |---|---|---|
 | `-n, --name` | 从指令推导 | HTML 报告中显示的运行名 |
-| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`,provider 为 `claude-vertex` / `gemini-vertex` 之一(见[配置](/zh/advanced/configuration)) |
+| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`,provider 为 `gemini-vertex` / `gemini` 之一(见[配置](/zh/advanced/configuration)) |
 | `--thinking-level` | 引擎默认 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
 | `-l, --language` | — | 响应语言,如 `zh`、`en` |

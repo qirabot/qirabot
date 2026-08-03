@@ -36,7 +36,7 @@ key,不是 AI Studio 的 key;仅支持 Google 自家模型,只走全局端点)�
 CLI 上用 `-m` / `--vertex-project`):
 
 ```bash
-export QIRA_MODEL="claude-vertex/claude-sonnet-5"   # "{provider}/{model}"
+export QIRA_MODEL="gemini-vertex/gemini-3.6-pro"   # "{provider}/{model}"
 export QIRA_VERTEX_PROJECT="my-gcp-project"
 ```
 

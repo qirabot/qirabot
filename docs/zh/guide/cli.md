@@ -78,15 +78,62 @@ qirabot --vertex-project my-gcp-project --vertex-location global browser "..."
 
 模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
 `QIRA_MODEL` 环境变量 > 内置默认值
-`gemini-vertex/gemini-3-flash-preview`。只写 provider 名会选用该
+`gemini-vertex/gemini-3.6-flash`。只写 provider 名会选用该
 provider 的默认模型(`claude-vertex` →
-`claude-sonnet-4-5@20250929`);`vertex-openai` 没有默认模型,必须写出带
-publisher 前缀的完整模型,如 `vertex-openai/qwen/qwen3-vl-plus`。
+`claude-sonnet-5`)。
 
 ## 退出码
 
 脚本友好:`0` 任务成功,`1` 任务失败或出错,`130` Ctrl+C 中断——因此
 `qirabot browser "..." && next-step` 只在成功时继续。
+
+## 机器可读输出
+
+`--output-format json` 让 stdout 只输出一个 JSON 结果对象(人类可读输出被
+抑制;退出码语义不变):
+
+```json
+{
+  "type": "result",
+  "success": true,
+  "status": "completed",
+  "output": "已登录并进入仪表盘",
+  "task_id": "local-1a2b3c4d",
+  "usage": {
+    "ai_steps": 6,
+    "input_tokens": 48210,
+    "output_tokens": 3120,
+    "thinking_tokens": 0,
+    "cache_read_tokens": 12040,
+    "cache_write_tokens": 0,
+    "step_duration_ms": 41830,
+    "llm_decision_duration_ms": 28510,
+    "total_tokens": 63370
+  },
+  "report": "qira_runs/2026-08-03/143012-1a2b3c4d/report.html"
+}
+```
+
+`status` 取值 `completed` / `goal_failed` / `max_steps` / `error` /
+`cancelled`——与 SDK `RunResult.status` 相同,外加 Ctrl+C 和 ESC 中止对应的
+`cancelled`。`success` 仅在 `completed` 时为 `true`。关闭报告时 `report` 为
+`null`;报告文件在进程退出时写出,应在 CLI 返回后再读取。
+
+`--output-format stream-json` 输出 NDJSON——每行一个 JSON 对象、逐步 flush,
+适合实时监控运行的上层工具:
+
+```
+{"type": "start", "task_id": "local-1a2b3c4d", "max_steps": 20}
+{"type": "step", "step": 1, "action_type": "click", "params": {"locate": "登录按钮"}, "decision": "...", ...}
+{"type": "step", "step": 2, "action_type": "input", ...}
+{"type": "result", "success": true, ...}
+```
+
+`step` 行的字段与 SDK 的 `StepResult` 一致(`step`、`action_type`、
+`params`、`decision`、`output`、`finished` 及单步 token/耗时计数);末尾的
+`result` 行与 `json` 格式的对象相同。中断运行的错误——包括设备不可达等
+setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消费方
+总能读到一条终止行。
 
 ## 通用运行选项
 
@@ -95,8 +142,9 @@ publisher 前缀的完整模型,如 `vertex-openai/qwen/qwen3-vl-plus`。
 | 选项 | 默认值 | 作用 |
 |---|---|---|
 | `-n, --name` | 从指令推导 | HTML 报告中显示的运行名 |
-| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3-flash-preview` | 模型,格式 `{provider}/{model}`,provider 为 `claude-vertex` / `gemini-vertex` / `vertex-openai` 之一(见[配置](/zh/advanced/configuration)) |
+| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`,provider 为 `claude-vertex` / `gemini-vertex` 之一(见[配置](/zh/advanced/configuration)) |
 | `--thinking-level` | 引擎默认 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
+| `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
 | `-l, --language` | — | 响应语言,如 `zh`、`en` |
 | `--max-steps` | `20` | AI 任务的步数预算 |
 | `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL——远程内容请先自行下载 |
@@ -104,6 +152,7 @@ publisher 前缀的完整模型,如 `vertex-openai/qwen/qwen3-vl-plus`。
 | `--report-dir` | `./qira_runs/...` | 报告输出根目录(环境变量 `QIRA_REPORT_DIR`) |
 | `--annotate / --no-annotate` | 开 | 在保存的截图上用十字线标注点击/输入坐标 |
 | `--record` | 关 | 把运行录制为 `recording.mp4`(见下) |
+| `--output-format` | `text` | `json` / `stream-json` 输出机器可读的 stdout(见[机器可读输出](#机器可读输出)) |
 
 ## 各命令专属选项
 

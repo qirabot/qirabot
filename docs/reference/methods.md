@@ -100,6 +100,26 @@ Properties: the per-run output directory
 (`./qira_runs/<date>/<time-id>/`) and the local run id (of the form
 `local-<8 hex chars>`).
 
+### usage
+
+Property: session-wide AI usage totals so far, as a frozen `SessionUsage`
+snapshot (read again for updated numbers). Covers every AI call on the
+client — `ai()` steps, AI-located actions (`click()`/`type_text()`/…) and
+standalone `extract()`/`verify()`/`locate()`. A failed call's spend is
+included too; `ai_steps` counts successful calls only.
+
+| Field | Type | Description |
+|---|---|---|
+| `ai_steps` | `int` | Successful AI calls so far |
+| `input_tokens` | `int` | Non-cached prompt tokens |
+| `cache_read_tokens` / `cache_write_tokens` | `int` | Cached prompt portion (prompt caching is active for Claude models; Gemini caches implicitly) |
+| `output_tokens` / `thinking_tokens` | `int` | Output already includes thinking (Anthropic semantics; the Gemini provider normalizes to match). Anthropic reports no separate thinking count, so `thinking_tokens` stays 0 there |
+| `total_tokens` | `int` | `input + cache read/write + output` — thinking not added again |
+| `step_duration_ms` / `llm_decision_duration_ms` | `int` | Accumulated timing |
+
+The CLI prints this summary after every task, and the HTML report header
+shows the same totals.
+
 ## AI-located actions
 
 All return the **current target** — reassign on browsers, where a click can

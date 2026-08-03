@@ -70,10 +70,10 @@ gcloud auth application-default login
 # export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
 
-模型按 `{provider}/{model}` 格式指定，provider 为 `claude-vertex`、`gemini-vertex`、`vertex-openai` 之一，默认 `gemini-vertex/gemini-3-flash-preview`；如果凭据本身不带项目，再指定 Google Cloud 项目：
+模型按 `{provider}/{model}` 格式指定，provider 为 `claude-vertex`、`gemini-vertex` 之一，默认 `gemini-vertex/gemini-3.6-flash`；如果凭据本身不带项目，再指定 Google Cloud 项目：
 
 ```bash
-export QIRA_MODEL="gemini-vertex/gemini-3-flash-preview"   # 或 Qirabot(model=...)
+export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # 或 Qirabot(model=...)
 export QIRA_VERTEX_PROJECT="my-gcp-project"                # 或 Qirabot(vertex_project=...)
 ```
 

@@ -30,20 +30,33 @@ All four take the instruction as the positional argument and share:
 | Option | Default | Notes |
 |---|---|---|
 | `-n/--name` | derived from the instruction (first line, ≤60 chars) | run name shown in the report |
-| `-m/--model` | env `QIRA_MODEL`, else the built-in default | `"{provider}/{model}"`, e.g. `gemini-vertex/gemini-3-flash-preview` — providers listed by `qirabot models` |
+| `-m/--model` | env `QIRA_MODEL`, else the built-in default | `"{provider}/{model}"`, e.g. `gemini-vertex/gemini-3.6-flash` — providers listed by `qirabot models` |
 | `--thinking-level` | model's setting | thinking override: `minimal`/`low`/`medium`/`high` |
+| `--media-resolution` | env `QIRA_MEDIA_RESOLUTION`, else `high` | screenshot detail the model sees: `low`/`medium`/`high`/`ultra_high` (Gemini only) |
 | `-l/--language` | engine default | e.g. `zh`, `en` |
 | `--max-steps` | `20` | AI step budget |
 | `--report/--no-report` | report | HTML run report |
 | `--report-dir` | env `QIRA_REPORT_DIR`, else `./qira_runs/<date>/<run>/` | output root |
 | `--annotate/--no-annotate` | annotate | crosshair on saved screenshots |
 | `--record` | off | see per-command semantics below — host screen on browser/desktop, **device** screen on android/ios |
+| `--output-format` | `text` | `json` = stdout carries one final JSON result object; `stream-json` = NDJSON, a `start` line + one line per step + the result object |
 
 **Exit codes** (CI-gateable): `0` = model achieved the goal · `1` = failed /
 error / max-steps exhausted · `130` = Ctrl+C (run recorded as *cancelled* in
 the report, not failed). Live per-step trace prints to stdout while running
 (`[3/20] click "Login" └ reasoning…`), final line is `Done: <output>` or
 `Failed: <output>`.
+
+**Machine-readable output** — with `--output-format json`/`stream-json`,
+stdout carries only JSON (rich output is suppressed; exit codes unchanged).
+Every exit path ends with one result object:
+`{"type":"result","success":bool,"status":"completed|goal_failed|max_steps|error|cancelled","output":str,"task_id":str,"usage":{"ai_steps","input_tokens","output_tokens","thinking_tokens","cache_read_tokens","cache_write_tokens","step_duration_ms","total_tokens",…},"report":path|null}`.
+`report` is the `report.html` path, written when the process exits — read it
+after the CLI returns. `stream-json` additionally prints, one JSON object per
+line: `{"type":"start","task_id",…,"max_steps":…}` first, then a
+`{"type":"step",…}` line per AI step whose fields mirror the SDK's
+`StepResult` (`step`, `action_type`, `params`, `decision`, `output`,
+`finished`, per-step tokens/duration).
 
 ### `qirabot browser "<instruction>"`
 
@@ -127,7 +140,7 @@ window-relative screenshots).
 |---|---|
 | `qirabot install-browser` | One-time Chromium download for the browser backend (wraps `playwright install chromium`; required form in isolated `uv tool` installs, where playwright's own CLI is not on PATH). |
 | `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC + project), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
-| `qirabot models` | List the built-in Vertex providers (`claude-vertex` / `gemini-vertex` / `vertex-openai`), their default models, the session default, and whether ADC credentials resolve — the valid `-m`/`QIRA_MODEL` values. |
+| `qirabot models` | List the built-in Vertex providers (`claude-vertex` / `gemini-vertex`), their default models, the session default, and whether ADC credentials resolve — the valid `-m`/`QIRA_MODEL` values. |
 
 ## When the CLI is the wrong tool → use the SDK
 
@@ -136,5 +149,3 @@ window-relative screenshots).
   instruction per invocation, and device state does not survive across runs.
 - **Custom targets**: your own Selenium driver / an already-built Appium
   session — `bind()` is SDK-only.
-- **Machine-parsing the result**: output is rich-formatted for humans
-  (`Done: <output>`); there is no `--json` mode. Parse the exit code only.

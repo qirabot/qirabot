@@ -15,7 +15,7 @@ Run (Selenium):
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install qirabot selenium        # Appium: qirabot[appium] · desktop: qirabot[desktop]
     gcloud auth application-default login    # one-time Google Cloud auth (ADC)
-    echo 'QIRA_MODEL=gemini-vertex/gemini-3-flash-preview' > .env    # load_dotenv() reads this
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
     python bolt_on.py
 
 The HTML report is written to ./qira_runs/<date>/<run>/report.html on close.

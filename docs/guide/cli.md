@@ -81,16 +81,64 @@ available: `--version`.
 
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default
-`gemini-vertex/gemini-3-flash-preview`. A bare provider name selects that
-provider's default model (`claude-vertex` → `claude-sonnet-4-5@20250929`);
-`vertex-openai` has no default and needs an explicit publisher-prefixed
-model, e.g. `vertex-openai/qwen/qwen3-vl-plus`.
+`gemini-vertex/gemini-3.6-flash`. A bare provider name selects that
+provider's default model (`claude-vertex` → `claude-sonnet-5`).
 
 ## Exit codes
 
 Script-friendly: `0` task succeeded, `1` task failed or any error, `130`
 interrupted with Ctrl+C — so `qirabot browser "..." && next-step` only
 proceeds on success.
+
+## Machine-readable output
+
+`--output-format json` makes stdout carry exactly one JSON result object (the
+human-readable output is suppressed; exit codes are unchanged):
+
+```json
+{
+  "type": "result",
+  "success": true,
+  "status": "completed",
+  "output": "Signed in and reached the dashboard",
+  "task_id": "local-1a2b3c4d",
+  "usage": {
+    "ai_steps": 6,
+    "input_tokens": 48210,
+    "output_tokens": 3120,
+    "thinking_tokens": 0,
+    "cache_read_tokens": 12040,
+    "cache_write_tokens": 0,
+    "step_duration_ms": 41830,
+    "llm_decision_duration_ms": 28510,
+    "total_tokens": 63370
+  },
+  "report": "qira_runs/2026-08-03/143012-1a2b3c4d/report.html"
+}
+```
+
+`status` is `completed` / `goal_failed` / `max_steps` / `error` /
+`cancelled` — the same values as the SDK's `RunResult.status`, plus
+`cancelled` for Ctrl+C and the ESC kill switch. `success` is `true` only for
+`completed`. `report` is `null` when reporting is off; the file itself is
+written as the process exits, so read it after the CLI returns.
+
+`--output-format stream-json` emits NDJSON — one JSON object per line, flushed
+per step, for tools that supervise a run live:
+
+```
+{"type": "start", "task_id": "local-1a2b3c4d", "max_steps": 20}
+{"type": "step", "step": 1, "action_type": "click", "params": {"locate": "Login button"}, "decision": "...", ...}
+{"type": "step", "step": 2, "action_type": "input", ...}
+{"type": "result", "success": true, ...}
+```
+
+`step` lines carry the same fields as the SDK's `StepResult` (`step`,
+`action_type`, `params`, `decision`, `output`, `finished`, per-step token and
+duration counts); the final `result` line is identical to the `json` format's
+object. Errors that stop the run — including setup failures such as an
+unreachable device — still end with a `result` object (`status: "error"`), so
+a consumer always sees one terminal line.
 
 ## Shared run options
 
@@ -99,8 +147,9 @@ proceeds on success.
 | Option | Default | What it does |
 |---|---|---|
 | `-n, --name` | derived from the instruction | Run name shown in the HTML report |
-| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3-flash-preview` | Model as `{provider}/{model}`, provider one of `claude-vertex` / `gemini-vertex` / `vertex-openai` (see [Configuration](/advanced/configuration)) |
+| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}`, provider one of `claude-vertex` / `gemini-vertex` (see [Configuration](/advanced/configuration)) |
 | `--thinking-level` | engine default | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
+| `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
 | `-l, --language` | — | Response language, e.g. `zh`, `en` |
 | `--max-steps` | `20` | Step budget for the AI task |
 | `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs — fetch remote sources yourself first |
@@ -108,6 +157,7 @@ proceeds on success.
 | `--report-dir` | `./qira_runs/...` | Report output root (env `QIRA_REPORT_DIR`) |
 | `--annotate / --no-annotate` | on | Crosshair click/type coordinates on saved screenshots |
 | `--record` | off | Record the run to `recording.mp4` (see below) |
+| `--output-format` | `text` | `json` / `stream-json` for machine-readable stdout (see [Machine-readable output](#machine-readable-output)) |
 
 ## Per-command options
 

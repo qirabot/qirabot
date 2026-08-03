@@ -4,7 +4,7 @@ Fill in the TODOs, then run:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     python -m pip install "qirabot[browser]" && playwright install chromium
     gcloud auth application-default login    # one-time Google Cloud auth (ADC)
-    echo 'QIRA_MODEL=gemini-vertex/gemini-3-flash-preview' > .env    # load_dotenv() reads this
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
     python browser.py
 
 A self-contained HTML report (with screenshots) is written to

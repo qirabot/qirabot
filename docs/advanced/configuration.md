@@ -12,7 +12,7 @@ Cloud credentials, and which model to use.
 ```python
 from qirabot import Qirabot
 
-bot = Qirabot()  # model param > QIRA_MODEL env var > gemini-vertex/gemini-3-flash-preview
+bot = Qirabot()  # model param > QIRA_MODEL env var > gemini-vertex/gemini-3.6-flash
 ```
 
 **Credentials** are standard Google Cloud Application Default Credentials
@@ -31,10 +31,11 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 
 | Parameter | Env Variable | Default | Description |
 |---|---|---|---|
-| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3-flash-preview` | Model as `{provider}/{model}` ([details](#model-language)) |
+| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}` ([details](#model-language)) |
 | `vertex_project` | `QIRA_VERTEX_PROJECT` | see below | Google Cloud project for the Vertex call |
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
-| `thinking_level` | — | `""` | Thinking level for all operations: `minimal` / `low` / `medium` / `high`; empty = the model's default ([details](#thinking-level)) |
+| `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
+| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
 | `language` | — | model default | Response language, e.g. `"zh"` / `"en"` |
 | `task_name` | — | `""` | Task name (shown in the HTML report) |
 | `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | Element-location output format; `bbox_yx_1000` switches to normalized y/x bounding boxes |
@@ -88,22 +89,18 @@ Env-only overrides with no constructor equivalent:
 
 | Provider | Serves | Default model |
 |---|---|---|
-| `gemini-vertex` | Google Gemini models on Vertex AI | `gemini-3-flash-preview` |
-| `claude-vertex` | Anthropic Claude models on Vertex AI | `claude-sonnet-4-5@20250929` |
-| `vertex-openai` | Vertex AI's OpenAI-compatible endpoint (partner models) | none — explicit model required |
+| `gemini-vertex` | Google Gemini models on Vertex AI | `gemini-3.6-flash` |
+| `claude-vertex` | Anthropic Claude models on Vertex AI | `claude-sonnet-5` |
 
 ```python
-bot = Qirabot(model="claude-vertex/claude-sonnet-4-5@20250929")
-bot = Qirabot(model="claude-vertex")                    # bare provider → its default model
-bot = Qirabot(model="vertex-openai/qwen/qwen3-vl-plus") # publisher-prefixed id required
+bot = Qirabot(model="claude-vertex/claude-sonnet-5")
+bot = Qirabot(model="claude-vertex")  # bare provider → its default model
 ```
 
-A bare provider name resolves to that provider's default model;
-`vertex-openai` has no default and needs an explicit publisher-prefixed
-model id. The model part is split on the first slash only, so
-publisher-prefixed ids work. Unset everything and the SDK uses
-`gemini-vertex/gemini-3-flash-preview`. `qirabot models` lists the three
-providers, their default models, and whether ADC resolves.
+A bare provider name resolves to that provider's default model. Unset
+everything and the SDK uses `gemini-vertex/gemini-3.6-flash`.
+`qirabot models` lists the providers, their default models, and whether
+ADC resolves.
 
 There is no per-step billing by Qirabot — model calls go directly from your
 machine to your Vertex AI project and are billed by Google Cloud at that
@@ -122,7 +119,7 @@ thinking for hard judgment calls, shallower for obvious ones:
 | Value | Trade-off |
 |---|---|
 | `minimal` | Fastest, cheapest — obvious targets, clean UIs |
-| `low` | Good default territory |
+| `low` | The default — fast steps, enough reasoning for routine UI decisions |
 | `medium` | Harder judgment calls |
 | `high` | Deepest reasoning — highest latency and thinking-token spend |
 

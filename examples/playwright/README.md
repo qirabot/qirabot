@@ -11,7 +11,7 @@ gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```
 
 Pick a model via `QIRA_MODEL` or `Qirabot(model=...)` if you don't want the
-default (`gemini-vertex/gemini-3-flash-preview`).
+default (`gemini-vertex/gemini-3.6-flash`).
 
 ## Run
 

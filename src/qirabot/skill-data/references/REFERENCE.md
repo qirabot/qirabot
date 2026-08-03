@@ -17,7 +17,7 @@ Common constructor options (all keyword):
 
 | Option | Default | Notes |
 |---|---|---|
-| `model` / env `QIRA_MODEL` | built-in default | `"{provider}/{model}"`, e.g. `"gemini-vertex/gemini-3-flash-preview"`; providers: `claude-vertex` \| `gemini-vertex` \| `vertex-openai` (list with `qirabot models`) |
+| `model` / env `QIRA_MODEL` | built-in default | `"{provider}/{model}"`, e.g. `"gemini-vertex/gemini-3.6-flash"`; providers: `claude-vertex` \| `gemini-vertex` (list with `qirabot models`) |
 | `vertex_project` / `vertex_location` | ADC project / `global` | Google Cloud project/location for Vertex AI (env `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION`, fallback `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`) |
 | `thinking_level` | model's setting | `minimal` \| `low` \| `medium` \| `high` — per-task thinking override; every action method also takes a per-call `thinking_level=`. Effective granularity depends on the underlying model (some levels may be merged or clamped). |
 | `language` | `"en"` | response language tag, e.g. `"zh"`, `"en"` |
@@ -70,6 +70,18 @@ the hot path, so keep it light and wrap any IO in `try`; an exception thrown her
 aborts the run.) A lighter alternative if you only want a trace, not structured
 data: `logging.basicConfig(level=logging.INFO)` — `bot.ai` already logs each step
 at INFO.
+
+**`bot.usage` — session-wide token/step totals.** A frozen snapshot covering
+every AI call on the client so far — `ai()` steps, AI-located actions
+(`click()`/`type_text()`/…), and standalone `verify()`/`extract()`/`locate()`;
+failed calls' spend is included, `.ai_steps` counts successful calls only.
+Fields: `.ai_steps`, `.input_tokens` (non-cached prompt portion),
+`.cache_read_tokens` / `.cache_write_tokens` (cached prompt portion),
+`.output_tokens` (already includes thinking), `.thinking_tokens`,
+`.total_tokens` (input + cache read/write + output), `.step_duration_ms`,
+`.llm_decision_duration_ms`. Read it after a run for cost accounting; the
+CLI prints the same summary after each task, and the HTML report header
+shows it too.
 
 **`custom_tools` — register your own functions as tools the model can call
 mid-task.** Any Python function works — anything code can do (internal API

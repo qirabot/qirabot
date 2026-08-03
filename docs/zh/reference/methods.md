@@ -93,6 +93,25 @@ cancel(reason="") -> None
 属性:每次运行的输出目录(`./qira_runs/<date>/<time-id>/`)和本地运行
 id(形如 `local-<8 位十六进制>`)。
 
+### usage
+
+属性:到目前为止的会话级 AI 用量汇总,返回不可变的 `SessionUsage` 快照
+(再次读取获得最新数值)。覆盖该客户端上的每一次 AI 调用——`ai()` 的每一步、
+AI 定位动作(`click()`/`type_text()` 等)以及独立的
+`extract()`/`verify()`/`locate()`。失败调用的花费也计入;`ai_steps` 只统计
+成功的调用。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `ai_steps` | `int` | 至今成功的 AI 调用次数 |
+| `input_tokens` | `int` | 未命中缓存的 prompt token |
+| `cache_read_tokens` / `cache_write_tokens` | `int` | 命中/写入缓存的 prompt 部分(Claude 模型主动启用 prompt cache;Gemini 有隐式缓存) |
+| `output_tokens` / `thinking_tokens` | `int` | output 已含 thinking(Anthropic 语义,Gemini provider 已归一化对齐)。Anthropic 不单独上报 thinking,该字段在 Claude 模型下恒为 0 |
+| `total_tokens` | `int` | `input + cache 读写 + output`——thinking 不重复相加 |
+| `step_duration_ms` / `llm_decision_duration_ms` | `int` | 累计耗时 |
+
+CLI 在每个任务结束后会打印同一份汇总,HTML 报告头部也展示相同数据。
+
 ## AI 定位动作
 
 全部返回**当前目标**——浏览器上点击可能打开新标签页,记得重新赋值

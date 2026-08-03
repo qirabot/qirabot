@@ -54,8 +54,8 @@ export QIRA_VERTEX_PROJECT="my-gcp-project"    # if your ADC doesn't carry a pro
 ```
 
 Pick a model with `QIRA_MODEL` or `Qirabot(model="{provider}/{model}")` —
-provider one of `claude-vertex` / `gemini-vertex` / `vertex-openai`; the
-default is `gemini-vertex/gemini-3-flash-preview`.
+provider one of `claude-vertex` / `gemini-vertex`; the
+default is `gemini-vertex/gemini-3.6-flash`.
 
 Install instructions are at the top of each script; the larger subdirectories
 also have a README with setup details.

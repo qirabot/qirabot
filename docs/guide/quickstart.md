@@ -23,13 +23,13 @@ That's a complete run: the browser opens, the AI does the task, and the result
 (plus an HTML report) lands in your terminal. All commands and options are in
 the [CLI Reference](/guide/cli).
 
-With nothing else configured, runs use `gemini-vertex/gemini-3-flash-preview`
+With nothing else configured, runs use `gemini-vertex/gemini-3.6-flash`
 under your ADC credentials' own project. To pick a model or project
 explicitly, set `QIRA_MODEL` / `QIRA_VERTEX_PROJECT` (or pass `model=` /
 `vertex_project=` to `Qirabot()`, `-m` / `--vertex-project` on the CLI):
 
 ```bash
-export QIRA_MODEL="claude-vertex/claude-sonnet-4-5@20250929"   # "{provider}/{model}"
+export QIRA_MODEL="claude-vertex/claude-sonnet-5"   # "{provider}/{model}"
 export QIRA_VERTEX_PROJECT="my-gcp-project"
 ```
 

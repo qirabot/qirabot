@@ -82,12 +82,12 @@ gcloud auth application-default login
 ```
 
 Optionally pick a model as `{provider}/{model}` — provider is one of
-`claude-vertex`, `gemini-vertex`, `vertex-openai`; the default is
-`gemini-vertex/gemini-3-flash-preview`. Set the Google Cloud project if your
+`claude-vertex`, `gemini-vertex`; the default is
+`gemini-vertex/gemini-3.6-flash`. Set the Google Cloud project if your
 credentials don't already carry one:
 
 ```bash
-export QIRA_MODEL="gemini-vertex/gemini-3-flash-preview"   # or Qirabot(model=...)
+export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # or Qirabot(model=...)
 export QIRA_VERTEX_PROJECT="my-gcp-project"                # or Qirabot(vertex_project=...)
 ```
 

@@ -21,13 +21,13 @@ qirabot browser "搜索 SpaceX 并提取词条的第一句话" --url wikipedia.o
 这就是一次完整运行:浏览器打开,AI 完成任务,结果(和一份 HTML 报告)输出
 到终端。所有命令和选项见 [CLI 参考](/zh/guide/cli)。
 
-不做任何其他配置时,运行使用 `gemini-vertex/gemini-3-flash-preview`,项目
+不做任何其他配置时,运行使用 `gemini-vertex/gemini-3.6-flash`,项目
 取自 ADC 凭据自身。要显式指定模型或项目,设置 `QIRA_MODEL` /
 `QIRA_VERTEX_PROJECT`(或向 `Qirabot()` 传 `model=` / `vertex_project=`,
 CLI 上用 `-m` / `--vertex-project`):
 
 ```bash
-export QIRA_MODEL="claude-vertex/claude-sonnet-4-5@20250929"   # "{provider}/{model}"
+export QIRA_MODEL="claude-vertex/claude-sonnet-5"   # "{provider}/{model}"
 export QIRA_VERTEX_PROJECT="my-gcp-project"
 ```
 

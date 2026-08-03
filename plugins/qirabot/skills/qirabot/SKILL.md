@@ -34,7 +34,7 @@ python -m pip install "qirabot[browser]"    # then: playwright install chromium
 #  or qirabot[appium] / qirabot[desktop]; Android/iOS/Windows-window are built in
 gcloud auth application-default login   # one-time Google Cloud auth (ADC) — or set
 #   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-echo 'QIRA_MODEL=gemini-vertex/gemini-3-flash-preview' > .env   # optional: pin the model
+echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env   # optional: pin the model
 ```
 
 All extras install cleanly together (no numpy/opencv pins anywhere): one

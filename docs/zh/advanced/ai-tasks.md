@@ -100,7 +100,7 @@ bot.verify(page, "每一行都显示折扣价",
 ```
 
 `model` 为整个 bot 选择 Vertex AI 模型(`"{provider}/{model}"`);留空
-使用默认的 `gemini-vertex/gemini-3-flash-preview`。`thinking_level`
+使用默认的 `gemini-vertex/gemini-3.6-flash`。`thinking_level`
 (`minimal`/`low`/`medium`/`high`)在同一模型内伸缩推理深度,可按调用
 覆盖。详见[配置](/zh/advanced/configuration)。确定性的单步调用见
 [API 参考](/zh/reference/api)。

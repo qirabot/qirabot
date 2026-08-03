@@ -87,7 +87,7 @@ auth application-default login`), or point at a service-account key file:
 
 ```powershell
 [Environment]::SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", "C:\qira\sa.json", "User")
-[Environment]::SetEnvironmentVariable("QIRA_MODEL", "gemini-vertex/gemini-3-flash-preview", "User")  # optional
+[Environment]::SetEnvironmentVariable("QIRA_MODEL", "gemini-vertex/gemini-3.6-flash", "User")  # optional
 [Environment]::SetEnvironmentVariable("QIRA_RUNNER_TOKEN",  "some-shared-secret","User")
 # allow the port through the firewall (restrict RemoteAddress to your subnet/VPN!)
 New-NetFirewallRule -DisplayName "QiraRunner" -Direction Inbound -Action Allow `

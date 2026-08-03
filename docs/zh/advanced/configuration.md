@@ -11,7 +11,7 @@ description: Qirabot 的全部配置项——模型与 Vertex AI 设置、Google
 ```python
 from qirabot import Qirabot
 
-bot = Qirabot()  # model 参数 > QIRA_MODEL 环境变量 > gemini-vertex/gemini-3-flash-preview
+bot = Qirabot()  # model 参数 > QIRA_MODEL 环境变量 > gemini-vertex/gemini-3.6-flash
 ```
 
 **凭据**使用标准的 Google Cloud Application Default Credentials(ADC):
@@ -28,10 +28,11 @@ load_dotenv; load_dotenv()`——读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
-| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3-flash-preview` | 模型,格式 `{provider}/{model}`([详情](#模型与语言)) |
+| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`([详情](#模型与语言)) |
 | `vertex_project` | `QIRA_VERTEX_PROJECT` | 见下文 | Vertex 调用使用的 Google Cloud 项目 |
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
-| `thinking_level` | — | `""` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`;留空 = 模型默认([详情](#思考深度)) |
+| `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
+| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
 | `language` | — | 模型默认 | 响应语言,如 `"zh"` / `"en"` |
 | `task_name` | — | `""` | 任务名(显示在 HTML 报告里) |
 | `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | 元素定位输出格式;`bbox_yx_1000` 切换为归一化 y/x 包围盒 |
@@ -84,21 +85,17 @@ us-east5 browser "..."`。
 
 | Provider | 提供 | 默认模型 |
 |---|---|---|
-| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | `gemini-3-flash-preview` |
-| `claude-vertex` | Vertex AI 上的 Anthropic Claude 模型 | `claude-sonnet-4-5@20250929` |
-| `vertex-openai` | Vertex AI 的 OpenAI 兼容端点(合作伙伴模型) | 无——必须显式指定 |
+| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | `gemini-3.6-flash` |
+| `claude-vertex` | Vertex AI 上的 Anthropic Claude 模型 | `claude-sonnet-5` |
 
 ```python
-bot = Qirabot(model="claude-vertex/claude-sonnet-4-5@20250929")
-bot = Qirabot(model="claude-vertex")                    # 只写 provider → 该 provider 的默认模型
-bot = Qirabot(model="vertex-openai/qwen/qwen3-vl-plus") # 必须带 publisher 前缀的模型 id
+bot = Qirabot(model="claude-vertex/claude-sonnet-5")
+bot = Qirabot(model="claude-vertex")  # 只写 provider → 该 provider 的默认模型
 ```
 
-只写 provider 名会解析为该 provider 的默认模型;`vertex-openai` 没有
-默认模型,必须显式给出带 publisher 前缀的模型 id。model 部分只按第一个
-斜杠切分,所以带 publisher 前缀的 id 可以正常使用。什么都不配置时,
-SDK 使用 `gemini-vertex/gemini-3-flash-preview`。`qirabot models` 列出
-三个 provider、各自的默认模型,以及本机 ADC 是否可用。
+只写 provider 名会解析为该 provider 的默认模型。什么都不配置时,
+SDK 使用 `gemini-vertex/gemini-3.6-flash`。`qirabot models` 列出
+各 provider、各自的默认模型,以及本机 ADC 是否可用。
 
 Qirabot 不按步计费——模型调用直接从你的机器发往你自己的 Vertex AI
 项目,由 Google Cloud 按该模型的价格计费。
@@ -115,7 +112,7 @@ Qirabot 不按步计费——模型调用直接从你的机器发往你自己的
 | 取值 | 权衡 |
 |---|---|
 | `minimal` | 最快最省——目标明显、界面干净 |
-| `low` | 适合作为日常默认 |
+| `low` | 默认档——步进快,足够覆盖常规 UI 判断 |
 | `medium` | 需要更多判断的场景 |
 | `high` | 推理最深——延迟和思考 token 开销也最高 |
 

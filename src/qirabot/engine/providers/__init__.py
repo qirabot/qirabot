@@ -1,6 +1,6 @@
 """LLM providers for the local decision engine (Vertex AI family).
 
-All three providers authenticate with GCP ADC (service account JSON, gcloud
+Both providers authenticate with GCP ADC (service account JSON, gcloud
 user credentials, or the GCE metadata server) via vertex_auth, and talk raw
 REST over httpx — no provider SDKs.
 """

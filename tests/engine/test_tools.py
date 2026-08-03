@@ -85,8 +85,8 @@ class TestOverrides:
         chrome = tool_by_name(tool_definitions_for_platform("chrome"), "done")
         android = tool_by_name(tool_definitions_for_platform("android"), "done")
         assert chrome is not None and android is not None
-        assert "从截图中提取所需信息" in chrome.description
-        assert "从截图中提取所需信息" not in android.description
+        assert "extract the required information from the screenshot" in chrome.description
+        assert "extract the required information from the screenshot" not in android.description
 
     def test_resolve_helpers(self) -> None:
         p = ToolPromptDef(

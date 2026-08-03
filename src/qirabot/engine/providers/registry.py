@@ -2,9 +2,8 @@
 construction.
 
 The user-facing model format is "{provider}/{model}" with provider one of
-claude-vertex / gemini-vertex / vertex-openai. The model part may itself
-contain slashes (vertex-openai uses publisher-prefixed ids like
-"qwen/qwen3-vl-plus"), so the split is on the first slash only.
+claude-vertex / gemini-vertex. The model part may itself contain slashes,
+so the split is on the first slash only.
 """
 
 from __future__ import annotations
@@ -18,26 +17,22 @@ from .base import Provider
 from .claude_vertex import ClaudeVertexProvider
 from .gemini_vertex import GeminiVertexProvider
 from .vertex_auth import VertexTokenSource
-from .vertex_openai import VertexOpenAIProvider
 
 PROVIDER_CLAUDE_VERTEX = "claude-vertex"
 PROVIDER_GEMINI_VERTEX = "gemini-vertex"
-PROVIDER_VERTEX_OPENAI = "vertex-openai"
 
 SUPPORTED_PROVIDERS = (
     PROVIDER_CLAUDE_VERTEX,
     PROVIDER_GEMINI_VERTEX,
-    PROVIDER_VERTEX_OPENAI,
 )
 
 # Default model per provider, used when the user names a provider without a
-# model. gemini-3-flash-preview: the thinkingLevel field the engine emits is
-# Gemini-3-only (2.5 rejects it with a 400), verified against Vertex.
-# TODO(release): finalize against the cloud balanced_pro alias mapping before
-# v3.0.0 ships.
+# model. Keep the gemini default in the Gemini 3 family: the thinkingLevel
+# field the engine emits is Gemini-3-only (2.5 rejects it with a 400),
+# verified against Vertex.
 DEFAULT_MODELS: dict[str, str] = {
-    PROVIDER_GEMINI_VERTEX: "gemini-3-flash-preview",
-    PROVIDER_CLAUDE_VERTEX: "claude-sonnet-4-5@20250929",
+    PROVIDER_GEMINI_VERTEX: "gemini-3.6-flash",
+    PROVIDER_CLAUDE_VERTEX: "claude-sonnet-5",
 }
 
 # The model used when nothing is configured at all.
@@ -67,11 +62,7 @@ def parse_model(value: str) -> ModelSpec:
         raise ValueError(_format_hint(f'unknown provider "{provider}"'))
 
     if not model:
-        model = DEFAULT_MODELS.get(provider, "")
-        if not model:
-            raise ValueError(
-                _format_hint(f'provider "{provider}" needs an explicit model')
-            )
+        model = DEFAULT_MODELS[provider]
     return ModelSpec(provider=provider, model=model)
 
 
@@ -132,6 +123,4 @@ def create_provider(
         return ClaudeVertexProvider(project, location, token_source, http_client)
     if spec.provider == PROVIDER_GEMINI_VERTEX:
         return GeminiVertexProvider(project, location, token_source, http_client)
-    if spec.provider == PROVIDER_VERTEX_OPENAI:
-        return VertexOpenAIProvider(project, location, token_source, http_client)
     raise ValueError(_format_hint(f'unknown provider "{spec.provider}"'))

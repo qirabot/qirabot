@@ -187,7 +187,7 @@ class TestGroundingLoop:
         resp = b.act(PNG, ai_request())
         assert resp["success"] is True
         hint = fake.requests[1].messages[-1].content
-        assert "point_x=1500" in hint and "坐标必须归一化" in hint
+        assert "point_x=1500" in hint and "Coordinates must be integers normalized" in hint
         assert resp["inputTokens"] == 20
 
     def test_4_combined_failures_get_one_retry_total(self) -> None:
@@ -204,6 +204,17 @@ class TestGroundingLoop:
         assert len(fake.requests) == 2
         # Failed step still reports the real spend of both attempts.
         assert resp["inputTokens"] == 20
+
+    def test_4_unparsable_exhausted_still_reports_spend(self) -> None:
+        # Both attempts unparsable: the step fails, but the error payload
+        # still carries both attempts' tokens (user pays that bill too).
+        fake = FakeProvider(text_resp("garbage"), text_resp("garbage"))
+        b = backend(fake)
+        resp = b.act(PNG, ai_request())
+        assert resp["success"] is False
+        assert "parse decision response" in resp["error"]
+        assert resp["inputTokens"] == 20
+        assert resp["outputTokens"] == 10
 
     def test_4_drag_error_message(self) -> None:
         bad_drag = {"start_point_x": 5000, "start_point_y": 1, "end_point_x": 1, "end_point_y": 1, "reason": "r"}
@@ -307,7 +318,7 @@ class TestSaveNoteAndDone:
         assert resp["output"] == "ok"
         # Note lands in the next decide's dynamic prompt...
         b.act(PNG, ai_request(instruction=None, action_result="ok"))
-        assert "## 已保存的笔记\n第一页内容" in fake.requests[1].system_prompt
+        assert "## Saved notes\n第一页内容" in fake.requests[1].system_prompt
         # ...and the replayed turn's output is the pre-filled "ok".
         tool_msgs = [m for m in fake.requests[1].messages if m.role == "tool"]
         assert tool_msgs[0].tool_results[0].content.startswith("ok\n")
@@ -514,6 +525,32 @@ class TestMisc:
         backend(fake).act(PNG, req)
         assert fake.requests[0].params["thinking_level"] == "high"
 
+    def test_engine_default_params(self) -> None:
+        # v2-cloud-parity defaults: without them the provider zero-value
+        # fallbacks apply (temperature 0.0 — below Gemini 3's recommended
+        # 1.0 — and API-side media resolution / thinking level, the latter
+        # defaulting to high on Gemini 3).
+        fake = FakeProvider(tool_resp("click", CLICK_ARGS))
+        backend(fake).act(PNG, ai_request())
+        params = fake.requests[0].params
+        assert params["temperature"] == 1.0
+        assert params["media_resolution"] == "high"
+        assert params["thinking_level"] == "low"
+
+    def test_constructor_thinking_level_beats_default(self) -> None:
+        fake = FakeProvider(tool_resp("click", CLICK_ARGS))
+        LocalBackend(
+            model="gemini-vertex/gemini-test", provider=fake, thinking_level="medium"
+        ).act(PNG, ai_request())
+        assert fake.requests[0].params["thinking_level"] == "medium"
+
+    def test_media_resolution_override(self) -> None:
+        fake = FakeProvider(tool_resp("click", CLICK_ARGS))
+        LocalBackend(
+            model="gemini-vertex/gemini-test", provider=fake, media_resolution="medium"
+        ).act(PNG, ai_request())
+        assert fake.requests[0].params["media_resolution"] == "medium"
+
     def test_trace_writes_jsonl(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setenv("QIRA_ENGINE_TRACE", str(tmp_path))
         fake = FakeProvider(tool_resp("click", CLICK_ARGS))
@@ -534,5 +571,7 @@ class TestPlatformNormalization:
         req = ai_request()
         req["device_info"] = {"platform": "browser", "width": 1280, "height": 720}
         backend(fake).act(PNG, req)
-        assert fake.requests[0].cacheable_system_prompt.startswith("# 角色\n你是一名针对Chrome浏览器平台")
+        assert fake.requests[0].cacheable_system_prompt.startswith(
+            "# Role\nYou are a UI automation agent for the Chrome browser platform"
+        )
         assert any(t.name == "navigate" for t in fake.requests[0].tools)

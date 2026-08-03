@@ -189,12 +189,19 @@ class LocalAISession:
                         exc,
                     )
                     continue
-                raise StepError(str(exc)) from exc
+                # `usage` holds every attempt's spend — attach it so the
+                # error payload carries the tokens (same as the grounding
+                # path below; the SDK folds them into its session totals).
+                err = StepError(str(exc))
+                err.usage = usage  # type: ignore[attr-defined]
+                raise err from exc
 
             usage.add(result.token_usage)
             llm_ms += result.duration_ms
             if result.action is None:
-                raise StepError("AI returned no action")
+                err = StepError("AI returned no action")
+                err.usage = usage  # type: ignore[attr-defined]
+                raise err
 
             act = result.action
             finished = act.type == actions.DONE
@@ -300,7 +307,8 @@ def _resolve_coordinates(
         )
         if not s_mode or not e_mode:
             return (
-                "上一次 drag 的坐标无法使用（start={},{} end={},{}）。{}。请重新观察截图后重试。".format(
+                "The coordinates from the previous drag are unusable (start={},{} end={},{}). "
+            "{}. Re-examine the screenshot and try again.".format(
                     act.params.get("start_point_x"),
                     act.params.get("start_point_y"),
                     act.params.get("end_point_x"),
@@ -337,7 +345,8 @@ def _resolve_coordinates(
     )
     if not mode:
         return (
-            "上一次输出的 point_x={}、point_y={} 无法使用。{}。请重新观察截图后输出 point_x、point_y。".format(
+            "The previously output point_x={}, point_y={} are unusable. "
+            "{}. Re-examine the screenshot and output point_x and point_y again.".format(
                 act.params.get("point_x"), act.params.get("point_y"), NORMALIZED_COORD_RULE
             )
         )

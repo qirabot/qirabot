@@ -29,7 +29,7 @@ class TestPlatformPrompts:
     def test_all_platforms_loaded(self) -> None:
         assert sorted(PLATFORM_PROMPTS) == ["android", "chrome", "desktop", "ios"]
         for text in PLATFORM_PROMPTS.values():
-            assert text.startswith("# 角色")
+            assert text.startswith("# Role")
 
     def test_unknown_platform_falls_back_to_android(self) -> None:
         assert resolve_prompt(PLATFORM_PROMPTS, "playstation") == PLATFORM_PROMPTS["android"]
@@ -43,21 +43,21 @@ class TestSystemPrompts:
         cacheable, dynamic = build_system_prompts(
             "android", "完成每日副本", "GM 命令整个任务只能使用一次", "", "", "zh", False, [], NOW
         )
-        assert "# 领域知识" in cacheable
+        assert "# Domain knowledge" in cacheable
         assert "GM 命令整个任务只能使用一次" in cacheable
         assert "GM 命令整个任务只能使用一次" not in dynamic
         # Framing: reference material, not goal.
-        assert "不是任务目标" in cacheable
+        assert "not the task goal" in cacheable
 
     def test_no_knowledge_no_section(self) -> None:
         cacheable, _ = build_system_prompts(
             "android", "完成每日副本", "", "", "", "zh", False, [], NOW
         )
-        assert "# 领域知识" not in cacheable
+        assert "# Domain knowledge" not in cacheable
 
     def test_grounding_guidance_always_present(self) -> None:
         cacheable, _ = build_system_prompts("chrome", "goal", "", "", "", "zh", False, [], NOW)
-        assert "# 坐标输出" in cacheable
+        assert "# Coordinate output" in cacheable
         assert NORMALIZED_COORD_RULE in cacheable
         assert "start_point_x" in cacheable
 
@@ -65,9 +65,9 @@ class TestSystemPrompts:
         cacheable, dynamic = build_system_prompts(
             "chrome", "goal", "", "", "", "zh", False, ["scroll", "hover"], NOW
         )
-        assert "# 工具可用性" in cacheable
-        assert "`scroll`、`hover`" in cacheable
-        assert "# 工具可用性" not in dynamic
+        assert "# Tool availability" in cacheable
+        assert "`scroll`, `hover`" in cacheable
+        assert "# Tool availability" not in dynamic
 
     def test_excluded_tools_section_empty(self) -> None:
         assert excluded_tools_section([]) == ""
@@ -76,20 +76,20 @@ class TestSystemPrompts:
 class TestDynamicPrompt:
     def test_date_goal_language(self) -> None:
         p = build_dynamic_prompt("买一杯咖啡", "", "", "zh-CN", False, NOW)
-        assert "## 当前日期\n2026-08-02 Sunday" in p
-        assert "## 用户目标\n买一杯咖啡" in p
-        assert p.endswith("请使用中文回复")
-        assert "## 已完成的步骤摘要" not in p
-        assert "## 已保存的笔记" not in p
-        assert "## 截图标注说明" not in p
+        assert "## Current date\n2026-08-02 Sunday" in p
+        assert "## User goal\n买一杯咖啡" in p
+        assert p.endswith("Respond in 中文")
+        assert "## Summary of completed steps" not in p
+        assert "## Saved notes" not in p
+        assert "## Screenshot annotations" not in p
 
     def test_summary_notes_annotate_sections(self) -> None:
         p = build_dynamic_prompt("goal", "click: 打开设置", "第一页内容", "en", True, NOW)
-        assert "## 已完成的步骤摘要\nclick: 打开设置" in p
-        assert "## 已保存的笔记\n第一页内容" in p
-        assert "## 截图标注说明" in p
-        assert "红色十字准线" in p
-        assert p.endswith("请使用English回复")
+        assert "## Summary of completed steps\nclick: 打开设置" in p
+        assert "## Saved notes\n第一页内容" in p
+        assert "## Screenshot annotations" in p
+        assert "red crosshair" in p
+        assert p.endswith("Respond in English")
 
     def test_language_display_name(self) -> None:
         assert get_language_display_name("zh") == "中文"

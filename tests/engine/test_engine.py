@@ -102,8 +102,8 @@ class TestDecide:
         assert req.force_tool is True
         assert req.params["temperature"] == 0.2
         assert req.params["max_tokens"] == 4096
-        assert req.cacheable_system_prompt.startswith("# 角色")
-        assert "# 当前任务上下文" in req.system_prompt
+        assert req.cacheable_system_prompt.startswith("# Role")
+        assert "# Current task context" in req.system_prompt
         assert any(t.name == "done" for t in req.tools)
         assert fake.timeouts[0] == 120.0
 

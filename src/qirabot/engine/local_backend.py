@@ -76,12 +76,14 @@ class LocalBackend:
         vertex_project: str = "",
         vertex_location: str = "",
         thinking_level: str = "",
+        media_resolution: str = "",
         locate_format: str = "",
         annotate_for_model: bool = False,
         provider: Provider | None = None,
     ) -> None:
         self._spec: ModelSpec = parse_model(model)
         self._thinking_level = thinking_level
+        self._media_resolution = media_resolution
         self._locate_format = locate_format
         self._annotate_for_model = annotate_for_model
         self._session: LocalAISession | None = None
@@ -144,12 +146,24 @@ class LocalBackend:
     # -- model config --------------------------------------------------
 
     def _model_config(self, request: dict[str, Any]) -> ModelConfig:
-        params: dict[str, Any] = {}
+        # Engine-level defaults, mirroring what the v2 cloud aliases always
+        # sent. Without them the provider ports' zero-value fallbacks apply:
+        # temperature 0.0 (Gemini 3 degrades below its recommended 1.0) and
+        # the API-side media resolution. Screenshots default to "high" — UI
+        # text is dense and the decision quality is the product.
+        params: dict[str, Any] = {
+            "temperature": 1.0,
+            "media_resolution": self._media_resolution or "high",
+        }
+        # thinking_level: per-request override > constructor > "low". The
+        # explicit "low" floor matches every v2 cloud alias (fast ran
+        # minimal); leaving it unset would drift with the API-side default,
+        # which for Gemini 3 is high — slower and pricier on every step.
         tl = request.get("thinking_level")
         if isinstance(tl, str) and tl:
             params["thinking_level"] = tl
-        elif self._thinking_level:
-            params["thinking_level"] = self._thinking_level
+        else:
+            params["thinking_level"] = self._thinking_level or "low"
         return ModelConfig(
             provider=self._spec.provider,
             model=self._spec.model,

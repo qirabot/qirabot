@@ -112,6 +112,10 @@ def build_request_body(request: ChatRequest) -> dict[str, Any]:
             "thinkingLevel": _map_thinking_level(thinking_level, request.model)
         }
 
+    media_resolution = request.param_str("media_resolution", "")
+    if media_resolution:
+        generation_config["mediaResolution"] = _map_media_resolution(media_resolution)
+
     body: dict[str, Any] = {
         "contents": build_contents(request.messages),
         "generationConfig": generation_config,
@@ -141,6 +145,16 @@ def _map_thinking_level(level: str, model: str) -> str:
     if lv == "medium":
         return "MEDIUM"
     return "HIGH"  # high / xhigh / max / unknown
+
+
+def _map_media_resolution(value: str) -> str:
+    # Same table (and same fallback-to-medium on unknown values) as go-llm.
+    return {
+        "low": "MEDIA_RESOLUTION_LOW",
+        "medium": "MEDIA_RESOLUTION_MEDIUM",
+        "high": "MEDIA_RESOLUTION_HIGH",
+        "ultra_high": "MEDIA_RESOLUTION_ULTRA_HIGH",
+    }.get(value.lower(), "MEDIA_RESOLUTION_MEDIUM")
 
 
 def _declaration(t: ToolDefinition) -> dict[str, Any]:

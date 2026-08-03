@@ -16,7 +16,6 @@ from qirabot.engine.providers.registry import (
 from qirabot.engine.providers.retry import with_retry
 from qirabot.engine.providers.claude_vertex import ClaudeVertexProvider
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
-from qirabot.engine.providers.vertex_openai import VertexOpenAIProvider
 
 
 class FakeTokens:
@@ -40,9 +39,9 @@ class TestParseModel:
         spec = parse_model("gemini-vertex/gemini-2.5-flash")
         assert spec == ModelSpec(provider="gemini-vertex", model="gemini-2.5-flash")
 
-    def test_publisher_prefixed_model_keeps_inner_slashes(self) -> None:
-        spec = parse_model("vertex-openai/qwen/qwen3-vl-plus")
-        assert spec == ModelSpec(provider="vertex-openai", model="qwen/qwen3-vl-plus")
+    def test_model_keeps_inner_slashes(self) -> None:
+        spec = parse_model("gemini-vertex/some/slashed-id")
+        assert spec == ModelSpec(provider="gemini-vertex", model="some/slashed-id")
 
     def test_bare_provider_uses_default_model(self) -> None:
         spec = parse_model("gemini-vertex")
@@ -50,15 +49,11 @@ class TestParseModel:
         spec = parse_model("claude-vertex")
         assert spec.model == DEFAULT_MODELS["claude-vertex"]
 
-    def test_bare_provider_without_default_rejected(self) -> None:
-        with pytest.raises(ValueError, match="needs an explicit model"):
-            parse_model("vertex-openai")
-
-    @pytest.mark.parametrize("bad", ["", "  ", "anthropic/claude-sonnet-4-5", "gemini/flash"])
+    @pytest.mark.parametrize("bad", ["", "  ", "anthropic/claude-sonnet-4-5", "gemini/flash", "vertex-openai/qwen/qwen3-vl-plus"])
     def test_unknown_provider_lists_options(self, bad: str) -> None:
         with pytest.raises(ValueError) as ei:
             parse_model(bad)
-        assert "claude-vertex, gemini-vertex, vertex-openai" in str(ei.value)
+        assert "claude-vertex, gemini-vertex" in str(ei.value)
 
     def test_default_model_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("QIRA_MODEL", "claude-vertex/claude-opus-4-6")
@@ -98,7 +93,6 @@ class TestVertexConfig:
         cases = [
             ("claude-vertex", ClaudeVertexProvider),
             ("gemini-vertex", GeminiVertexProvider),
-            ("vertex-openai", VertexOpenAIProvider),
         ]
         for name, cls in cases:
             provider = create_provider(ModelSpec(name, "m"), "p", "global", tokens, client)  # type: ignore[arg-type]

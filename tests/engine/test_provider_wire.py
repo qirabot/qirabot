@@ -1,4 +1,4 @@
-"""Outbound wire-format tests for the three Vertex providers, using
+"""Outbound wire-format tests for the Vertex providers, using
 httpx.MockTransport — asserts the exact JSON go-llm produced where fidelity
 matters (cache_control placement, thinking/tool_choice exclusivity, schema
 cleaning, functionResponse shape, dataURI images)."""
@@ -13,7 +13,6 @@ import pytest
 from qirabot.engine.providers.base import ChatRequest, ErrorCategory, ProviderError
 from qirabot.engine.providers.claude_vertex import ClaudeVertexProvider
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
-from qirabot.engine.providers.vertex_openai import VertexOpenAIProvider
 from qirabot.engine.types import Image, Message, TokenUsage, ToolCall, ToolDefinition, ToolResult
 
 
@@ -68,30 +67,6 @@ GEMINI_OK = {
         "cachedContentTokenCount": 30,
         "candidatesTokenCount": 20,
         "thoughtsTokenCount": 7,
-    },
-}
-
-OAI_OK = {
-    "choices": [
-        {
-            "message": {
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {"name": "click", "arguments": '{"reason":"r"}'},
-                    }
-                ],
-            },
-            "finish_reason": "tool_calls",
-        }
-    ],
-    "usage": {
-        "prompt_tokens": 100,
-        "completion_tokens": 20,
-        "completion_tokens_details": {"reasoning_tokens": 4},
-        "prompt_tokens_details": {"cached_tokens": 60},
     },
 }
 
@@ -348,6 +323,28 @@ class TestGeminiVertex:
         provider.chat(self.base_request(), timeout=30)
         assert "thinkingConfig" not in sent_body(seen[0])["generationConfig"]
 
+    @pytest.mark.parametrize(
+        ("value", "want"),
+        [
+            ("low", "MEDIA_RESOLUTION_LOW"),
+            ("medium", "MEDIA_RESOLUTION_MEDIUM"),
+            ("HIGH", "MEDIA_RESOLUTION_HIGH"),
+            ("ultra_high", "MEDIA_RESOLUTION_ULTRA_HIGH"),
+            ("bogus", "MEDIA_RESOLUTION_MEDIUM"),  # go-llm's fallback
+        ],
+    )
+    def test_media_resolution_mapping(self, value: str, want: str) -> None:
+        provider, seen = self.make()
+        provider.chat(
+            self.base_request(params={"media_resolution": value}), timeout=30
+        )
+        assert sent_body(seen[0])["generationConfig"]["mediaResolution"] == want
+
+    def test_no_media_resolution_when_unset(self) -> None:
+        provider, seen = self.make()
+        provider.chat(self.base_request(), timeout=30)
+        assert "mediaResolution" not in sent_body(seen[0])["generationConfig"]
+
     def test_contents_conversion(self) -> None:
         provider, seen = self.make()
         messages = [
@@ -396,122 +393,3 @@ class TestGeminiVertex:
         assert resp.finish_reason == "safety"
         assert resp.tool_calls == []
 
-
-class TestVertexOpenAI:
-    def make(self, response: dict[str, Any] = OAI_OK):
-        client, seen = capture_client(response)
-        provider = VertexOpenAIProvider("proj-1", "global", FakeTokens(), client)  # type: ignore[arg-type]
-        return provider, seen
-
-    def base_request(self, **kwargs: Any) -> ChatRequest:
-        defaults: dict[str, Any] = dict(
-            model="qwen/qwen3-vl-plus",
-            messages=[Message(role="user", content="Task: go")],
-            tools=[ToolDefinition(name="click", description="c", parameters={"type": "object"})],
-            force_tool=True,
-            cacheable_system_prompt="CACHEABLE",
-            system_prompt="DYNAMIC",
-            params={"temperature": 0.2, "max_tokens": 4096},
-        )
-        defaults.update(kwargs)
-        return ChatRequest(**defaults)
-
-    def test_url_and_model_verbatim(self) -> None:
-        provider, seen = self.make()
-        provider.chat(self.base_request(), timeout=30)
-        assert str(seen[0].url) == (
-            "https://aiplatform.googleapis.com/v1/projects/proj-1/locations/global"
-            "/endpoints/openapi/chat/completions"
-        )
-        body = sent_body(seen[0])
-        # Publisher-prefixed model id passes through untouched.
-        assert body["model"] == "qwen/qwen3-vl-plus"
-        assert body["tool_choice"] == "required"
-        assert body["max_tokens"] == 4096
-        assert body["temperature"] == 0.2
-        # System = cacheable + dynamic concatenated, as the first message.
-        assert body["messages"][0] == {"role": "system", "content": "CACHEABLEDYNAMIC"}
-
-    def test_zero_temperature_omitted(self) -> None:
-        # go-llm only includes temperature/top_p when > 0.
-        provider, seen = self.make()
-        provider.chat(self.base_request(params={"temperature": 0}), timeout=30)
-        assert "temperature" not in sent_body(seen[0])
-
-    def test_images_ride_as_data_uris(self) -> None:
-        provider, seen = self.make()
-        messages = [
-            Message(
-                role="user",
-                content="look",
-                images=[Image(mime_type="image/png", data=b"img")],
-            )
-        ]
-        provider.chat(self.base_request(messages=messages), timeout=30)
-        parts = sent_body(seen[0])["messages"][1]["content"]
-        assert parts[0] == {"type": "text", "text": "look"}
-        uri = parts[1]["image_url"]["url"]
-        assert uri == "data:image/png;base64," + base64.b64encode(b"img").decode()
-
-    def test_tool_triad_wire(self) -> None:
-        provider, seen = self.make()
-        messages = [
-            Message(
-                role="assistant",
-                tool_calls=[ToolCall(id="click", name="click", args={"point_x": 5})],
-            ),
-            Message(
-                role="tool",
-                tool_results=[ToolResult(tool_call_id="click", name="click", content="ok")],
-            ),
-        ]
-        provider.chat(self.base_request(messages=messages), timeout=30)
-        wire = sent_body(seen[0])["messages"]
-        assistant = wire[1]
-        assert assistant["tool_calls"][0]["id"] == "click"
-        assert json.loads(assistant["tool_calls"][0]["function"]["arguments"]) == {"point_x": 5}
-        tool_msg = wire[2]
-        assert tool_msg == {"role": "tool", "tool_call_id": "click", "content": "ok"}
-
-    def test_enable_thinking_flag(self) -> None:
-        provider, seen = self.make()
-        provider.chat(self.base_request(params={"thinking_level": "high"}), timeout=30)
-        assert sent_body(seen[0])["chat_template_kwargs"] == {"enable_thinking": True}
-        provider.chat(self.base_request(params={"thinking_level": "disabled"}), timeout=30)
-        assert "chat_template_kwargs" not in sent_body(seen[1])
-
-    def test_parse_response(self) -> None:
-        provider, _ = self.make()
-        resp = provider.chat(self.base_request(), timeout=30)
-        assert resp.tool_calls[0].args == {"reason": "r"}
-        assert resp.token_usage == TokenUsage(
-            input_tokens=100, output_tokens=20, thinking_tokens=4, cache_read_tokens=60
-        )
-
-    def test_malformed_arguments_kept_raw(self) -> None:
-        bad = {
-            "choices": [
-                {
-                    "message": {
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "id": "c1",
-                                "type": "function",
-                                "function": {"name": "click", "arguments": "{oops"},
-                            }
-                        ],
-                    },
-                    "finish_reason": "tool_calls",
-                }
-            ]
-        }
-        provider, _ = self.make(response=bad)
-        resp = provider.chat(self.base_request(), timeout=30)
-        assert resp.tool_calls[0].args == {"raw": "{oops"}
-
-    def test_empty_choices(self) -> None:
-        provider, _ = self.make(response={"choices": []})
-        resp = provider.chat(self.base_request(), timeout=30)
-        assert resp.finish_reason == "stop"
-        assert resp.tool_calls == []

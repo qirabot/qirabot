@@ -84,6 +84,7 @@ def _isolate_user_config(tmp_path, monkeypatch):
     for var in (
         "QIRA_API_KEY",
         "QIRA_MODEL",
+        "QIRA_MEDIA_RESOLUTION",
         "QIRA_REPORT_DIR",
         "QIRA_RECORD",
         "QIRA_RECORD_WINDOW",

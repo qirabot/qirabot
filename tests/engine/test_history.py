@@ -68,6 +68,21 @@ class TestScreenshots:
         assert entries[1].screenshot_data == b"s1"
         assert entries[2].screenshot_data == b"s2"
 
+    def test_reattach_strips_previous_step_screenshots(self) -> None:
+        # The session calls attach_screenshots once per step on a History
+        # whose entries persist across steps. A re-attach must clear what the
+        # previous call set, or every entry in the window accumulates a
+        # screenshot and each request carries max_entries images instead of
+        # max_screenshots (observed as ~1120 input tokens of growth per step).
+        h = History(HistoryConfig(max_entries=5, max_screenshots=1))
+        shots: list[bytes] = []
+        for i in range(4):
+            h.add(turn(f"a{i}"))
+            shots.append(f"s{i}".encode())
+            h.attach_screenshots(shots)
+        entries = h.entries()
+        assert [e.screenshot_data for e in entries] == [b"", b"", b"", b"s3"]
+
     def test_attach_fewer_screenshots_than_entries(self) -> None:
         h = History(HistoryConfig(max_entries=5, max_screenshots=3))
         for i in range(3):

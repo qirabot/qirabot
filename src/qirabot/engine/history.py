@@ -61,7 +61,14 @@ class History:
 
     def attach_screenshots(self, screenshots: list[bytes]) -> None:
         """Inject screenshot data into the most recent max_screenshots entries,
-        using reverse alignment with the provided screenshots list."""
+        using reverse alignment with the provided screenshots list.
+
+        Entries live across steps (unlike the v2 server, which rebuilt them
+        from Redis per request), so first strip what a previous call attached —
+        otherwise every entry in the window keeps its screenshot and each
+        request carries max_entries images instead of max_screenshots."""
+        for e in self._entries:
+            e.screenshot_data = b""
         num = min(len(self._entries), len(screenshots), self._max_screenshots)
         for i in range(num):
             entry_idx = len(self._entries) - num + i

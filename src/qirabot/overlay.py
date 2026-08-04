@@ -44,17 +44,14 @@ def _clip(text: str, limit: int) -> str:
 
 def _format_step(step: Any, total: int | None = None) -> str:
     """Body text: what the bot is doing, then why (the model's decision)."""
+    from qirabot.report import format_action_details
+
     params = getattr(step, "params", None) or {}
     counter = f"step {step.step}" + (f"/{total}" if total else "")
     head_parts = [counter, step.action_type or "…"]
-    if "locate" in params:
-        head_parts.append(f'"{_clip(str(params["locate"]), _LOCATE_MAX)}"')
-    if "text" in params:
-        head_parts.append(f'← "{_clip(str(params["text"]), _TYPED_MAX)}"')
-    if "direction" in params:
-        head_parts.append(
-            f"{params['direction']} {params.get('amount', '')}".rstrip()
-        )
+    head_parts.extend(
+        format_action_details(params, locate_max=_LOCATE_MAX, text_max=_TYPED_MAX)
+    )
     lines = [_clip(" · ".join(str(p) for p in head_parts), _HEAD_MAX)]
     decision = getattr(step, "decision", "")
     if decision:
@@ -152,6 +149,15 @@ class Overlay:
         and ends the run.
         """
         return self._abort_event.is_set()
+
+    def clear_abort(self) -> None:
+        """Re-arm after a user abort: clear the latched ESC-hold signal.
+
+        ``begin()`` clears it automatically at the start of each run; call
+        this only when deliberately resuming without a new run (the client's
+        ``clear_user_abort()`` does).
+        """
+        self._abort_event.clear()
 
     def _send(self, obj: dict[str, Any]) -> None:
         self.start()

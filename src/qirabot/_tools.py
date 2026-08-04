@@ -1,9 +1,9 @@
 """Custom tool support for bot.ai(): build wire definitions from callables.
 
-The server never executes custom tools — it merges the definitions into the
-LLM tool list and, when the model picks one, returns its name/params in the
-step response. The SDK dispatches to the registered handler locally and feeds
-the return value back via ``action_result`` on the next request.
+The engine never executes custom tools — it merges the definitions into the
+LLM tool list and, when the model picks one, surfaces its name/params in the
+step outcome. The SDK dispatches to the registered handler and feeds the
+return value back via ``action_result`` on the next step.
 """
 
 from __future__ import annotations
@@ -30,8 +30,9 @@ def build_tool_defs(
     function) or dicts carrying an explicit schema alongside a ``handler``
     callable (escape hatch for schemas introspection can't express, e.g.
     enums or per-parameter descriptions). Raises ``ValueError`` on invalid
-    input so mistakes surface before any request is sent; the server applies
-    the same rules (plus collision/reserved-name checks) authoritatively.
+    input so mistakes surface before any model call; the engine applies the
+    same rules (plus collision/reserved-name checks) authoritatively in
+    :func:`qirabot.engine.custom_tools.parse_custom_tools`.
     """
     if len(custom_tools) > _MAX_TOOLS:
         raise ValueError(f"custom_tools: at most {_MAX_TOOLS} tools allowed, got {len(custom_tools)}")

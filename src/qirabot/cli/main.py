@@ -18,6 +18,7 @@ from qirabot._dotenv import load_dotenv
 from qirabot._optional import extra_install_hint, package_install_hint, require
 from qirabot.cli.skill import skill
 from qirabot.exceptions import QirabotError
+from qirabot.report import format_action_details
 
 
 def _make_bot(
@@ -80,7 +81,7 @@ def _print_usage(console: Any, bot: Any) -> None:
     thinking is already inside output). Silent when nothing ran, and never
     lets a formatting problem mask the run outcome that was already printed.
     """
-    from qirabot.report import _fmt_ms, _fmt_tokens
+    from qirabot.report import fmt_ms, fmt_tokens
 
     try:
         u = bot.usage
@@ -90,17 +91,18 @@ def _print_usage(console: Any, bot: Any) -> None:
         if u.total_tokens:
             # Mirrors the report header: cache read/write shown as one
             # number when present, think only when a provider reports it
-            # separately (Anthropic folds it into output, leaving 0).
+            # separately (Anthropic-style providers fold it into output,
+            # leaving 0).
             cache = u.cache_read_tokens + u.cache_write_tokens
-            detail = [f"in {_fmt_tokens(u.input_tokens)}"]
+            detail = [f"in {fmt_tokens(u.input_tokens)}"]
             if cache:
-                detail.append(f"cache {_fmt_tokens(cache)}")
-            detail.append(f"out {_fmt_tokens(u.output_tokens)}")
+                detail.append(f"cache {fmt_tokens(cache)}")
+            detail.append(f"out {fmt_tokens(u.output_tokens)}")
             if u.thinking_tokens:
-                detail.append(f"think {_fmt_tokens(u.thinking_tokens)}")
-            bits.append(f"{_fmt_tokens(u.total_tokens)} tokens ({' / '.join(detail)})")
+                detail.append(f"think {fmt_tokens(u.thinking_tokens)}")
+            bits.append(f"{fmt_tokens(u.total_tokens)} tokens ({' / '.join(detail)})")
         if u.step_duration_ms:
-            bits.append(_fmt_ms(u.step_duration_ms))
+            bits.append(fmt_ms(u.step_duration_ms))
         console.print(f"[dim]{' · '.join(bits)}[/dim]")
     except Exception:
         pass
@@ -138,10 +140,10 @@ def _json_result(bot: Any, *, success: bool, status: str, output: str) -> dict[s
         u = bot.usage
         usage = {**dataclasses.asdict(u), "total_tokens": u.total_tokens}
         try:
-            # Mirror _write_report's own gate (report enabled + at least one
-            # recorded step) — otherwise close() writes nothing and the path
-            # would dangle. Never let this probe mask the run outcome.
-            if bot._report and bot._log:
+            # will_write_report mirrors _write_report's own gate — otherwise
+            # close() writes nothing and the path would dangle. Never let
+            # this probe mask the run outcome.
+            if bot.will_write_report:
                 report = str(Path(bot.report_dir) / "report.html")
         except Exception:
             report = None
@@ -180,14 +182,7 @@ def _run_local(
     def on_step_text(step: Any) -> None:
         if step.action_type == "done":
             return
-        params = step.params or {}
-        detail_parts = []
-        if "locate" in params:
-            detail_parts.append(f'"{params["locate"]}"')
-        if "text" in params:
-            detail_parts.append(f'← "{params["text"]}"')
-        if "direction" in params:
-            detail_parts.append(f'{params["direction"]} {params.get("amount", "")}'.rstrip())
+        detail_parts = format_action_details(step.params or {})
         label = escape(f"[{step.step}/{max_steps}]")
         head = f"[bold cyan]{label}[/bold cyan] [yellow]{step.action_type}[/yellow]"
         if detail_parts:
@@ -269,7 +264,7 @@ def _run_local(
                 code=0, text=f"[bold green]Done:[/bold green] {result.output}",
             )
         else:
-            # The server already set a terminal status for known failures (e.g. max
+            # The client already set a terminal status for known failures (e.g. max
             # steps); fail() is idempotent there and ensures other failure paths are
             # not left to close()'s success default.
             bot.fail(result.output)
@@ -288,8 +283,8 @@ def _fail_setup(bot: Any, e: Exception, output_format: str = "text") -> NoReturn
     """Report a setup-phase failure (before _run_local takes over) and exit.
 
     Setup — bot.open() for browser, Appium Remote() / device resolution for
-    android/ios/desktop — runs after the
-    server task is created but before _run_local starts reporting outcomes. An
+    android/ios/desktop — runs after the bot is constructed but before
+    _run_local starts reporting outcomes. An
     error there leaves the task un-terminalized, so the command's
     finally:bot.close() would otherwise complete it as *succeeded*. Record it as
     failed instead, print the error, and exit 1. Machine formats get the same
@@ -936,13 +931,14 @@ def browser(
         )
     vp = _parse_viewport(viewport)
 
-    bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level,
-        media_resolution=media_resolution, language=language,
-        report=report, report_dir=report_dir,
-        annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
-        overlay=overlay, output_format=output_format,
+    opts = _TaskOpts(
+        ctx=ctx, instruction=instruction, name=name, model=model,
+        thinking_level=thinking_level, media_resolution=media_resolution,
+        language=language, max_steps=max_steps, knowledge=knowledge,
+        output_format=output_format, overlay=overlay, report=report,
+        report_dir=report_dir, annotate=annotate,
     )
+    bot = _task_bot(opts, record=record)
     try:
         page = bot.open(
             url=url,
@@ -974,25 +970,44 @@ def _flag_given(ctx: click.Context, param: str) -> bool:
     return ctx.get_parameter_source(param) == ParameterSource.COMMANDLINE
 
 
-def _run_appium(
-    ctx: click.Context,
-    instruction: str,
-    name: str,
-    model: str,
-    thinking_level: str,
-    media_resolution: str,
-    language: str,
-    max_steps: int,
-    appium_url: str,
-    options: Any,
-    report: bool,
-    report_dir: str,
-    annotate: bool,
-    record: bool = False,
-    knowledge: str = "",
-    overlay: bool = False,
-    output_format: str = "text",
-) -> None:
+@dataclasses.dataclass
+class _TaskOpts:
+    """The options every task command shares (the @_task_options +
+    @_debug_options set), bundled so the run helpers take one value instead
+    of a 10-slot positional train that every new option would have to be
+    threaded through in the right order at every call site."""
+
+    ctx: click.Context
+    instruction: str
+    name: str
+    model: str
+    thinking_level: str
+    media_resolution: str
+    language: str
+    max_steps: int
+    knowledge: str
+    output_format: str
+    overlay: bool
+    report: bool
+    report_dir: str
+    annotate: bool
+
+
+def _task_bot(opts: _TaskOpts, **record_kwargs: Any) -> Any:
+    """Build a task command's bot from the shared options, plus the
+    command's recording flags; names the task after the instruction when
+    -n was not given."""
+    return _make_bot(
+        opts.ctx, model=opts.model, thinking_level=opts.thinking_level,
+        media_resolution=opts.media_resolution, language=opts.language,
+        report=opts.report, report_dir=opts.report_dir, annotate=opts.annotate,
+        task_name=opts.name or _default_task_name(opts.instruction),
+        overlay=opts.overlay, output_format=opts.output_format,
+        **record_kwargs,
+    )
+
+
+def _run_appium(opts: _TaskOpts, appium_url: str, options: Any, record: bool = False) -> None:
     """Shared android/ios body: build the bot, open an Appium session, run.
 
     ``record`` uses Appium's own screen-recording API (record_device), so it
@@ -1000,18 +1015,11 @@ def _run_appium(
     """
     appium_webdriver = require("appium.webdriver", "appium")
 
-    # Build the bot first: it validates the API key and reaches the server, and
+    # Build the bot first: it validates credentials with a provider handshake and
     # may sys.exit() on failure. Creating the Appium driver before that would
     # leak the remote session (driver.quit() lives in the finally below, which
     # never runs if _make_bot exits before the try is entered).
-    bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level,
-        media_resolution=media_resolution, language=language,
-        report=report, report_dir=report_dir,
-        annotate=annotate, record=record, record_device=record,
-        task_name=name or _default_task_name(instruction), overlay=overlay,
-        output_format=output_format,
-    )
+    bot = _task_bot(opts, record=record, record_device=record)
     try:
         try:
             driver = appium_webdriver.Remote(appium_url, options=options)
@@ -1020,11 +1028,11 @@ def _run_appium(
             # the failure so the outer finally:bot.close() doesn't complete the
             # task as succeeded. Scoped to Remote() only — a driver.quit() error
             # after a successful run must not be misreported as a task failure.
-            _fail_setup(bot, e, output_format)
+            _fail_setup(bot, e, opts.output_format)
         try:
             _run_local(
-                bot, driver, instruction, max_steps,
-                knowledge=knowledge, output_format=output_format,
+                bot, driver, opts.instruction, opts.max_steps,
+                knowledge=opts.knowledge, output_format=opts.output_format,
             )
         finally:
             # The Appium recording lives in the session: flush it to disk
@@ -1037,45 +1045,28 @@ def _run_appium(
 
 
 def _run_direct(
-    ctx: click.Context,
-    instruction: str,
-    name: str,
-    model: str,
-    thinking_level: str,
-    media_resolution: str,
-    language: str,
-    max_steps: int,
+    opts: _TaskOpts,
     connect: Callable[[], Any],
-    report: bool,
-    report_dir: str,
-    annotate: bool,
+    *,
     record: bool = False,
     record_mjpeg_url: str = "",
     record_device: bool = False,
     record_window: bool = False,
-    knowledge: str = "",
-    overlay: bool = False,
-    output_format: str = "text",
 ) -> None:
     """Shared direct-engine body: build the bot, connect the device, run.
 
     ``connect`` resolves the device + optional app launch and returns the bind
-    target. Like _run_appium, the bot is built first (it validates the API key
-    and may sys.exit()); there is no remote session to quit, so the only
-    teardown is bot.close(). Recording is device-side for android/ios —
-    ``record_mjpeg_url`` for ios (WDA's MJPEG stream), ``record_device`` for
-    android (adb screenrecord, resolved from the AdbDevice target) — and
-    host-side for desktop, where ``record_window`` makes it follow the bound
-    window instead of grabbing the full screen.
+    target. Like _run_appium, the bot is built first (it validates the
+    credential setup and may sys.exit()); there is no remote session to quit,
+    so the only teardown is bot.close(). Recording is device-side for
+    android/ios — ``record_mjpeg_url`` for ios (WDA's MJPEG stream),
+    ``record_device`` for android (adb screenrecord, resolved from the
+    AdbDevice target) — and host-side for desktop, where ``record_window``
+    makes it follow the bound window instead of grabbing the full screen.
     """
-    bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level,
-        media_resolution=media_resolution, language=language,
-        report=report, report_dir=report_dir,
-        annotate=annotate, record=record, record_mjpeg_url=record_mjpeg_url,
+    bot = _task_bot(
+        opts, record=record, record_mjpeg_url=record_mjpeg_url,
         record_device=record_device, record_window=record_window,
-        task_name=name or _default_task_name(instruction), overlay=overlay,
-        output_format=output_format,
     )
     try:
         try:
@@ -1084,10 +1075,10 @@ def _run_direct(
             # Same contract as _run_appium: a setup failure before _run_local
             # takes over reporting must be recorded, or the finally:bot.close()
             # would complete the task as succeeded.
-            _fail_setup(bot, e, output_format)
+            _fail_setup(bot, e, opts.output_format)
         _run_local(
-            bot, target, instruction, max_steps,
-            knowledge=knowledge, output_format=output_format,
+            bot, target, opts.instruction, opts.max_steps,
+            knowledge=opts.knowledge, output_format=opts.output_format,
         )
     finally:
         bot.close()
@@ -1145,6 +1136,13 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
     Recording — --record saves the device screen (works on both engines):
       qirabot android "..." --record
     """
+    opts = _TaskOpts(
+        ctx=ctx, instruction=instruction, name=name, model=model,
+        thinking_level=thinking_level, media_resolution=media_resolution,
+        language=language, max_steps=max_steps, knowledge=knowledge,
+        output_format=output_format, overlay=overlay, report=report,
+        report_dir=report_dir, annotate=annotate,
+    )
     if _flag_given(ctx, "appium_url"):
         require("appium.webdriver", "appium")
         from appium.options.android import UiAutomator2Options
@@ -1157,12 +1155,7 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         if app_activity:
             options.app_activity = app_activity
 
-        _run_appium(
-            ctx, instruction, name, model, thinking_level, media_resolution,
-            language, max_steps, appium_url, options,
-            report, report_dir, annotate, record=record, knowledge=knowledge,
-            overlay=overlay, output_format=output_format,
-        )
+        _run_appium(opts, appium_url, options, record=record)
         return
 
     from qirabot.adb import AdbDevice
@@ -1177,13 +1170,7 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             _adb_launch_app(dev, app_package, app_activity)
         return dev
 
-    _run_direct(
-        ctx, instruction, name, model, thinking_level, media_resolution,
-        language, max_steps, connect,
-        report, report_dir, annotate,
-        record=record, record_device=record, knowledge=knowledge,
-        overlay=overlay, output_format=output_format,
-    )
+    _run_direct(opts, connect, record=record, record_device=record)
 
 
 def _check_wda_ready(client: Any, wda_url: str) -> None:
@@ -1268,6 +1255,13 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
     engine: Appium's own recording API, no extra setup:
       qirabot ios "..." --record
     """
+    opts = _TaskOpts(
+        ctx=ctx, instruction=instruction, name=name, model=model,
+        thinking_level=thinking_level, media_resolution=media_resolution,
+        language=language, max_steps=max_steps, knowledge=knowledge,
+        output_format=output_format, overlay=overlay, report=report,
+        report_dir=report_dir, annotate=annotate,
+    )
     if _flag_given(ctx, "appium_url") or _flag_given(ctx, "device"):
         if _flag_given(ctx, "wda_url"):
             raise click.UsageError("--wda-url only applies to the direct engine (drop --appium-url/--device)")
@@ -1282,12 +1276,7 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
         if bundle_id:
             options.bundle_id = bundle_id
 
-        _run_appium(
-            ctx, instruction, name, model, thinking_level, media_resolution,
-            language, max_steps, appium_url, options,
-            report, report_dir, annotate, record=record, knowledge=knowledge,
-            overlay=overlay, output_format=output_format,
-        )
+        _run_appium(opts, appium_url, options, record=record)
         return
 
     if _flag_given(ctx, "mjpeg_url") and not record:
@@ -1307,13 +1296,7 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
             client.app_launch(bundle_id)
         return client
 
-    _run_direct(
-        ctx, instruction, name, model, thinking_level, media_resolution,
-        language, max_steps, connect,
-        report, report_dir, annotate,
-        record=record, record_mjpeg_url=record_mjpeg_url, knowledge=knowledge,
-        overlay=overlay, output_format=output_format,
-    )
+    _run_direct(opts, connect, record=record, record_mjpeg_url=record_mjpeg_url)
 
 
 def _launch_desktop_app(app: str, app_wait: float) -> None:
@@ -1357,6 +1340,13 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             "--ambiguous largest only applies with --window-title "
             "(--hwnd already names one window)"
         )
+    opts = _TaskOpts(
+        ctx=ctx, instruction=instruction, name=name, model=model,
+        thinking_level=thinking_level, media_resolution=media_resolution,
+        language=language, max_steps=max_steps, knowledge=knowledge,
+        output_format=output_format, overlay=overlay, report=report,
+        report_dir=report_dir, annotate=annotate,
+    )
     if window_title or hwnd:
         if window_title and hwnd:
             raise click.UsageError("--window-title and --hwnd are mutually exclusive")
@@ -1387,35 +1377,21 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         # record_window unconditionally: it only takes effect when a recording
         # actually starts (--record here, or QIRA_RECORD=1 from the env), and
         # then makes it follow the bound window instead of the full screen.
-        _run_direct(
-            ctx, instruction, name, model, thinking_level, media_resolution,
-            language, max_steps, connect,
-            report, report_dir, annotate, record=record, record_window=True,
-            knowledge=knowledge, overlay=overlay, output_format=output_format,
-        )
+        _run_direct(opts, connect, record=record, record_window=True)
         return
 
     pyautogui = require("pyautogui", "desktop")
 
-    # Build the bot before the --app side effect: engine construction
-    # validates the credential setup, and a bad one must not launch the app
-    # first and only then error out.
-    bot = _make_bot(
-        ctx, model=model, thinking_level=thinking_level,
-        media_resolution=media_resolution, language=language,
-        report=report, report_dir=report_dir,
-        annotate=annotate, record=record, task_name=name or _default_task_name(instruction),
-        overlay=overlay, output_format=output_format,
-    )
-    if app:
-        _launch_desktop_app(app, app_wait)
-    try:
-        _run_local(
-            bot, pyautogui, instruction, max_steps,
-            knowledge=knowledge, output_format=output_format,
-        )
-    finally:
-        bot.close()
+    def connect_pyautogui() -> Any:
+        # Same ordering contract as the window path's connect(): the bot is
+        # built first (a bad credential setup must not launch the app and
+        # only then error out), and an --app launch failure lands in
+        # _fail_setup's reporting.
+        if app:
+            _launch_desktop_app(app, app_wait)
+        return pyautogui
+
+    _run_direct(opts, connect_pyautogui, record=record)
 
 
 def main() -> None:

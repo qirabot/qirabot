@@ -214,7 +214,9 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
 
     # Replay conversation history (already trimmed by History.add)
     for turn in input.history:
-        # 1. Screenshot the model saw
+        # 1. Screenshot the model saw. Always low resolution: history images
+        # only answer "did the UI change as expected" — grounding and reading
+        # happen on the current screenshot, which follows the task setting.
         if turn.screenshot_data:
             messages.append(
                 Message(
@@ -223,6 +225,7 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
                         Image(
                             mime_type=detect_image_mime(turn.screenshot_data),
                             data=turn.screenshot_data,
+                            resolution="low",
                         )
                     ],
                 )

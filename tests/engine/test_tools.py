@@ -81,12 +81,18 @@ class TestOverrides:
         assert "duration_seconds" in desktop.parameters["properties"]
         assert "duration_seconds" not in android.parameters["properties"]
 
-    def test_done_chrome_desc_override(self) -> None:
+    def test_done_chrome_result_override(self) -> None:
         chrome = tool_by_name(tool_definitions_for_platform("chrome"), "done")
         android = tool_by_name(tool_definitions_for_platform("android"), "done")
         assert chrome is not None and android is not None
-        assert "extract the required information from the screenshot" in chrome.description
-        assert "extract the required information from the screenshot" not in android.description
+        # Platform variance lives in the result property description, not the
+        # tool description (which stays purely "when to call").
+        assert chrome.description == android.description
+        chrome_result = chrome.parameters["properties"]["result"]["description"]
+        android_result = android.parameters["properties"]["result"]["description"]
+        assert "extract the required information from the screenshot" in chrome_result
+        assert "extract the required information from the screenshot" not in android_result
+        assert "Parameters:" not in chrome.description
 
     def test_resolve_helpers(self) -> None:
         p = ToolPromptDef(
@@ -121,7 +127,7 @@ class TestPointFields:
         props = drag.parameters["properties"]
         for f in ("start_point_x", "start_point_y", "end_point_x", "end_point_y"):
             assert f in props
-        assert "startLocate" not in props and "endLocate" not in props
+        assert "start_locate" not in props and "end_locate" not in props
         required = drag.parameters["required"]
         for f in ("start_point_x", "start_point_y", "end_point_x", "end_point_y"):
             assert f in required
@@ -153,6 +159,20 @@ class TestPointFields:
         for locate, _, _ in LOCATE_POINT_FIELDS:
             assert is_locate_field(locate)
         assert not is_locate_field("point_x")
+
+
+class TestDurationUnits:
+    def test_model_facing_duration_params_carry_unit_suffix(self) -> None:
+        # wait/long_press expose duration_ms; the bare `duration` key exists
+        # only on the executor wire (session maps duration_ms -> duration).
+        wait = tool_by_name(tool_definitions_for_platform("chrome"), "wait")
+        long_press = tool_by_name(tool_definitions_for_platform("android"), "long_press")
+        assert wait is not None and long_press is not None
+        assert "duration_ms" in wait.parameters["properties"]
+        assert "duration_ms" in wait.parameters["required"]
+        assert "duration" not in wait.parameters["properties"]
+        assert "duration_ms" in long_press.parameters["properties"]
+        assert "duration" not in long_press.parameters["properties"]
 
 
 class TestMergeCommonFields:

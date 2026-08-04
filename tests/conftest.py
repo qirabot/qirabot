@@ -26,15 +26,72 @@ def default_done_response():
     }
 
 
+def _usage_from(d):
+    from qirabot.engine.types import TokenUsage
+
+    return TokenUsage(
+        input_tokens=d.get("inputTokens", 0),
+        output_tokens=d.get("outputTokens", 0),
+        thinking_tokens=d.get("thinkingTokens", 0),
+        cache_read_tokens=d.get("cacheReadTokens", 0),
+        cache_write_tokens=d.get("cacheWriteTokens", 0),
+    )
+
+
+class _FakeRun:
+    """Stands in for qirabot.engine.local_backend.AIRun."""
+
+    def __init__(self, backend):
+        self._backend = backend
+        self._steps = 0
+
+    def step(self, screenshot, action_result="", device_width=0, device_height=0):
+        from qirabot.engine.session import StepError, StepOutcome
+
+        b = self._backend
+        b.requests.append(
+            (
+                screenshot,
+                {
+                    "type": "ai_step",
+                    "action_result": action_result,
+                    "width": device_width,
+                    "height": device_height,
+                },
+            )
+        )
+        d = b._next()
+        if isinstance(d, StepOutcome):
+            return d
+        if d.get("success", True) is False:
+            raise StepError(d.get("error", "step failed"), usage=_usage_from(d))
+        self._steps += 1
+        return StepOutcome(
+            action_type=d.get("actionType", ""),
+            params=d.get("params") or {},
+            decision=d.get("decision", ""),
+            output=d.get("output", ""),
+            finished=d.get("finished", False),
+            step_number=self._steps,
+            token_usage=_usage_from(d),
+            llm_decision_ms=d.get("llmDecisionDurationMs", 0),
+            step_duration_ms=d.get("stepDurationMs", 0),
+        )
+
+
 class FakeBackend:
     """Stands in for qirabot.engine.local_backend.LocalBackend.
 
-    - ``requests``: every act() call as ``(screenshot_bytes, request_dict)``,
-      in order — assert outbound request bodies here.
-    - ``results``: FIFO queue of responses to hand back. Each item may be a
-      response dict, an Exception instance (raised), or a zero-arg callable
-      (its return value is used; it may also raise). When the queue is empty
-      a default successful ``done`` response is returned.
+    - ``start_calls``: every start_ai() call's kwargs, in order — assert the
+      registered instruction/tools/knowledge here.
+    - ``requests``: every engine call as ``(screenshot_bytes, record_dict)``,
+      in order. ai steps record ``{"type": "ai_step", "action_result", ...}``;
+      single actions record their kind plus the query and per-call overrides.
+    - ``results``: FIFO queue of scripted results. Each item may be a legacy
+      wire-shaped dict (translated to the typed outcome the call expects), an
+      Exception instance (raised), or a zero-arg callable (its return value is
+      used; it may also raise). When the queue is empty a default successful
+      ``done`` response is returned.
     """
 
     model_label = "fake/fake-model"
@@ -42,12 +99,12 @@ class FakeBackend:
     def __init__(self, *args, **kwargs):
         self.init_args = args
         self.init_kwargs = kwargs
+        self.start_calls = []
         self.requests = []
         self.results = []
         self.closed = False
 
-    def act(self, screenshot, request, mime=""):
-        self.requests.append((screenshot, request))
+    def _next(self):
         if self.results:
             result = self.results.pop(0)
             if isinstance(result, BaseException):
@@ -56,6 +113,105 @@ class FakeBackend:
                 return result()
             return result
         return default_done_response()
+
+    def start_ai(
+        self,
+        instruction,
+        *,
+        platform,
+        max_steps=20,
+        language="",
+        thinking_level="",
+        custom_tools=None,
+        exclude_tools=None,
+        knowledge="",
+    ):
+        self.start_calls.append(
+            {
+                "instruction": instruction,
+                "platform": platform,
+                "max_steps": max_steps,
+                "language": language,
+                "thinking_level": thinking_level,
+                "custom_tools": custom_tools or [],
+                "exclude_tools": exclude_tools or [],
+                "knowledge": knowledge,
+            }
+        )
+        return _FakeRun(self)
+
+    def locate(self, screenshot, locate, *, language="", thinking_level=""):
+        from qirabot.engine.local_backend import LocateOutcome
+
+        self.requests.append(
+            (
+                screenshot,
+                {
+                    "type": "locate",
+                    "locate": locate,
+                    "thinking_level": thinking_level,
+                    "language": language,
+                },
+            )
+        )
+        d = self._next()
+        if d.get("success", True) is False:
+            return LocateOutcome(
+                found=False,
+                error=d.get("error", "element not found"),
+                token_usage=_usage_from(d),
+            )
+        p = d.get("params") or {}
+        return LocateOutcome(
+            found=True,
+            x=int(p.get("x", 0)),
+            y=int(p.get("y", 0)),
+            token_usage=_usage_from(d),
+        )
+
+    def extract(self, screenshot, instruction, *, platform="", language="", thinking_level=""):
+        from qirabot.engine.local_backend import ExtractOutcome
+
+        self.requests.append(
+            (
+                screenshot,
+                {
+                    "type": "extract",
+                    "instruction": instruction,
+                    "thinking_level": thinking_level,
+                    "language": language,
+                },
+            )
+        )
+        d = self._next()
+        if d.get("success", True) is False:
+            raise ValueError(d.get("error", "extract failed"))
+        return ExtractOutcome(result=d.get("output", ""), token_usage=_usage_from(d))
+
+    def check_condition(
+        self, screenshot, condition, *, platform="", language="", thinking_level=""
+    ):
+        from qirabot.engine.local_backend import ConditionOutcome
+
+        self.requests.append(
+            (
+                screenshot,
+                {
+                    "type": "assert",
+                    "condition": condition,
+                    "thinking_level": thinking_level,
+                    "language": language,
+                },
+            )
+        )
+        d = self._next()
+        if d.get("success", True) is False:
+            raise ValueError(d.get("error", "condition check failed"))
+        return ConditionOutcome(
+            met=d.get("finished", False),
+            reasoning=d.get("output", ""),
+            token_usage=_usage_from(d),
+        )
 
     def close(self):
         self.closed = True
@@ -110,7 +266,7 @@ def make_bot(tmp_path):
         bot = make_bot()                       # report off by default
         bot._backend.results.append({...})     # queue a decision response
         bot.click(target, "OK")
-        _, body = bot._backend.requests[0]     # assert the outbound request
+        _, body = bot._backend.requests[0]     # assert the outbound call
 
     Keyword args pass straight to Qirabot(); ``report`` defaults to False and
     ``report_dir`` to a tmp path so tests never write ./qira_runs.

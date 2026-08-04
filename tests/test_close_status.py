@@ -73,19 +73,18 @@ class TestCloseStatusFollowsLastAiOutcome:
         assert bot._closed is True
         assert bot._last_ai_status == "error", "close() must not override the error outcome"
 
-    def test_server_terminal_error_marks_failed(self, make_bot):
-        # Non-raising error ending (finished error body) counts too.
+    def test_step_error_message_survives_close(self, make_bot):
+        # Every engine step failure raises; the message is kept for the
+        # report/bookkeeping and close() must not override it.
         bot = _bot(make_bot, [
-            {"success": False, "finished": True, "error": "session expired"},
+            {"success": False, "finished": False, "error": "session expired"},
         ])
-        result = bot.ai(object(), "do thing", max_steps=3)
-        assert result.status == "error"
-        assert result.success is False
-        assert result.output == "session expired"
+        with pytest.raises(ActionError):
+            bot.ai(object(), "do thing", max_steps=3)
         assert bot._last_ai_status == "error"
         assert bot._last_ai_error == "session expired"
-        # The failure reason is surfaced as a section banner for the report.
-        assert bot._section_errors["do thing"] == "session expired"
+        bot.close()
+        assert bot._last_ai_status == "error"
 
     def test_clean_run_completes(self, make_bot):
         bot = _bot(make_bot, [DONE])
@@ -127,7 +126,7 @@ class TestUserAbortRecordsCancelled:
              "actionType": "click", "params": {"x": 1, "y": 2}},
         ])
 
-        def corner(adapter, result):
+        def corner(adapter, action_type, params):
             raise FailSafeException("mouse in a screen corner")
 
         bot._execute_action = corner

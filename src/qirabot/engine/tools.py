@@ -69,7 +69,9 @@ TOOL_REGISTRY: list[ToolDef] = [
                 actions.PLATFORM_DESKTOP: ToolPromptOverride(
                     schema={
                         "properties": {
-                            "locate": prop("string", "A uniquely identifying description of the element"),
+                            "locate": prop(
+                                "string", "A uniquely identifying description of the element"
+                            ),
                             "modifier": prop(
                                 "string",
                                 "Modifier key held while clicking (alt|ctrl|shift|win); join "
@@ -90,7 +92,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             desc="Automatically focus the input field and type text, no prior click needed",
             schema={
                 "properties": {
-                    "locate": prop("string", "A uniquely identifying description of the input field"),
+                    "locate": prop(
+                        "string", "A uniquely identifying description of the input field"
+                    ),
                     "text": prop("string", "The text to type"),
                     "press_enter": prop("boolean", "Press Enter after typing, default false"),
                     "clear_before_typing": prop(
@@ -110,7 +114,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             ),
             schema={
                 "properties": {
-                    "locate": prop("string", "A uniquely identifying description of the input field"),
+                    "locate": prop(
+                        "string", "A uniquely identifying description of the input field"
+                    ),
                 },
                 "required": ["locate"],
             },
@@ -122,7 +128,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             desc="Scroll the whole page. Use when the target element is outside the visible area",
             schema={
                 "properties": {
-                    "direction": prop_enum("string", "Scroll direction", "up", "down", "left", "right"),
+                    "direction": prop_enum(
+                        "string", "Scroll direction", "up", "down", "left", "right"
+                    ),
                     "type": prop_enum(
                         "string",
                         "Scroll type; until_* keeps scrolling until the boundary is reached",
@@ -153,7 +161,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             schema={
                 "properties": {
                     "locate": prop("string", "Description of the scrollable area"),
-                    "direction": prop_enum("string", "Scroll direction", "up", "down", "left", "right"),
+                    "direction": prop_enum(
+                        "string", "Scroll direction", "up", "down", "left", "right"
+                    ),
                     "amount": prop(
                         "integer",
                         "Scroll distance in pixels; defaults to 80% of the area's height. "
@@ -198,9 +208,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             ),
             schema={
                 "properties": {
-                    "duration": prop("integer", "Milliseconds to wait"),
+                    "duration_ms": prop("integer", "Milliseconds to wait"),
                 },
-                "required": ["duration"],
+                "required": ["duration_ms"],
             },
         ),
     ),
@@ -208,12 +218,13 @@ TOOL_REGISTRY: list[ToolDef] = [
         type=actions.SAVE_NOTE,
         prompt=ToolPromptDef(
             desc=(
-                "Save intermediate information for later steps. Use when: collecting across "
-                "pages/screens, recording key data, or the content spans multiple screens of "
-                "scrolling or paging and must be collected screen by screen. Only when the "
-                "target content is fully visible on the current screen may you skip saving and "
-                "call done directly. Keep the original text uncompressed; do not save "
-                "duplicates."
+                "Save intermediate information for later steps: key data to remember, or "
+                "per-screen findings when the content spans multiple screens — save each "
+                "screen's target content before scrolling on. Skip it and call done directly "
+                "only when everything needed is fully visible on the current screen. Keep the "
+                "original text uncompressed. Saved content appears under \"Saved notes\" and "
+                "is kept automatically — save ONLY new content, never re-save already-saved "
+                "items."
             ),
             schema={
                 "properties": {
@@ -275,37 +286,47 @@ TOOL_REGISTRY: list[ToolDef] = [
         type=actions.DONE,
         prompt=ToolPromptDef(
             desc=(
-                "Call when the task ends. Parameters:\n"
-                "- success: true = the task goal has been achieved; false = blocked and unable "
-                "to continue\n"
-                "- result: when success=true, the complete final result (consolidate saved "
-                "notes if any, otherwise extract directly from the current screen); when "
-                "success=false, the reason you cannot continue (e.g. login required, captcha, "
-                "insufficient permissions, repeated actions had no effect)"
+                "Call when the task ends, either because the goal has been achieved or "
+                "because you are blocked and unable to continue"
             ),
             schema={
                 "properties": {
-                    "success": prop("boolean", "Whether the task completed successfully"),
+                    "success": prop(
+                        "boolean",
+                        "true = the task goal has been achieved; false = blocked and unable "
+                        "to continue",
+                    ),
                     "result": prop(
                         "string",
-                        "On success, the complete final result (consolidating all saved "
-                        "notes); on failure, the reason you cannot continue",
+                        "When success=true, the complete final result: consolidate saved "
+                        "notes if any, otherwise extract directly from the current screen. "
+                        "When success=false, the reason you cannot continue (e.g. login "
+                        "required, captcha, insufficient permissions, repeated actions had "
+                        "no effect)",
                     ),
                 },
                 "required": ["success", "result"],
             },
             overrides={
                 actions.PLATFORM_CHROME: ToolPromptOverride(
-                    desc=(
-                        "Call when the task ends. Parameters:\n"
-                        "- success: true = the task goal has been achieved; false = blocked "
-                        "and unable to continue\n"
-                        "- result: when success=true, the complete final result (extract the "
-                        "required information from the screenshot, consolidating saved notes "
-                        "if any); when success=false, the reason you cannot continue (e.g. "
-                        "login required, captcha, insufficient permissions, repeated actions "
-                        "had no effect)"
-                    ),
+                    schema={
+                        "properties": {
+                            "success": prop(
+                                "boolean",
+                                "true = the task goal has been achieved; false = blocked and "
+                                "unable to continue",
+                            ),
+                            "result": prop(
+                                "string",
+                                "When success=true, the complete final result: extract the "
+                                "required information from the screenshot, consolidating "
+                                "saved notes if any. When success=false, the reason you "
+                                "cannot continue (e.g. login required, captcha, insufficient "
+                                "permissions, repeated actions had no effect)",
+                            ),
+                        },
+                        "required": ["success", "result"],
+                    },
                 ),
             },
         ),
@@ -316,7 +337,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             desc="Double-click the target element (e.g. to select text or expand a collapsed item)",
             schema={
                 "properties": {
-                    "locate": prop("string", "A uniquely identifying description of the target element"),
+                    "locate": prop(
+                        "string", "A uniquely identifying description of the target element"
+                    ),
                 },
                 "required": ["locate"],
             },
@@ -329,7 +352,9 @@ TOOL_REGISTRY: list[ToolDef] = [
             platforms=[actions.PLATFORM_DESKTOP],
             schema={
                 "properties": {
-                    "locate": prop("string", "A uniquely identifying description of the target element"),
+                    "locate": prop(
+                        "string", "A uniquely identifying description of the target element"
+                    ),
                 },
                 "required": ["locate"],
             },
@@ -357,14 +382,14 @@ TOOL_REGISTRY: list[ToolDef] = [
             desc="Drag from a start point to an end point",
             schema={
                 "properties": {
-                    "startLocate": prop(
+                    "start_locate": prop(
                         "string", "A uniquely identifying description of the drag start element"
                     ),
-                    "endLocate": prop(
+                    "end_locate": prop(
                         "string", "A uniquely identifying description of the drag end element"
                     ),
                 },
-                "required": ["startLocate", "endLocate"],
+                "required": ["start_locate", "end_locate"],
             },
         ),
     ),
@@ -378,8 +403,12 @@ TOOL_REGISTRY: list[ToolDef] = [
             platforms=[actions.PLATFORM_ANDROID, actions.PLATFORM_IOS],
             schema={
                 "properties": {
-                    "locate": prop("string", "A uniquely identifying description of the target element"),
-                    "duration": prop("integer", "Long-press duration in milliseconds, default 2000"),
+                    "locate": prop(
+                        "string", "A uniquely identifying description of the target element"
+                    ),
+                    "duration_ms": prop(
+                        "integer", "Long-press duration in milliseconds, default 2000"
+                    ),
                 },
                 "required": ["locate"],
             },
@@ -470,8 +499,8 @@ TOOL_REGISTRY: list[ToolDef] = [
 # drops array `items`.
 LOCATE_POINT_FIELDS: list[tuple[str, str, str]] = [
     ("locate", "point_x", "point_y"),
-    ("startLocate", "start_point_x", "start_point_y"),
-    ("endLocate", "end_point_x", "end_point_y"),
+    ("start_locate", "start_point_x", "start_point_y"),
+    ("end_locate", "end_point_x", "end_point_y"),
 ]
 
 

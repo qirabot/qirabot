@@ -1,8 +1,12 @@
-"""Exceptions for Qirabot SDK."""
+"""Exceptions for Qirabot SDK.
+
+Some classes are deprecated and never raised anymore (marked in their
+docstrings). They stay exported because removing a public exception breaks
+every ``except`` written against it; removal is scheduled for the next
+major release.
+"""
 
 from __future__ import annotations
-
-from typing import Any
 
 
 class QirabotError(Exception):
@@ -30,16 +34,15 @@ class AuthenticationError(QirabotError):
 
 
 class InsufficientBalanceError(QirabotError):
-    """Insufficient credit balance (402)."""
+    """Deprecated, never raised: billing goes through your own model
+    provider, which reports quota problems its own way. Kept exported for
+    existing ``except`` clauses."""
 
 
 class RateLimitError(QirabotError):
-    """Too many requests; the model provider is rate limiting (429).
-
-    The engine's provider layer backs off and retries these internally.
-    Exposed as its own type so callers can ``except RateLimitError`` to apply
-    their own backoff or surface a "slow down" message.
-    """
+    """Deprecated, never raised: the engine's provider layer retries
+    model-provider rate limits internally and surfaces persistent ones as
+    :class:`ActionError`. Kept exported for existing ``except`` clauses."""
 
 
 class ActionError(QirabotError):
@@ -51,22 +54,16 @@ class QirabotTimeoutError(QirabotError):
 
 
 class QirabotConnectionError(QirabotError):
-    """Could not reach the Qirabot server (DNS failure, refused connection, etc.).
-
-    Distinct from :class:`QirabotTimeoutError`: the request never completed a
-    round-trip because the host was unreachable, not because it was slow.
-    """
+    """Deprecated, never raised: model-provider connectivity failures
+    surface as :class:`AuthenticationError` (at construction) or
+    :class:`ActionError` (mid-run). Kept exported for existing ``except``
+    clauses."""
 
 
 class TaskTerminatedError(QirabotError):
-    """The task was terminated server-side (console, orphan cleaner, or the
-    max-duration cap) while the script was still running.
-
-    Raised when ``/act`` answers with a ``control="terminated"`` response
-    instead of executing the step. Not a script bug: the task's server record
-    is already in a terminal state, so further steps would neither run nor be
-    recorded. ``task_status`` carries that terminal state.
-    """
+    """Deprecated, never raised: tasks run locally, so nothing can
+    terminate them from outside the script. Kept exported (with its
+    ``task_status`` field) for existing ``except`` clauses."""
 
     def __init__(
         self,
@@ -88,20 +85,6 @@ class MissingDependencyError(QirabotError, ImportError):
     """
 
 
-_ERROR_CODE_MAP: dict[str, type[QirabotError]] = {
-    "auth.token_missing": AuthenticationError,
-    "auth.api_key_missing": AuthenticationError,
-    "auth.api_key_invalid": AuthenticationError,
-    "finance.insufficient_balance": InsufficientBalanceError,
-}
-
-_STATUS_CODE_MAP: dict[int, type[QirabotError]] = {
-    401: AuthenticationError,
-    402: InsufficientBalanceError,
-    429: RateLimitError,
-}
-
-
 # TaskTerminatedError is a control-plane verdict, not a transient failure —
 # every retry would hit the same gate.
 _NON_RETRYABLE = (AuthenticationError, InsufficientBalanceError, TaskTerminatedError)
@@ -114,23 +97,3 @@ def _is_retryable(error: QirabotError) -> bool:
     if error.status_code and error.status_code < 500 and error.status_code not in (408, 429):
         return False
     return True
-
-
-def raise_for_error(status_code: int, data: dict[str, Any]) -> None:
-    """Raise the appropriate exception for an error response."""
-    error = data.get("error", {})
-    if isinstance(error, str):
-        message = error or data.get("message", f"Request failed with status {status_code}")
-        code = data.get("code")
-    elif error:
-        message = error.get("message", f"Request failed with status {status_code}")
-        code = error.get("code")
-    else:
-        message = data.get("message", f"Request failed with status {status_code}")
-        code = data.get("code")
-
-    if code and code in _ERROR_CODE_MAP:
-        raise _ERROR_CODE_MAP[code](message, code=code, status_code=status_code)
-
-    exc_cls = _STATUS_CODE_MAP.get(status_code, QirabotError)
-    raise exc_cls(message, code=code, status_code=status_code)

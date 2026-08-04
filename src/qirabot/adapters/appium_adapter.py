@@ -47,17 +47,7 @@ class AppiumAdapter(DeviceAdapter):
                         self._annotation_scale = probe.width / logical_w
             except Exception:
                 pass
-        if cfg.format == "png":
-            return png_bytes
-        from PIL import Image
-
-        img: Image.Image = Image.open(io.BytesIO(png_bytes))
-        # JPEG has no alpha channel; PNG screenshots may be RGBA.
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=cfg.quality)
-        return buf.getvalue()
+        return self._reencode_png(png_bytes, cfg)
 
     def annotation_scale(self) -> float:
         # Set lazily by screenshot() on iOS; defaults to 1.0 everywhere else
@@ -159,68 +149,24 @@ class AppiumAdapter(DeviceAdapter):
         touch.create_pointer_up(button=0)
         actions.perform()
 
-    # Actions that don't change the screen (or handle their own timing), so the
-    # next screenshot needs no settle delay after them. hover is deliberately NOT
-    # here: its whole purpose is to reveal delayed UI (tooltips/submenus), so it
-    # needs the settle more than most actions, not less.
-    _NO_SETTLE = frozenset({"wait", "done", "save_note"})
-
     # Mobile transitions/animations/app launches; see
     # ``DeviceAdapter.settle_seconds`` for the rationale and override mechanism.
     _SETTLE_SECONDS = 0.6
 
-    def _dispatch(self, action_type: str, params: dict[str, Any]) -> None:
-        if action_type in ("scroll", "scroll_at"):
-            self._scroll_action(action_type, params or {})
-        else:
-            super()._dispatch(action_type, params)
-
-    def _scroll_action(self, action_type: str, params: dict[str, Any]) -> None:
-        # The server sends scroll as {direction, amount} with no x/y, so the
-        # base dispatcher (which reads x/y/distance) would swipe from (0,0) by a
-        # default distance and miss the screen. Use the real pixel `amount` and a
-        # sensible anchor instead.
-        info = self.device_info()
-        raw = params.get("amount")
-        pixels = int(raw) if raw is not None and raw != "" else 0
-        # scroll_at anchors on the resolved element; plain scroll on center.
-        if action_type == "scroll_at" and params.get("x") is not None and params.get("y") is not None:
-            cx, cy = float(params["x"]), float(params["y"])
-        else:
-            cx, cy = info.width / 2.0, info.height / 2.0
-        self._swipe(cx, cy, str(params.get("direction", "down")), pixels, info)
+    # ---- scrolling (shared geometry: DeviceAdapter._swipe_scroll) ------------
 
     def scroll(self, x: float, y: float, direction: str, distance: int) -> None:
-        # DeviceAdapter contract / direct callers. The server path goes through
-        # execute() above; here `distance` keeps the legacy ×100 unit, and a
-        # zero anchor falls back to screen center.
+        # DeviceAdapter contract / direct callers keep the legacy ×100 unit.
+        self._scroll_pixels(x, y, direction, distance * 100)
+
+    def _scroll_pixels(self, x: float, y: float, direction: str, pixels: int) -> None:
         info = self.device_info()
-        cx = x or info.width / 2.0
-        cy = y or info.height / 2.0
-        self._swipe(cx, cy, direction, distance * 100, info)
+        self._swipe_scroll(
+            x or info.width / 2.0, y or info.height / 2.0, direction, pixels, info
+        )
 
-    def _swipe(self, cx: float, cy: float, direction: str, pixels: int, info: DeviceInfo) -> None:
-        w, h = info.width, info.height
-        span = h if direction in ("up", "down") else w
-        if pixels <= 0:
-            pixels = int(span * 0.6)
-        pixels = min(pixels, int(span * 0.7))  # keep the whole gesture on-screen
-
-        if direction == "down":
-            ex, ey = cx, cy - pixels
-        elif direction == "up":
-            ex, ey = cx, cy + pixels
-        elif direction == "right":
-            ex, ey = cx - pixels, cy
-        elif direction == "left":
-            ex, ey = cx + pixels, cy
-        else:
-            return
-
-        def clamp(v: float, lo: float, hi: float) -> float:
-            return max(lo, min(hi, v))
-
-        self.drag(cx, cy, clamp(ex, w * 0.05, w * 0.95), clamp(ey, h * 0.05, h * 0.95))
+    def _swipe_from_to(self, from_x: float, from_y: float, to_x: float, to_y: float) -> None:
+        self.drag(from_x, from_y, to_x, to_y)
 
     def navigate(self, url: str) -> None:
         self._driver.get(url)

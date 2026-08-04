@@ -49,10 +49,10 @@ class TestSingleActionBody:
     def _sent_body(self, bot):
         return bot._backend.requests[-1][1]
 
-    def test_both_empty_omits_field(self, make_bot):
+    def test_both_empty_sends_engine_default(self, make_bot):
         bot = self._bot(make_bot)
         bot.extract("target", "read it")
-        assert "thinking_level" not in self._sent_body(bot)
+        assert self._sent_body(bot)["thinking_level"] == ""
 
     def test_instance_default_applies(self, make_bot):
         bot = self._bot(make_bot, thinking_level="low")
@@ -71,8 +71,8 @@ class TestSingleActionBody:
 
 
 class TestAiLoopBody:
-    # A non-terminal first step so the run spans two requests, exercising the
-    # "sent with every step" contract (the second step gets the default done).
+    # The level is registered once on the run and applies to every step; a
+    # non-terminal first step proves the run spans two steps under it.
     _CLICK_STEP = {
         "success": True, "finished": False,
         "actionType": "click", "params": {"x": 1, "y": 2},
@@ -84,29 +84,24 @@ class TestAiLoopBody:
         bot._backend.results.append(dict(self._CLICK_STEP))
         return bot
 
-    def _bodies(self, bot):
-        return [request for _, request in bot._backend.requests]
-
-    def test_per_call_in_every_loop_request(self, make_bot):
+    def test_per_call_applies_to_the_run(self, make_bot):
         bot = self._bot(make_bot)
         bot.ai(object(), "task", max_steps=2, thinking_level="medium")
-        bodies = self._bodies(bot)
-        assert len(bodies) == 2
-        assert all(b["thinking_level"] == "medium" for b in bodies)
+        (start,) = bot._backend.start_calls
+        assert start["thinking_level"] == "medium"
+        assert len(bot._backend.requests) == 2  # both steps ran under it
 
-    def test_instance_default_in_loop(self, make_bot):
+    def test_instance_default_applies_to_the_run(self, make_bot):
         bot = self._bot(make_bot, thinking_level="minimal")
         bot.ai(object(), "task", max_steps=2)
-        bodies = self._bodies(bot)
-        assert len(bodies) == 2
-        assert all(b["thinking_level"] == "minimal" for b in bodies)
+        (start,) = bot._backend.start_calls
+        assert start["thinking_level"] == "minimal"
 
-    def test_absent_when_unset(self, make_bot):
+    def test_engine_default_when_unset(self, make_bot):
         bot = self._bot(make_bot)
         bot.ai(object(), "task", max_steps=2)
-        bodies = self._bodies(bot)
-        assert len(bodies) == 2
-        assert all("thinking_level" not in b for b in bodies)
+        (start,) = bot._backend.start_calls
+        assert start["thinking_level"] == ""
 
 
 class TestAutoWaitChain:

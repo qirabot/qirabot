@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import io
 from typing import Any
 
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo, ScreenshotConfig, split_combo
@@ -29,16 +28,7 @@ class SeleniumAdapter(DeviceAdapter):
     def screenshot(self, config: ScreenshotConfig | None = None) -> bytes:
         cfg = config or ScreenshotConfig()
         png_bytes = base64.b64decode(self._driver.get_screenshot_as_base64())
-        if cfg.format == "png":
-            return png_bytes
-        from PIL import Image
-        img: Image.Image = Image.open(io.BytesIO(png_bytes))
-        # JPEG has no alpha channel; PNG screenshots may be RGBA.
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=cfg.quality)
-        return buf.getvalue()
+        return self._reencode_png(png_bytes, cfg)
 
     def _pointer(self) -> Any:
         """A fresh W3C ActionBuilder whose pointer uses viewport-origin coords.
@@ -147,12 +137,6 @@ class SeleniumAdapter(DeviceAdapter):
             self._driver.execute_script(f"window.scrollBy({delta}, 0)")
         elif direction == "left":
             self._driver.execute_script(f"window.scrollBy({-delta}, 0)")
-
-    # Actions that don't change the screen (or handle their own timing), so the
-    # next screenshot needs no settle delay after them. hover is deliberately NOT
-    # here: its whole purpose is to reveal delayed UI (tooltips/submenus), so it
-    # needs the settle more than most actions, not less.
-    _NO_SETTLE = frozenset({"wait", "done", "save_note"})
 
     # Page navigation/AJAX/DOM updates/smooth-scroll; Selenium's coordinate-level
     # actions don't wait for the effects they trigger (implicit waits only cover

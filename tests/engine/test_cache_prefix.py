@@ -11,7 +11,7 @@ from datetime import datetime
 
 from qirabot.engine.prompts import build_conversation_messages, build_system_prompts
 from qirabot.engine.providers.base import ChatRequest
-from qirabot.engine.providers.gemini_vertex import build_request_body
+from qirabot.engine.providers._gemini_wire import build_request_body
 from qirabot.engine.tools import tool_definitions_for_platform
 from qirabot.engine.types import ConversationTurn, DecisionInput
 

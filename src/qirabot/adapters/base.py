@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger("qirabot")
 
 
 def split_combo(key: str) -> tuple[list[str], str]:
     """Split a key combo like ``"ctrl+shift+a"`` into modifiers and the final key.
 
     Returns ``(["ctrl", "shift"], "a")``; a single key yields ``([], "Enter")``.
-    The ``+`` join is the wire convention the server uses for press_key combos.
+    The ``+`` join is the wire convention the engine uses for press_key combos.
     Each adapter maps the returned names to its own framework vocabulary.
     """
     parts = [p.strip() for p in key.split("+")]
@@ -86,8 +89,10 @@ class DeviceAdapter(ABC):
     _SETTLE_SECONDS: float = 0.0
 
     # Actions that don't change the screen (or handle their own timing), so the
-    # next screenshot needs no settle delay after them.
-    _NO_SETTLE: frozenset[str] = frozenset()
+    # next screenshot needs no settle delay after them. hover is deliberately
+    # NOT here: its whole purpose is to reveal delayed UI (tooltips/submenus),
+    # so it needs the settle more than most actions, not less.
+    _NO_SETTLE: frozenset[str] = frozenset({"wait", "done", "save_note"})
 
     # True when the adapter drives the machine's REAL input devices (global
     # mouse/keyboard) — the user must keep their hands off while a task runs.
@@ -126,6 +131,40 @@ class DeviceAdapter(ABC):
     def screenshot(self, config: ScreenshotConfig | None = None) -> bytes:
         ...
 
+    @staticmethod
+    def _encode_image(img: Any, cfg: ScreenshotConfig) -> bytes:
+        """Encode a decoded PIL image in the configured screenshot format.
+
+        JPEG has no alpha channel, so RGBA/paletted frames are flattened to
+        RGB first. The one shared implementation of a conversion every
+        adapter needs — keep format quirks here, not in subclasses.
+        """
+        import io
+
+        buf = io.BytesIO()
+        if cfg.format == "jpeg":
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=cfg.quality)
+        else:
+            img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    @staticmethod
+    def _reencode_png(png_bytes: bytes, cfg: ScreenshotConfig) -> bytes:
+        """PNG source bytes -> bytes in the configured format.
+
+        For adapters whose framework hands back PNG: PNG config passes the
+        bytes through undecoded; JPEG decodes once and re-encodes.
+        """
+        if cfg.format == "png":
+            return png_bytes
+        import io
+
+        from PIL import Image
+
+        return DeviceAdapter._encode_image(Image.open(io.BytesIO(png_bytes)), cfg)
+
     @abstractmethod
     def click(self, x: float, y: float) -> None:
         ...
@@ -135,10 +174,13 @@ class DeviceAdapter(ABC):
         ...
 
     def right_click(self, x: float, y: float) -> None:
+        # Touch platforms have no secondary button; the plain-click fallback
+        # is intentional but must not be invisible when debugging.
+        logger.debug("%s: right_click degrades to click", type(self).__name__)
         self.click(x, y)
 
     def hover(self, x: float, y: float) -> None:
-        pass
+        logger.debug("%s: hover not supported; no-op", type(self).__name__)
 
     @abstractmethod
     def type_text(self, x: float, y: float, text: str) -> None:
@@ -254,6 +296,80 @@ class DeviceAdapter(ABC):
     @abstractmethod
     def scroll(self, x: float, y: float, direction: str, distance: int) -> None:
         ...
+
+    def _scroll_action(self, action_type: str, params: dict[str, Any]) -> None:
+        """One shared parse for the wire scroll actions (``scroll`` /
+        ``scroll_at``).
+
+        The engine sends ``{direction, amount}`` — ``amount`` in real pixels,
+        no x/y for plain scroll, the resolved element's x/y for scroll_at.
+        Direct callers may pass the legacy ``distance`` (~100px units)
+        instead. The pixel amount is honored exactly; how it becomes a
+        gesture is the adapter's :meth:`_scroll_pixels`. This used to live as
+        a per-adapter ``_dispatch`` override, giving the same wire params two
+        parse paths — keep it here only.
+        """
+        raw_amount = params.get("amount")
+        if raw_amount is not None and raw_amount != "":
+            pixels = int(raw_amount)
+        elif params.get("distance") is not None:
+            pixels = int(params["distance"]) * 100
+        else:
+            pixels = 0  # adapter-default nudge
+        x = float(params.get("x") or 0)
+        y = float(params.get("y") or 0)
+        self._scroll_pixels(x, y, str(params.get("direction", "down")), pixels)
+
+    def _scroll_pixels(self, x: float, y: float, direction: str, pixels: int) -> None:
+        """Scroll ~``pixels`` px at (x, y). A 0/0 anchor means "adapter
+        default" (typically screen center); ``pixels <= 0`` means the
+        adapter's default nudge. The base maps back onto the legacy
+        :meth:`scroll` unit (~100px per step); pixel-native backends (touch
+        swipe, wheel notches) override.
+        """
+        distance = max(1, round(pixels / 100)) if pixels > 0 else 3
+        self.scroll(x, y, direction, distance)
+
+    def _swipe_scroll(
+        self, cx: float, cy: float, direction: str, pixels: int, info: "DeviceInfo"
+    ) -> None:
+        """Touch-scroll geometry shared by the swipe backends (adb/WDA/Appium).
+
+        Content moves ``direction``, so the finger swipes the opposite way
+        from (cx, cy). Defaults to 60% of the span, capped at 70% so the
+        whole gesture stays on-screen, endpoints clamped to the middle 90%.
+        Ends in :meth:`_swipe_from_to` — the only per-backend part.
+        (Geometry mirrors the retired airtest adapter's numbers.)
+        """
+        w, h = info.width, info.height
+        span = h if direction in ("up", "down") else w
+        if pixels <= 0:
+            pixels = int(span * 0.6)
+        pixels = min(pixels, int(span * 0.7))
+
+        if direction == "down":
+            ex, ey = cx, cy - pixels
+        elif direction == "up":
+            ex, ey = cx, cy + pixels
+        elif direction == "right":
+            ex, ey = cx - pixels, cy
+        elif direction == "left":
+            ex, ey = cx + pixels, cy
+        else:
+            return
+
+        def clamp(v: float, lo: float, hi: float) -> float:
+            return max(lo, min(hi, v))
+
+        self._swipe_from_to(
+            cx, cy, clamp(ex, w * 0.05, w * 0.95), clamp(ey, h * 0.05, h * 0.95)
+        )
+
+    def _swipe_from_to(
+        self, from_x: float, from_y: float, to_x: float, to_y: float
+    ) -> None:
+        """One finger swipe primitive backing :meth:`_swipe_scroll`."""
+        raise NotImplementedError(f"{type(self).__name__} does not support _swipe_from_to")
 
     def drag(self, from_x: float, from_y: float, to_x: float, to_y: float) -> None:
         raise NotImplementedError(f"{type(self).__name__} does not support drag")
@@ -426,17 +542,7 @@ class DeviceAdapter(ABC):
             else:
                 self.press_key(key)
         elif action_type in ("scroll", "scroll_at"):
-            # The server sends scroll distance as `amount` in pixels (e.g. 500);
-            # direct/legacy callers may pass `distance` in scroll units
-            # (~amount/100, since adapters scale distance*100 -> px). Honor
-            # `amount` first so the model's requested distance isn't silently
-            # dropped to the default of 3.
-            raw_amount = params.get("amount")
-            if raw_amount is not None and raw_amount != "":
-                distance = max(1, round(int(raw_amount) / 100))
-            else:
-                distance = int(params.get("distance", 3))
-            self.scroll(x, y, str(params.get("direction", "down")), distance)
+            self._scroll_action(action_type, params)
         elif action_type == "drag":
             self.drag(
                 float(params.get("start_x", 0)), float(params.get("start_y", 0)),

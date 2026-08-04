@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import atexit
 import contextlib
-import io
 import logging
 import os
 import signal
@@ -18,10 +17,14 @@ from typing import Any, Callable, Iterator, Literal
 
 from qirabot._browser import launch_browser
 from qirabot._knowledge import resolve_knowledge
+from qirabot._timeline import RunTimeline
 from qirabot._tools import build_tool_defs
 from qirabot.engine.local_backend import LocalBackend
+from qirabot.engine.providers.base import ProviderError
 from qirabot.engine.providers.registry import resolve_default_model
-from qirabot.recording import MjpegStreamRecorder, Recorder, ScreenRecorder, device_recorder
+from qirabot.engine.session import StepError, StepOutcome
+from qirabot.engine.types import TokenUsage
+from qirabot.recording import RecordConfig, RecordingManager
 from qirabot.adapters import auto
 from qirabot.adapters.base import DeviceAdapter, ScreenshotConfig
 from qirabot.bound import _BoundQirabot
@@ -105,21 +108,22 @@ class StepResult:
     llm_decision_duration_ms: int = 0
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], step: int) -> StepResult:
+    def from_outcome(cls, outcome: StepOutcome, step: int) -> StepResult:
+        u = outcome.token_usage
         return cls(
             step=step,
-            action_type=data.get("actionType", ""),
-            params=data.get("params") or {},
-            output=data.get("output", ""),
-            finished=data.get("finished", False),
-            decision=data.get("decision", ""),
-            input_tokens=data.get("inputTokens", 0),
-            output_tokens=data.get("outputTokens", 0),
-            thinking_tokens=data.get("thinkingTokens", 0),
-            cache_read_tokens=data.get("cacheReadTokens", 0),
-            cache_write_tokens=data.get("cacheWriteTokens", 0),
-            step_duration_ms=data.get("stepDurationMs", 0),
-            llm_decision_duration_ms=data.get("llmDecisionDurationMs", 0),
+            action_type=outcome.action_type,
+            params=outcome.params,
+            output=outcome.output,
+            finished=outcome.finished,
+            decision=outcome.decision,
+            input_tokens=u.input_tokens,
+            output_tokens=u.output_tokens,
+            thinking_tokens=u.thinking_tokens,
+            cache_read_tokens=u.cache_read_tokens,
+            cache_write_tokens=u.cache_write_tokens,
+            step_duration_ms=outcome.step_duration_ms,
+            llm_decision_duration_ms=outcome.llm_decision_ms,
         )
 
 
@@ -139,16 +143,6 @@ class VerifyResult:
     input_tokens: int = 0
     output_tokens: int = 0
     thinking_tokens: int = 0
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> VerifyResult:
-        return cls(
-            passed=data.get("finished", False),
-            reason=data.get("output", ""),
-            input_tokens=data.get("inputTokens", 0),
-            output_tokens=data.get("outputTokens", 0),
-            thinking_tokens=data.get("thinkingTokens", 0),
-        )
 
     def __bool__(self) -> bool:
         return self.passed
@@ -183,15 +177,6 @@ class ExtractResult(str):
         obj.thinking_tokens = thinking_tokens
         return obj
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ExtractResult:
-        return cls(
-            data.get("output", ""),
-            input_tokens=data.get("inputTokens", 0),
-            output_tokens=data.get("outputTokens", 0),
-            thinking_tokens=data.get("thinkingTokens", 0),
-        )
-
 
 @dataclass
 class LocateResult:
@@ -221,22 +206,24 @@ class LocateResult:
         yield self.x
         yield self.y
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LocateResult:
-        params = data.get("params") or {}
-        return cls(
-            x=int(round(float(params.get("x", 0)))),
-            y=int(round(float(params.get("y", 0)))),
-            input_tokens=data.get("inputTokens", 0),
-            output_tokens=data.get("outputTokens", 0),
-            thinking_tokens=data.get("thinkingTokens", 0),
-        )
 
-
-# How a bot.ai() run ended. "max_steps" matches the server's task-level
-# max_steps event name; the server itself records the command as plain
-# "failed", so this is the SDK's finer-grained local view.
+# How a bot.ai() run ended. "error" is never returned today — step-level
+# failures raise ActionError instead — but stays in the type for existing
+# callers matching on it (and for the section-outcome badges, which use it).
 RunStatus = Literal["completed", "goal_failed", "max_steps", "error"]
+
+
+@dataclass
+class _SingleAction:
+    """Internal result of one single-step AI call (_ai_action): what to
+    record/execute plus the call's usage. ``action_type`` is empty for
+    non-executing calls (extract/verify)."""
+
+    action_type: str
+    params: dict[str, Any]
+    output: str = ""
+    finished: bool = False
+    usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 @dataclass
@@ -251,7 +238,8 @@ class RunResult:
       captcha, frozen app)
     - ``"max_steps"``: step budget ran out before the model finished — a
       truncation, not a capability verdict; consider raising ``max_steps``
-    - ``"error"``: the server reported a terminal error
+    - ``"error"``: reserved for terminal engine errors; step-level failures
+      raise :class:`~qirabot.exceptions.ActionError` instead of returning
 
     ``success`` is True iff ``status == "completed"``.
     """
@@ -367,8 +355,6 @@ class Qirabot:
         # stale-key guard deliberately fires *after* the handshake: knowing
         # whether ADC works lets the message name the user's actual next step
         # instead of prescribing credential setup they may already have.
-        from qirabot.engine.providers.base import ProviderError
-
         try:
             self._backend = LocalBackend(
                 model=model or resolve_default_model(),
@@ -434,7 +420,6 @@ class Qirabot:
         #   <root>/<YYYY-MM-DD>/<HHMMSS>-<task_id[:8]>/
         # report_dir / QIRA_REPORT_DIR set only the root; the date/run subdirs
         # are added automatically so one env var works across many runs.
-        self._report = report
         root = report_dir or os.environ.get("QIRA_REPORT_DIR", "") or "./qira_runs"
         short = (self._task_id or "run")[:8]
         self._report_dir = (
@@ -442,23 +427,6 @@ class Qirabot:
             / time.strftime("%Y-%m-%d")
             / f"{time.strftime('%H%M%S')}-{short}"
         )
-        # Session-wide action timeline for the report, and the current task
-        # section ai() runs are grouped under. Standalone actions carry the
-        # "setup" key, which the report renders as "manual".
-        self._log: list[dict[str, Any]] = []
-        self._current_section = "setup"
-        # instruction -> times ai() has run it, to give repeat runs a
-        # numbered section key ("<instruction> #2") so each run keeps its own
-        # outcome/error instead of the later run overwriting the earlier.
-        self._section_runs: dict[str, int] = {}
-        # ai() section key -> RunStatus, for the per-section badge in the
-        # report (completed / goal_failed / max_steps / error).
-        self._section_outcomes: dict[str, str] = {}
-        # ai() instruction -> failure text, rendered as a banner above the
-        # section's step table (max-steps truncation / server terminal error).
-        # These used to be synthetic step entries in _log, which made the
-        # report's step count disagree with the server's.
-        self._section_errors: dict[str, str] = {}
         # Outcome of the most recent ai() call, driving close()'s auto-complete
         # status: a run whose last command errored must not be recorded as
         # "completed" just because close() ran (atexit after a crash included).
@@ -472,25 +440,15 @@ class Qirabot:
         # running; a try/except around bot.ai() must not re-take control.
         self._user_aborted = False
         self._last_ai_error = ""
-        # Session-wide totals for the report header. Token/timing data rides in
-        # each ai() step result, not in _log, so we accumulate it here as steps
-        # run and hand the totals to the report at render time.
-        self._stats: dict[str, int] = {
-            "ai_steps": 0,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "thinking_tokens": 0,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "step_duration_ms": 0,
-            "llm_decision_duration_ms": 0,
-        }
-        self._screenshot_counter = 0
         self._screenshot_config = ScreenshotConfig(
             format=screenshot_format,
             quality=screenshot_quality,
             annotate=screenshot_annotate,
         )
+        # The report's data model — step timeline, per-section outcomes,
+        # usage totals, screenshot persistence (see RunTimeline). Rendering
+        # happens in _write_report; everything else forwards into here.
+        self._timeline = RunTimeline(report, self._report_dir, self._screenshot_config)
         self._retry = retry
         self._retry_delay = retry_delay
         # Fixed delay (seconds) each adapter sleeps after a screen-changing action
@@ -510,52 +468,28 @@ class Qirabot:
         if settle_seconds is not None and settle_seconds < 0:
             raise ValueError(f"settle_seconds must be >= 0, got {settle_seconds}")
         self._settle_seconds = settle_seconds
-        # Built-in ffmpeg full-screen recording. Opt-in (default off); the
-        # QIRA_RECORD env var enables it without a code change. Auto-started here
-        # and stopped in close() so the mp4 is finalized before the report scans
-        # for it. A single recorder slot + a fixed output path mean the auto path
-        # and the manual start_recording()/stop_recording() never spawn two ffmpegs.
-        self._record = record or _env_truthy(os.environ.get("QIRA_RECORD", ""))
-        self._record_fps = record_fps
-        # Windows-only recording extras: follow the window under test (resolved
-        # lazily from the first action's target) and capture system audio.
-        self._record_window = record_window or _env_truthy(os.environ.get("QIRA_RECORD_WINDOW", ""))
-        # By default record_window crops a desktop grab to the window's visible
-        # rect (works for GPU/game windows the per-window path renders black).
-        # QIRA_RECORD_WINDOW_NATIVE=1 forces the legacy gdigrab per-window mode,
-        # which can follow a background/occluded *non-GPU* window but goes black
-        # on games.
-        self._record_window_native = _env_truthy(os.environ.get("QIRA_RECORD_WINDOW_NATIVE", ""))
-        self._record_audio = record_audio or _env_truthy(os.environ.get("QIRA_RECORD_AUDIO", ""))
-        if record_audio_offset is None:
-            env_off = os.environ.get("QIRA_AUDIO_OFFSET", "")
-            if env_off:
-                try:
-                    record_audio_offset = float(env_off)
-                except ValueError:
-                    raise ValueError(f"QIRA_AUDIO_OFFSET must be a number, got {env_off!r}")
-        self._record_audio_offset = record_audio_offset
-        # Record an MJPEG stream (WDA's device-screen stream, port 9100) instead
-        # of the host screen — the only way `record=True` can capture an iOS
-        # device's screen rather than the desktop the SDK runs on.
-        self._record_mjpeg_url = record_mjpeg_url or os.environ.get("QIRA_RECORD_MJPEG_URL", "") or None
-        # Record the automated device's own screen instead of the host screen:
-        # the recorder is picked from the first action's target (Appium driver
-        # → session recording API; AdbDevice → adb screenrecord), so the
-        # start is deferred like record_window's.
-        self._record_device = record_device or _env_truthy(os.environ.get("QIRA_RECORD_DEVICE", ""))
-        self._recorder: Recorder | None = None
-        # Epoch time the current recording started; anchors the report's
-        # per-step video-seek offsets. 0.0 = no recording started this run.
-        self._record_started_ts = 0.0
-        # True while a recording is still owed: claimed (set False) right before a
-        # recorder starts, which also guards against re-entrancy through
-        # _get_adapter when window-following resolves the target.
-        self._record_pending = (
-            self._record or self._record_device or bool(self._record_mjpeg_url)
-        ) and self._report
+        # Built-in ffmpeg recording (opt-in; QIRA_RECORD & friends enable it
+        # without a code change). All flag parsing, the deferred/auto start
+        # flow and the single-recorder slot live in RecordingManager; the
+        # client only forwards start/stop and the per-action maybe_start hook
+        # in _get_adapter. Recording is gated on reporting: the mp4's whole
+        # purpose is to be embedded in the report.
+        self._recording = RecordingManager(
+            RecordConfig.resolve(
+                record=record,
+                fps=record_fps,
+                window=record_window,
+                audio=record_audio,
+                audio_offset=record_audio_offset,
+                mjpeg_url=record_mjpeg_url,
+                device=record_device,
+            ),
+            want_recording=self._timeline.enabled,
+            output_dir=lambda: self.report_dir,
+            window_info=lambda t: self._get_adapter(t).window_info(),
+        )
         atexit.register(self.close)
-        self._maybe_start_recording()
+        self._recording.maybe_start()
 
     @property
     def report_dir(self) -> str:
@@ -579,6 +513,15 @@ class Qirabot:
         return self._task_id
 
     @property
+    def will_write_report(self) -> bool:
+        """True when :meth:`close` (or :meth:`report`) will write report.html —
+        reporting is enabled and at least one step has been recorded. Lets
+        callers (e.g. the CLI's JSON result) predict whether the report path
+        will exist without reaching into internals.
+        """
+        return bool(self._timeline.enabled and self._timeline.entries)
+
+    @property
     def usage(self) -> SessionUsage:
         """Session-wide AI usage totals so far (tokens, AI steps, timing).
 
@@ -588,15 +531,16 @@ class Qirabot:
         frozen snapshot; read again for updated totals. See
         :class:`SessionUsage` for the token-counting semantics.
         """
+        stats = self._timeline.stats
         return SessionUsage(
-            ai_steps=self._stats["ai_steps"],
-            input_tokens=self._stats["input_tokens"],
-            output_tokens=self._stats["output_tokens"],
-            thinking_tokens=self._stats["thinking_tokens"],
-            cache_read_tokens=self._stats["cache_read_tokens"],
-            cache_write_tokens=self._stats["cache_write_tokens"],
-            step_duration_ms=self._stats["step_duration_ms"],
-            llm_decision_duration_ms=self._stats["llm_decision_duration_ms"],
+            ai_steps=stats["ai_steps"],
+            input_tokens=stats["input_tokens"],
+            output_tokens=stats["output_tokens"],
+            thinking_tokens=stats["thinking_tokens"],
+            cache_read_tokens=stats["cache_read_tokens"],
+            cache_write_tokens=stats["cache_write_tokens"],
+            step_duration_ms=stats["step_duration_ms"],
+            llm_decision_duration_ms=stats["llm_decision_duration_ms"],
         )
 
     def bind(self, target: Any) -> _BoundQirabot:
@@ -899,7 +843,8 @@ class Qirabot:
         adapter = self._get_adapter(target)
         params: dict[str, Any] = {"locate": locate}
         if duration != 2.0:
-            # Wire convention is milliseconds (matches the server schema/wait).
+            # Wire convention is milliseconds (matches the engine's action
+            # schema, same as wait).
             params["duration"] = int(duration * 1000)
         self._ai_action(
             target,
@@ -1047,7 +992,12 @@ class Qirabot:
             execute_result=False,
             retry=retry,
         )
-        return ExtractResult.from_dict(result)
+        return ExtractResult(
+            result.output,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+            thinking_tokens=result.usage.thinking_tokens,
+        )
 
     def verify(
         self,
@@ -1072,7 +1022,13 @@ class Qirabot:
             execute_result=False,
             retry=retry,
         )
-        return VerifyResult.from_dict(result)
+        return VerifyResult(
+            passed=result.finished,
+            reason=result.output,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+            thinking_tokens=result.usage.thinking_tokens,
+        )
 
     def locate(
         self,
@@ -1121,30 +1077,13 @@ class Qirabot:
             execute_result=False,
             retry=retry,
         )
-        return LocateResult.from_dict(result)
-
-    def _accumulate_tokens(self, result: dict[str, Any]) -> None:
-        """Fold a /act response's token/timing usage into the run stats —
-        error payloads included: a failed step's decide attempts (up to
-        MAX_GROUNDING_ATTEMPTS of them) are real spend the engine reports on
-        the error body, and dropping them would understate the session totals
-        exactly on the most expensive steps."""
-        self._stats["input_tokens"] += result.get("inputTokens", 0)
-        self._stats["output_tokens"] += result.get("outputTokens", 0)
-        self._stats["thinking_tokens"] += result.get("thinkingTokens", 0)
-        self._stats["cache_read_tokens"] += result.get("cacheReadTokens", 0)
-        self._stats["cache_write_tokens"] += result.get("cacheWriteTokens", 0)
-        self._stats["step_duration_ms"] += result.get("stepDurationMs", 0)
-        self._stats["llm_decision_duration_ms"] += result.get("llmDecisionDurationMs", 0)
-
-    def _accumulate_stats(self, result: dict[str, Any]) -> None:
-        """A successful AI call: its usage plus one AI step.
-
-        ai_steps counts committed calls only (matching the report's step
-        count); failed calls go through _accumulate_tokens alone.
-        """
-        self._stats["ai_steps"] += 1
-        self._accumulate_tokens(result)
+        return LocateResult(
+            x=int(round(float(result.params.get("x", 0)))),
+            y=int(round(float(result.params.get("y", 0)))),
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+            thinking_tokens=result.usage.thinking_tokens,
+        )
 
     def wait_for(
         self,
@@ -1227,24 +1166,9 @@ class Qirabot:
                 "clear_user_abort() to allow further ai() runs",
                 code="user_abort",
             )
-        prev_section = self._current_section
-        section = instruction or "ai"
-        runs = self._section_runs.get(section, 0) + 1
-        self._section_runs[section] = runs
-        if runs > 1:
-            section = f"{section} #{runs}"
-        self._current_section = section
-        if self._overlay is not None:
-            # Edge glow only when the run takes over the REAL mouse/keyboard
-            # (desktop backends): the "hands off" signal would be a lie for
-            # remote-protocol targets. Adapter resolution can fail for a bad
-            # target — the loop below surfaces that; the overlay never does.
-            edge_glow = False
-            try:
-                edge_glow = bool(self._get_adapter(target).controls_user_input)
-            except Exception:
-                pass
-            self._overlay.begin(instruction, edge_glow=edge_glow)
+        prev_section = self._timeline.current_section
+        self._timeline.begin_section(instruction)
+        self._overlay_begin(instruction, target)
         try:
             result = self._ai_loop(
                 target,
@@ -1257,11 +1181,10 @@ class Qirabot:
                 exclude_tools=exclude_tools,
                 knowledge=knowledge,
             )
-            self._section_outcomes[self._current_section] = result.status
+            self._timeline.section_outcomes[self._timeline.current_section] = result.status
             self._last_ai_status = result.status
             self._last_ai_error = result.output if result.status == "error" else ""
-            if self._overlay is not None:
-                self._overlay.finish(result.success, result.output or result.status)
+            self._overlay_finish(result.success, result.output or result.status)
             return result
         except Exception as e:
             aborted = (
@@ -1270,12 +1193,12 @@ class Qirabot:
             )
             if aborted:
                 # A deliberate user abort (ESC hold, mouse-to-corner) is a
-                # cancellation, not a bot failure: record the server's
-                # distinct 'cancelled' terminal state — same bucket as a
-                # Ctrl+C routed through cancel(), kept out of failure
-                # metrics. cancel()'s terminalized guard also stops close()
-                # from re-recording the task as failed.
-                self._section_outcomes[self._current_section] = "cancelled"
+                # cancellation, not a bot failure: record the distinct
+                # 'cancelled' outcome — same bucket as a Ctrl+C routed
+                # through cancel(), kept out of failure metrics. cancel()'s
+                # terminalized guard also stops close() from re-recording
+                # the task as failed.
+                self._timeline.section_outcomes[self._timeline.current_section] = "cancelled"
                 self._last_ai_status = "cancelled"
                 self._last_ai_error = str(e)
                 self._user_aborted = True  # sticky: see clear_user_abort()
@@ -1283,15 +1206,18 @@ class Qirabot:
             else:
                 # Any other exception on the way out — ActionError, timeout,
                 # adapter failure — is an "error" ending, distinct from
-                # goal_failed.
-                self._section_outcomes[self._current_section] = "error"
+                # goal_failed. The banner carries the reason into the report:
+                # the exception text is otherwise only in the caller's hands,
+                # and an "error" badge with no explanation is useless when
+                # reading the report after the fact.
+                self._timeline.section_outcomes[self._timeline.current_section] = "error"
+                self._timeline.section_errors[self._timeline.current_section] = str(e)
                 self._last_ai_status = "error"
                 self._last_ai_error = str(e)
-            if self._overlay is not None:
-                self._overlay.finish(False, str(e))
+            self._overlay_finish(False, str(e))
             raise
         finally:
-            self._current_section = prev_section
+            self._timeline.current_section = prev_section
             # Safety net: release any mouse button / key the model held with
             # mouse_down/key_down but never released (or that an exception
             # interrupted), so a stuck input can't corrupt later actions or
@@ -1318,112 +1244,69 @@ class Qirabot:
         steps: list[StepResult] = []
         last_action_result = ""
         last_was_save_note = False
+        last_screenshot = b""
         tool_defs, tool_handlers = build_tool_defs(custom_tools) if custom_tools else ([], {})
         knowledge_text = resolve_knowledge(knowledge) if knowledge is not None else ""
-        sent_tool_params = bool(tool_defs or exclude_tools)
+
+        # The run object owns the engine session; its lifetime is this loop
+        # frame, so an aborted or failed run can never leak into the next one.
+        try:
+            run = self._backend.start_ai(
+                instruction,
+                platform=adapter.device_info().platform,
+                max_steps=max_steps,
+                language=language or self._language,
+                thinking_level=thinking_level or self._thinking_level,
+                custom_tools=tool_defs,
+                exclude_tools=list(exclude_tools) if exclude_tools else [],
+                knowledge=knowledge_text,
+            )
+        except ValueError as e:
+            raise ActionError(str(e)) from e
 
         for step_num in range(1, max_steps + 1):
             self._raise_if_user_abort()
-            # After save_note the device hasn't moved, so reuse the cached
-            # screenshot on the server side and skip a redundant upload.
-            if last_was_save_note:
-                screenshot_bytes = b""
-            else:
+            # After save_note the device hasn't moved: reuse the previous
+            # frame instead of capturing again (the engine still needs the
+            # bytes — history replay keeps one screenshot per step).
+            fresh = not last_was_save_note
+            if fresh:
                 screenshot_bytes = adapter.screenshot(self._screenshot_config)
+            else:
+                screenshot_bytes = last_screenshot
+            last_screenshot = screenshot_bytes
             device_info = adapter.device_info()
 
-            request_body: dict[str, Any] = {
-                "device_info": device_info.to_dict(),
-            }
-            if last_action_result:
-                request_body["action_result"] = last_action_result
-            if step_num == 1:
-                ai_params: dict[str, Any] = {"instruction": instruction, "max_steps": max_steps}
-                if tool_defs:
-                    ai_params["custom_tools"] = tool_defs
-                if exclude_tools:
-                    ai_params["exclude_tools"] = list(exclude_tools)
-                if knowledge_text:
-                    ai_params["knowledge"] = knowledge_text
-                request_body["action"] = {
-                    "type": "ai",
-                    "params": ai_params,
-                }
-            else:
-                # Continuation steps still carry the action envelope so the
-                # backend routes them to the live ai session.
-                request_body["action"] = {"type": "ai", "params": {}}
-            tl = thinking_level or self._thinking_level
-            if tl:
-                request_body["thinking_level"] = tl
-            lang = language or self._language
-            if lang:
-                request_body["language"] = lang
-
-            result = self._backend.act(
-                screenshot_bytes, request_body, self._screenshot_config.mime_type
-            )
-
-            if not result.get("success"):
-                # The engine attaches the failed step's usage to the error
-                # body (its decide attempts are real spend) — keep the
+            try:
+                outcome = run.step(
+                    screenshot_bytes,
+                    last_action_result,
+                    device_info.width,
+                    device_info.height,
+                )
+            except StepError as e:
+                # The failed step's decide attempts are real spend — keep the
                 # tokens, but no step: none committed.
-                self._accumulate_tokens(result)
-                error_msg = result.get("error", "AI request failed")
-                if result.get("finished"):
-                    logger.error("failed: %s", error_msg)
-                    # Surface the failure reason as a section banner, NOT a
-                    # synthetic step entry: no step committed server-side, so
-                    # adding one locally would make the report's step count
-                    # disagree with the cloud timeline.
-                    self._section_errors[self._current_section] = error_msg
-                    return RunResult(
-                        success=False, output=error_msg, steps=steps, status="error"
-                    )
-                raise ActionError(error_msg)
+                self._timeline.add_tokens(e.usage)
+                raise ActionError(str(e)) from e
+            except ProviderError as e:
+                raise ActionError(str(e)) from e
 
-            if warning := result.get("warning"):
-                logger.warning("%s", warning)
-            if step_num == 1 and sent_tool_params:
-                # Only successful responses go through NewStepResponse, so the
-                # echo's absence there is meaningful; error bodies never carry it.
-                registration = result.get("tool_registration")
-                if registration:
-                    logger.info(
-                        "custom tools registered: %s; excluded: %s",
-                        registration.get("registered") or [],
-                        registration.get("excluded") or [],
-                    )
-                else:
-                    logger.warning(
-                        "server does not support custom_tools/exclude_tools; "
-                        "tools will not take effect"
-                    )
-            if step_num == 1 and knowledge_text:
-                # Same old-server detection as tools: only successful responses
-                # go through NewStepResponse, so a missing echo there means the
-                # server ignored the param — warn instead of degrading silently.
-                registered = result.get("knowledge_registered")
-                if registered is None:
-                    logger.warning(
-                        "server does not support knowledge; it will not take effect"
-                    )
-                else:
-                    logger.info("knowledge registered: %d bytes", registered)
-
-            action_type = result.get("actionType")
-            action_params = result.get("params") or {}
-            finished = result.get("finished", False)
-            decision = result.get("decision", "")
+            action_type = outcome.action_type
+            action_params = outcome.params
+            finished = outcome.finished
+            decision = outcome.decision
 
             coords = _extract_coords(action_params)
+            # save_note continuations reuse the previous frame; record the
+            # step without a screenshot rather than duplicating the image.
             entry = self._record_step(
-                screenshot_bytes,
+                screenshot_bytes if fresh else b"",
                 action_type or "ai",
                 action_params,
                 coords,
                 end_coords=_extract_end_coords(action_params),
-                output=result.get("output", ""),
+                output=outcome.output,
                 finished=finished,
                 decision=decision,
                 coord_scale=adapter.annotation_scale(),
@@ -1445,25 +1328,26 @@ class Qirabot:
                     parts.append(f"({', '.join(detail_parts)})")
                 logger.info("%s", " ".join(parts))
 
-            step_result = StepResult.from_dict(result, step_num)
+            step_result = StepResult.from_outcome(outcome, step_num)
             steps.append(step_result)
 
-            self._accumulate_stats(result)
+            self._timeline.add_step_usage(
+                outcome.token_usage,
+                step_ms=outcome.step_duration_ms,
+                llm_ms=outcome.llm_decision_ms,
+            )
 
-            if self._overlay is not None:
-                self._overlay.step(step_result, max_steps)
+            self._overlay_step(step_result, max_steps)
             if on_step:
                 on_step(step_result)
 
             if finished:
-                output = result.get("output", "")
+                output = outcome.output
                 # The done action carries the model's own success flag: false
                 # means it concluded the goal is unreachable (login wall,
-                # captcha, the app froze). It rides in the action params; the
-                # top-level `success` checked above only means "the step
-                # committed". The server records this same outcome as the task's
-                # terminal state (mirroring max-steps). Default true for older
-                # servers that omit the flag.
+                # captcha, the app froze). It rides in the action params; a
+                # committed step only means the engine decided successfully.
+                # Default true when the flag is omitted.
                 goal_ok = bool(action_params.get("success", True))
                 # Log a short completion marker, not the full output: the result
                 # text is the caller's to surface via result.output, and dumping
@@ -1482,21 +1366,20 @@ class Qirabot:
                 # while the model was thinking must stop THIS action, not
                 # the next one — "I hit the kill switch and it clicked once
                 # more anyway" is the worst version of a slow abort. The
-                # in-flight server call above is the only wait that remains.
+                # in-flight decide call above is the only wait that remains.
                 self._raise_if_user_abort()
                 try:
                     if action_type in tool_handlers:
                         # Custom tool: run the user's handler instead of a
                         # device action. Params are exactly the model's args
-                        # for the registered schema (the server strips its
-                        # meta fields). The return value is the observation
-                        # fed back to the model on the next request —
-                        # "ok" if result is None, NOT str(result) or "ok":
-                        # str(None) is the truthy string "None".
+                        # for the registered schema. The return value is the
+                        # observation fed back to the model on the next step —
+                        # "ok" if it is None, NOT str(return): str(None) is
+                        # the truthy string "None".
                         ret = tool_handlers[action_type](**action_params)
                         last_action_result = "ok" if ret is None else str(ret)
                     else:
-                        self._execute_action(adapter, result)
+                        self._execute_action(adapter, action_type, action_params)
                         last_action_result = "ok"
                 except Exception as e:
                     if type(e).__name__ == "FailSafeException":
@@ -1527,11 +1410,12 @@ class Qirabot:
 
         # A truncation, not an error: the budget ran out before the model
         # finished. warning-level, and surfaced as an amber section banner
-        # rather than a synthetic step entry — the server records the same
-        # outcome on the command, not as a step, and the report's step count
-        # must match the cloud timeline.
+        # rather than a synthetic step entry — the report's step count must
+        # match the steps that actually ran.
         logger.warning("stopped: step budget exhausted (%d/%d)", max_steps, max_steps)
-        self._section_errors[self._current_section] = f"max steps reached ({max_steps})"
+        self._timeline.section_errors[self._timeline.current_section] = (
+            f"max steps reached ({max_steps})"
+        )
         # Output string is load-bearing: callers may match "max steps reached".
         return RunResult(
             success=False, output="max steps reached", steps=steps, status="max_steps"
@@ -1545,70 +1429,7 @@ class Qirabot:
         """
         adapter = self._get_adapter(target)
         data = adapter.screenshot(self._screenshot_config)
-        return self._save_frame(data, "manual")
-
-    def _maybe_start_recording(self, target: Any = None) -> None:
-        """Auto-start screen recording when ``record=True``.
-
-        Called once from ``__init__`` (no ``target``) and again from
-        :meth:`_get_adapter` on every action (with the action's ``target``).
-        Skipped once a recorder exists or the slot has been claimed. In
-        ``record_window`` mode the start is deferred until an action supplies a
-        ``target`` to resolve the window from. Best-effort via
-        :meth:`start_recording` — a missing ffmpeg / unsupported platform warns.
-        """
-        if self._recorder is not None or not self._record_pending:
-            return
-        if (
-            (self._record_window or self._record_device)
-            and target is None
-            and not self._record_mjpeg_url
-        ):
-            return  # defer: need a target to resolve the window/device from
-        # Claim the slot BEFORE starting so the _get_adapter() call made while
-        # resolving the window doesn't re-enter this and start a second ffmpeg.
-        self._record_pending = False
-        self.start_recording(target=target)
-
-    def _resolve_window_target(self, target: Any) -> str | None:
-        """Window title (or handle) to record for ``target``, or ``None``.
-
-        Reads the adapter's :meth:`~qirabot.adapters.base.DeviceAdapter.window_info`
-        (only the Windows window backend returns one); prefers the title, falls back to the
-        numeric handle. Any failure degrades to ``None`` (full-screen).
-        """
-        try:
-            info = self._get_adapter(target).window_info()
-        except Exception:
-            logger.debug("window_info() failed; recording full screen", exc_info=True)
-            return None
-        if not info:
-            return None
-        title = info.get("title")
-        if title:
-            return str(title)
-        hwnd = info.get("hwnd")
-        return str(hwnd) if hwnd is not None else None
-
-    def _resolve_window_region(self, target: Any) -> tuple[int, int, int, int] | None:
-        """Visible (x, y, w, h) of ``target``'s window for desktop-crop recording.
-
-        Reads the adapter's ``window_info()`` hwnd and resolves its physical-px
-        rect via :func:`qirabot.recording.window_region`. Returns ``None`` (so
-        the caller degrades to per-window or full-screen) when there's no hwnd or
-        the rect can't be resolved.
-        """
-        try:
-            info = self._get_adapter(target).window_info()
-        except Exception:
-            logger.debug("window_info() failed; not using region capture", exc_info=True)
-            return None
-        hwnd = info.get("hwnd") if info else None
-        if hwnd is None:
-            return None
-        from qirabot.recording import window_region
-
-        return window_region(int(hwnd))
+        return self._timeline.save_frame(data, "manual")
 
     def start_recording(
         self,
@@ -1649,74 +1470,14 @@ class Qirabot:
         Note: starting again after :meth:`stop_recording` overwrites the same
         ``recording.mp4`` (it re-records from scratch, it does not resume).
         """
-        if self._recorder is not None and self._recorder.active:
-            logger.info("recording already in progress; ignoring start_recording()")
-            return True
-        # Manual start also claims the slot so a later action's auto-start hook
-        # doesn't spawn a second recorder.
-        self._record_pending = False
-        output = os.path.join(self.report_dir, "recording.mp4")
-        recorder: Recorder | None
-        if self._record_mjpeg_url:
-            # Device-screen stream (WDA MJPEG): window/region/audio are
-            # host-screen concepts and don't apply.
-            recorder = MjpegStreamRecorder(output, self._record_mjpeg_url)
-        elif self._record_device:
-            # Device-screen recording resolved from the action target (Appium
-            # driver / AdbDevice). Falling back to the host screen would
-            # record the wrong thing (the desktop the SDK runs on), so an
-            # unsupported target skips recording — the report then carries the
-            # requested-but-not-produced notice.
-            recorder = device_recorder(output, target)
-            if recorder is None:
-                logger.warning(
-                    "record: don't know how to record the device screen for %s "
-                    "(need an Appium driver or an AdbDevice target); recording skipped",
-                    type(target).__name__,
-                )
-                return False
-        else:
-            region: tuple[int, int, int, int] | None = None
-            if window is None and target is not None and self._record_window:
-                # Default: crop a desktop grab to the window's visible rect (GPU/game
-                # safe). Fall back to legacy per-window capture when forced via
-                # QIRA_RECORD_WINDOW_NATIVE or when the rect can't be resolved
-                # (non-Windows, no hwnd, DWM off).
-                if not self._record_window_native:
-                    region = self._resolve_window_region(target)
-                if region is None:
-                    window = self._resolve_window_target(target)
-            audio_spec = audio if audio is not None else self._record_audio
-            recorder = ScreenRecorder(
-                output,
-                fps=fps if fps is not None else self._record_fps,
-                window=window,
-                region=region,
-                audio=audio_spec,
-                audio_offset=self._record_audio_offset,
-            )
-        started = recorder.start()
-        self._recorder = recorder if started else None
-        if started:
-            # A restart overwrites recording.mp4 from scratch, so the anchor
-            # moves with it.
-            self._record_started_ts = time.time()
-        return started
+        return self._recording.start(fps=fps, target=target, window=window, audio=audio)
 
     def stop_recording(self) -> str | None:
         """Stop the current recording and return the saved path (or ``None``).
 
         A no-op returning ``None`` when nothing is recording.
         """
-        if self._recorder is None:
-            return None
-        recorder = self._recorder
-        self._recorder = None
-        try:
-            return recorder.stop()
-        except Exception:
-            logger.debug("failed to stop recording", exc_info=True)
-            return None
+        return self._recording.stop()
 
     def launch_app(self, app: str, *, wait: float = 2.0) -> None:
         """Launch (or activate) a desktop application before driving it.
@@ -1844,57 +1605,24 @@ class Qirabot:
         decision: str = "",
         coord_scale: float = 1.0,
     ) -> dict[str, Any] | None:
-        """Save the screenshot (if reporting) and append a step to the timeline.
+        """Append one step to the run timeline (see RunTimeline.record_step).
 
-        Returns the appended log entry so the caller can backfill fields that
-        only become known after recording (e.g. an action's execution result),
-        or ``None`` when reporting is off and nothing was recorded.
-
-        ``assert`` actions (verify / wait_for polls) are recorded like any other
-        step: the server keeps them anyway, and the poll frames are the key
-        evidence when a ``wait_for`` times out.
+        Kept as the client-level funnel so a test/caller can intercept every
+        recorded step in one place.
         """
-        # Reporting off → zero overhead.
-        if not self._report:
-            return None
-        # Annotation + thumbnailing share a single PIL decode; never let a
-        # malformed/unexpected screenshot break the actual action — degrade to
-        # the raw bytes / no thumbnail instead.
-        annotated = data
-        thumb = ""
-        if data:
-            try:
-                annotated, thumb = _render_step_images(
-                    data,
-                    coords,
-                    self._screenshot_config,
-                    end_coords=end_coords,
-                    coord_scale=coord_scale,
-                )
-            except Exception:
-                logger.debug("render step images failed", exc_info=True)
-        frame = self._save_frame(annotated, action_type or "action") if data else None
-        entry: dict[str, Any] = {
-            "section": self._current_section,
-            "ts": time.time(),
-            "action_type": action_type or "",
-            "params": params or {},
-            "decision": decision or "",
-            "output": output or "",
-            "finished": bool(finished),
-            "success": bool(success),
-            "coords": list(coords) if coords else None,
-            # relative to report_dir so the html can link it directly
-            "screenshot": f"screenshots/{frame.name}" if frame else "",
-            "thumb": thumb,
-        }
-        # warn marks a truncation (max steps), not a failure — the report
-        # renders it amber instead of red. Only set when true to keep the log
-        # lean and older entries unchanged.
-        if warn:
-            entry["warn"] = True
-        self._log.append(entry)
-        return entry
+        return self._timeline.record_step(
+            data,
+            action_type,
+            params,
+            coords,
+            end_coords=end_coords,
+            output=output,
+            finished=finished,
+            success=success,
+            warn=warn,
+            decision=decision,
+            coord_scale=coord_scale,
+        )
 
     def _record_local_step(
         self,
@@ -1906,10 +1634,9 @@ class Qirabot:
         """Record a deterministic (non-AI) action in the local report.
 
         Primitives like :meth:`press_key` / :meth:`scroll` drive the adapter
-        directly and bypass ``/act``, so the server never sees them and they
-        were previously invisible in the report. Capture a post-action
-        screenshot and append a step, mirroring what :meth:`_ai_action` does
-        for AI actions. Best-effort: reporting off → zero overhead, and a
+        directly with no AI call, so nothing else records them and they would
+        be invisible in the report. Capture a post-action screenshot and
+        append a step, mirroring what :meth:`_ai_action` does for AI actions. Best-effort: reporting off → zero overhead, and a
         failure to capture or persist the frame must never break the action
         itself — recording is a side channel, not part of the operation.
 
@@ -1918,7 +1645,7 @@ class Qirabot:
         reporting-off early return — the glow is not a reporting feature).
         """
         self._pulse_edge_glow(adapter)
-        if not self._report:
+        if not self._timeline.enabled:
             return
         try:
             data = adapter.screenshot(self._screenshot_config)
@@ -1938,19 +1665,6 @@ class Qirabot:
         except Exception:
             logger.debug("local step recording failed", exc_info=True)
 
-    def _save_frame(self, data: bytes, label: str) -> Path | None:
-        """Write a full-resolution screenshot to ``report_dir/screenshots/``."""
-        if not self._report:
-            return None
-        dir_path = self._report_dir / "screenshots"
-        dir_path.mkdir(parents=True, exist_ok=True)
-        self._screenshot_counter += 1
-        filename = f"{self._screenshot_counter:03d}_{label}.{self._screenshot_config.extension}"
-        path = dir_path / filename
-        path.write_bytes(data)
-        logger.debug("screenshot saved: %s", path)
-        return path
-
     def current_page(self, target: Any) -> Any:
         """Return the actual current page/target (may differ from the original after tab switches)."""
         return self._result(self._get_adapter(target))
@@ -1964,9 +1678,9 @@ class Qirabot:
             self._cache_adapter(target, adapter)
         # Deferred recording start for record_window mode: the first action to
         # supply a target lets us resolve the window to follow. Cheap no-op once
-        # started/claimed (and re-entrancy-safe via _record_pending).
-        if self._record_pending:
-            self._maybe_start_recording(target)
+        # started/claimed (and re-entrancy-safe via the manager's pending flag).
+        if self._recording.pending:
+            self._recording.maybe_start(target)
         return adapter
 
     def _cache_adapter(self, target: Any, adapter: DeviceAdapter) -> None:
@@ -2013,7 +1727,7 @@ class Qirabot:
         language: str = "",
         execute_result: bool = True,
         retry: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> _SingleAction:
         """Run a single AI action through the local engine, retrying
         retryable failures (the engine's provider layer already retries
         transport blips; this loop only catches errors surfaced as retryable
@@ -2047,53 +1761,140 @@ class Qirabot:
         thinking_level: str = "",
         language: str = "",
         execute_result: bool = True,
-    ) -> dict[str, Any]:
-        """Single attempt of an AI action request."""
+    ) -> _SingleAction:
+        """Single attempt of an AI action: one typed engine call.
+
+        Every one-shot AI call funnels through here — AI-located actions
+        (click/type_text/…), verify/extract/locate — so this is the one
+        place their usage reaches the session totals. Failed calls (each
+        retry attempt lands here again) keep their tokens, just not a step.
+        """
         adapter = self._get_adapter(target)
         screenshot_bytes = adapter.screenshot(self._screenshot_config)
         device_info = adapter.device_info()
-
-        request_body: dict[str, Any] = {
-            "action": action,
-            "device_info": device_info.to_dict(),
-        }
         tl = thinking_level or self._thinking_level
-        if tl:
-            request_body["thinking_level"] = tl
         lang = language or self._language
-        if lang:
-            request_body["language"] = lang
+        action_type = str(action.get("type") or "")
+        params: dict[str, Any] = dict(action.get("params") or {})
 
-        result = self._backend.act(
-            screenshot_bytes, request_body, self._screenshot_config.mime_type
-        )
+        if action_type == "extract":
+            try:
+                extracted = self._backend.extract(
+                    screenshot_bytes,
+                    params.get("instruction", ""),
+                    platform=device_info.platform,
+                    language=lang,
+                    thinking_level=tl,
+                )
+            except ValueError as e:
+                raise ActionError(f"AI extract failed: {e}") from e
+            except ProviderError as e:
+                raise ActionError(str(e)) from e
+            self._timeline.add_step_usage(extracted.token_usage, llm_ms=extracted.llm_ms)
+            result = _SingleAction(
+                action_type="",
+                params=params,
+                output=extracted.result,
+                finished=True,
+                usage=extracted.token_usage,
+            )
+        elif action_type in ("assert", "wait_for"):
+            # The SDK itself always sends "assert" (wait_for polls via
+            # verify); "wait_for" is accepted as a legacy alias.
+            condition = params.get("assertion") or params.get("condition") or ""
+            try:
+                checked = self._backend.check_condition(
+                    screenshot_bytes,
+                    condition,
+                    platform=device_info.platform,
+                    language=lang,
+                    thinking_level=tl,
+                )
+            except ValueError as e:
+                raise ActionError(f"AI condition check failed: {e}") from e
+            except ProviderError as e:
+                raise ActionError(str(e)) from e
+            self._timeline.add_step_usage(checked.token_usage, llm_ms=checked.llm_ms)
+            # finished carries the verdict — an unmet condition is a valid
+            # result, not a failure; wait_for's polling depends on this.
+            result = _SingleAction(
+                action_type="",
+                params=params,
+                output=checked.reasoning,
+                finished=checked.met,
+                usage=checked.token_usage,
+            )
+        else:
+            # Everything else resolves an element with one VLM locate call:
+            # click/double_click/type_text/…/locate.
+            try:
+                located = self._backend.locate(
+                    screenshot_bytes,
+                    params.get("locate", ""),
+                    language=lang,
+                    thinking_level=tl,
+                )
+            except ValueError as e:
+                raise ActionError(str(e)) from e
+            if not located.found:
+                self._timeline.add_tokens(located.token_usage, llm_ms=located.llm_ms)
+                raise ActionError(located.error)
+            self._timeline.add_step_usage(located.token_usage, llm_ms=located.llm_ms)
+            params["x"] = located.x
+            params["y"] = located.y
+            result = _SingleAction(
+                action_type=action_type,
+                params=params,
+                finished=True,
+                usage=located.token_usage,
+            )
 
-        # Every one-shot AI call funnels through here — AI-located actions
-        # (click/type_text/…), verify/extract/locate — so this is the one
-        # place their usage reaches the session totals. Failed calls (each
-        # retry attempt lands here again) keep their tokens, just not a step.
-        if not result.get("success"):
-            self._accumulate_tokens(result)
-            raise ActionError(result.get("error", "AI request failed"))
-        self._accumulate_stats(result)
-
-        coords = _extract_coords(result.get("params"))
+        coords = _extract_coords(result.params)
         self._record_step(
             screenshot_bytes,
-            result.get("actionType") or action.get("type", "action"),
-            result.get("params") or action.get("params") or {},
+            result.action_type or action_type or "action",
+            result.params,
             coords,
-            end_coords=_extract_end_coords(result.get("params")),
-            output=result.get("output", ""),
-            finished=result.get("finished", False),
-            success=result.get("success", True),
+            end_coords=_extract_end_coords(result.params),
+            output=result.output,
+            finished=result.finished,
             coord_scale=adapter.annotation_scale(),
         )
 
-        if execute_result and result.get("actionType"):
-            self._execute_action(adapter, result)
+        if execute_result and result.action_type:
+            self._execute_action(adapter, result.action_type, result.params)
 
         return result
+
+    # -- overlay integration ---------------------------------------------
+    # The overlay is optional and must never break a run (its own contract),
+    # so every touchpoint funnels through these guards instead of scattering
+    # `if self._overlay is not None` checks over the action paths.
+
+    def _overlay_begin(self, instruction: str, target: Any) -> None:
+        """Start-of-run overlay state: headline + edge glow when applicable.
+
+        Edge glow only when the run takes over the REAL mouse/keyboard
+        (desktop backends): the "hands off" signal would be a lie for
+        remote-protocol targets. Adapter resolution can fail for a bad
+        target — the ai() loop surfaces that; the overlay never does.
+        """
+        if self._overlay is None:
+            return
+        edge_glow = False
+        try:
+            edge_glow = bool(self._get_adapter(target).controls_user_input)
+        except Exception:
+            pass
+        self._overlay.begin(instruction, edge_glow=edge_glow)
+
+    def _overlay_step(self, step_result: StepResult, max_steps: int) -> None:
+        if self._overlay is not None:
+            self._overlay.step(step_result, max_steps)
+
+    def _overlay_finish(self, success: bool, message: str) -> None:
+        if self._overlay is not None:
+            self._overlay.finish(success, message)
 
     def _raise_if_user_abort(self) -> None:
         """End the run if the user hit the kill switch (ESC held while the
@@ -2122,9 +1923,9 @@ class Qirabot:
             except Exception:
                 pass
 
-    def _execute_action(self, adapter: DeviceAdapter, resp_action: dict[str, Any]) -> None:
-        action_type = resp_action.get("actionType", "")
-        params = resp_action.get("params", {})
+    def _execute_action(
+        self, adapter: DeviceAdapter, action_type: str, params: dict[str, Any]
+    ) -> None:
         self._pulse_edge_glow(adapter)
         adapter.execute(action_type, params)
 
@@ -2168,12 +1969,12 @@ class Qirabot:
         …) are never blocked — they are the script's own explicit actions,
         e.g. cleanup after the abort.
 
-        Note: the task's server-side terminal state was already recorded as
-        ``cancelled`` at the moment of the abort; clearing does not undo that.
+        Note: the run's outcome was already recorded as ``cancelled`` at the
+        moment of the abort; clearing does not undo that.
         """
         self._user_aborted = False
         if self._overlay is not None:
-            self._overlay._abort_event.clear()
+            self._overlay.clear_abort()
 
     def report(self, path: str | None = None) -> Path | None:
         """Write the run report HTML now and return its path.
@@ -2186,35 +1987,38 @@ class Qirabot:
         return self._write_report(out)
 
     def _write_report(self, out: Path | None = None) -> Path | None:
-        if not self._report or not self._log:
+        if not self.will_write_report:
             return None
+        # Deferred import: report rendering pulls in nothing heavy, but close()
+        # is the only caller and the direct module path skips the package root.
         from qirabot import report as _report
 
         out = out or (self._report_dir / "report.html")
         mp4 = self._report_dir / "recording.mp4"
         recording = "recording.mp4" if (mp4.exists() and mp4.stat().st_size > 0) else ""
-        still_recording = self._recorder is not None and self._recorder.active
+        still_recording = self._recording.active
         record_error = ""
-        if self._record and not recording and not still_recording:
+        if self._recording.cfg.record and not recording and not still_recording:
             record_error = (
                 "Recording was requested but not produced — is ffmpeg installed? "
                 "(see recording.ffmpeg.log)"
             )
+        timeline = self._timeline
         try:
             _report.write_html(
-                self._log,
+                timeline.entries,
                 out,
                 title=self._task_name or "",
                 task_id=self._task_id or "",
-                outcomes=self._section_outcomes,
-                section_errors=self._section_errors,
+                outcomes=timeline.section_outcomes,
+                section_errors=timeline.section_errors,
                 recording=recording,
-                recording_start=self._record_started_ts if recording else 0.0,
+                recording_start=self._recording.started_ts if recording else 0.0,
                 record_error=record_error,
                 # total_steps drives the stats line's headline count; with the
-                # synthetic entries gone and local steps synced, len(_log)
-                # matches the server's step count.
-                stats={**self._stats, "total_steps": len(self._log)},
+                # synthetic entries gone and local steps recorded, the entry
+                # count is exactly the steps that ran.
+                stats={**timeline.stats, "total_steps": len(timeline.entries)},
                 model=self._backend.model_label,
             )
             logger.info("report written: %s", out)
@@ -2246,11 +2050,10 @@ class Qirabot:
             # Finalize any in-progress screen recording first so the mp4 is
             # complete on disk (moov atom flushed) when _write_report scans
             # report_dir for it.
-            if self._recorder is not None:
-                try:
-                    self.stop_recording()
-                except BaseException:
-                    logger.debug("recording teardown interrupted", exc_info=True)
+            try:
+                self._recording.stop()
+            except BaseException:
+                logger.debug("recording teardown interrupted", exc_info=True)
             # Emit the run report before tearing down. Runs on normal exit,
             # exception (via __exit__), and atexit.
             try:
@@ -2314,11 +2117,6 @@ class Qirabot:
         self.close()
 
 
-def _env_truthy(value: str) -> bool:
-    """Parse a boolean-ish env var value (``1``/``true``/``yes``/``on``)."""
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _extract_coords(params: dict[str, Any] | None) -> tuple[float, float] | None:
     if not params:
         return None
@@ -2343,101 +2141,3 @@ def _extract_end_coords(
     return None
 
 
-def _render_step_images(
-    data: bytes,
-    coords: tuple[float, float] | None,
-    config: ScreenshotConfig | None = None,
-    *,
-    end_coords: tuple[float, float] | None = None,
-    coord_scale: float = 1.0,
-    thumb_max_edge: int = 800,
-    thumb_quality: int = 60,
-) -> tuple[bytes, str]:
-    """Decode the screenshot once → (full-res encoded bytes, thumbnail data URI).
-
-    Annotates a crosshair at ``coords`` when given and ``config.annotate`` is on;
-    otherwise the full-res output is just the source re-encoded in the configured
-    format. ``end_coords`` is drag's terminal point — when set, a line + arrow is
-    drawn from ``coords`` to it and a hollow ring marks the end. ``coord_scale``
-    maps the model's coordinate space onto the screenshot pixel space — 1.0
-    everywhere except Appium iOS, where coords arrive in logical points and the
-    screenshot is at physical Retina pixels. The thumbnail is always a downscaled
-    JPEG embedded as a data URI so the HTML report stays self-contained.
-    """
-    import base64
-    import math
-
-    from PIL import Image, ImageDraw
-
-    cfg = config or ScreenshotConfig()
-    img: Image.Image = Image.open(io.BytesIO(data))
-
-    if coords is not None and cfg.annotate:
-        img = img.convert("RGBA")
-        draw = ImageDraw.Draw(img)
-        color = (255, 0, 0, 255)
-        short_side = min(img.width, img.height)
-        radius = max(4, round(short_side * 0.015))
-        line_len = int(radius * 1.5)
-        width = 3 if short_side > 2000 else 2
-        gap = radius + 2
-        cx, cy = int(coords[0] * coord_scale), int(coords[1] * coord_scale)
-        draw.ellipse(
-            [cx - radius, cy - radius, cx + radius, cy + radius],
-            outline=color, width=width,
-        )
-        draw.line([(cx - gap - line_len, cy), (cx - gap, cy)], fill=color, width=width)
-        draw.line([(cx + gap, cy), (cx + gap + line_len, cy)], fill=color, width=width)
-        draw.line([(cx, cy - gap - line_len), (cx, cy - gap)], fill=color, width=width)
-        draw.line([(cx, cy + gap), (cx, cy + gap + line_len)], fill=color, width=width)
-
-        if end_coords is not None:
-            ex, ey = int(end_coords[0] * coord_scale), int(end_coords[1] * coord_scale)
-            dx, dy = ex - cx, ey - cy
-            dist = math.hypot(dx, dy)
-            # Skip degenerate drags (start == end) — a zero-length arrow would
-            # just draw an artifact on top of the start cross.
-            if dist >= 1:
-                ux, uy = dx / dist, dy / dist
-                # Stop the shaft outside the end ring so they don't overlap.
-                sx = cx + int(ux * (radius + gap))
-                sy = cy + int(uy * (radius + gap))
-                tx = ex - int(ux * (radius + gap))
-                ty = ey - int(uy * (radius + gap))
-                draw.line([(sx, sy), (tx, ty)], fill=color, width=width)
-                # Arrowhead: two short segments rotated ±25° back from the tip.
-                head_len = max(8, radius * 2)
-                angle = math.atan2(uy, ux)
-                for offset in (math.radians(150), math.radians(-150)):
-                    hx = tx + int(math.cos(angle + offset) * head_len)
-                    hy = ty + int(math.sin(angle + offset) * head_len)
-                    draw.line([(tx, ty), (hx, hy)], fill=color, width=width)
-                # Hollow end ring, same radius as the start cross's circle so the
-                # two endpoints read as a matched pair.
-                draw.ellipse(
-                    [ex - radius, ey - radius, ex + radius, ey + radius],
-                    outline=color, width=width,
-                )
-
-    # Full-res output in the configured format (jpeg has no alpha channel, so
-    # flatten RGBA → RGB first).
-    full_buf = io.BytesIO()
-    if cfg.format == "jpeg":
-        img.convert("RGB").save(full_buf, format="JPEG", quality=cfg.quality)
-    else:
-        img.save(full_buf, format="PNG")
-    full_bytes = full_buf.getvalue()
-
-    # Thumbnail derived from the same in-memory image — no second decode.
-    thumb_img = img if img.mode == "RGB" else img.convert("RGB")
-    longest = max(thumb_img.width, thumb_img.height)
-    if longest > thumb_max_edge:
-        scale = thumb_max_edge / longest
-        thumb_img = thumb_img.resize(
-            (max(1, round(thumb_img.width * scale)), max(1, round(thumb_img.height * scale)))
-        )
-    thumb_buf = io.BytesIO()
-    thumb_img.save(thumb_buf, format="JPEG", quality=thumb_quality)
-    thumb_b64 = "data:image/jpeg;base64," + base64.b64encode(thumb_buf.getvalue()).decode("ascii")
-
-    return full_bytes, thumb_b64

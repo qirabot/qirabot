@@ -1,11 +1,9 @@
-"""Custom tools: definition building, wire registration, dispatch, feedback.
+"""Custom tools: definition building, run registration, dispatch, feedback.
 
-The loop tests cover the CLIENT pipeline only — the outbound step-1 ai params
-and the registration-echo log behavior. The engine-side echoing itself is
-covered in tests/engine/test_local_backend.py.
+The loop tests cover the CLIENT pipeline only — what gets registered on
+start_ai and how tool results feed back into the next step. Engine-side
+validation/behavior is covered in tests/engine/test_local_backend.py.
 """
-
-import logging
 
 import pytest
 
@@ -127,9 +125,10 @@ class TestBuildToolDefs:
 class _ToolLoopHarness:
     """Drives the ai() loop against scripted FakeBackend responses.
 
-    Outbound request bodies are read back from the FakeBackend's captured
-    ``requests`` via :attr:`bodies`. The adapter must never execute a custom
-    tool step, so ``_execute_action`` is rigged to raise.
+    The registration passed to the engine is read back from the FakeBackend's
+    ``start_calls``; per-step feedback from ``requests``/:attr:`bodies`. The
+    adapter must never execute a custom tool step, so ``_execute_action`` is
+    rigged to raise.
     """
 
     def __init__(self, responses, *, report=False):
@@ -151,36 +150,32 @@ DONE = {
 }
 
 
-def _tool_step(name="gm_command", params=None, registration=True):
-    resp = {
+def _tool_step(name="gm_command", params=None):
+    return {
         "success": True, "finished": False,
         "actionType": name, "params": params or {"command": "add_energy 100"},
     }
-    if registration:
-        resp["tool_registration"] = {"registered": [name], "excluded": []}
-    return resp
 
 
 class TestAiLoopCustomTools:
-    def test_first_request_registers_tools(self):
+    def test_run_registers_tools_once(self):
         h = _ToolLoopHarness([_tool_step(), DONE])
         h.bot.ai(object(), "do it", max_steps=3, custom_tools=[gm_command], exclude_tools=["scroll"])
         h.bot.close()
 
-        params = h.bodies[0]["action"]["params"]
-        assert params["custom_tools"][0]["name"] == "gm_command"
-        assert params["exclude_tools"] == ["scroll"]
-        # Continuation steps carry an empty ai envelope — tools ride on step 1 only.
-        assert h.bodies[1]["action"] == {"type": "ai", "params": {}}
+        # Tools/excludes ride on the run registration, not on any step.
+        (start,) = h.bot._backend.start_calls
+        assert start["custom_tools"][0]["name"] == "gm_command"
+        assert start["exclude_tools"] == ["scroll"]
 
-    def test_no_tools_means_no_keys(self):
+    def test_no_tools_registers_nothing(self):
         h = _ToolLoopHarness([DONE])
         h.bot.ai(object(), "do it", max_steps=3)
         h.bot.close()
 
-        params = h.bodies[0]["action"]["params"]
-        assert "custom_tools" not in params
-        assert "exclude_tools" not in params
+        (start,) = h.bot._backend.start_calls
+        assert start["custom_tools"] == []
+        assert start["exclude_tools"] == []
 
     def test_dispatch_and_result_feedback(self):
         h = _ToolLoopHarness([_tool_step(), DONE])
@@ -188,7 +183,7 @@ class TestAiLoopCustomTools:
         h.bot.close()
 
         # The handler ran (adapter execute would have raised) and its return
-        # value came back as the next request's action_result.
+        # value came back as the next step's action_result.
         assert h.bodies[1]["action_result"] == "executed add_energy 100"
 
     def test_none_return_reports_ok(self):
@@ -221,37 +216,9 @@ class TestAiLoopCustomTools:
         assert h.bodies[1]["action_result"].startswith("ERROR:")
         assert "GM backend unreachable" in h.bodies[1]["action_result"]
 
-    def test_old_server_warning(self, caplog):
-        # A successful step-1 response without the tool_registration echo means
-        # the backend ignored the tools param.
-        h = _ToolLoopHarness([
-            {"success": True, "finished": True, "actionType": "done",
-             "params": {"result": "done", "success": True}, "output": "done"},
-        ])
-        with caplog.at_level(logging.WARNING, logger="qirabot"):
-            h.bot.ai(object(), "do it", max_steps=3, custom_tools=[gm_command])
+    def test_invalid_tools_raise_before_any_step(self):
+        h = _ToolLoopHarness([DONE])
+        with pytest.raises(ValueError, match="lambdas"):
+            h.bot.ai(object(), "do it", max_steps=3, custom_tools=[lambda x: x])
         h.bot.close()
-        assert any("does not support custom_tools" in r.getMessage() for r in caplog.records)
-
-    def test_no_false_warning_when_echoed(self, caplog):
-        done = dict(DONE)
-        done["tool_registration"] = {"registered": ["gm_command"], "excluded": []}
-        h = _ToolLoopHarness([done])
-        with caplog.at_level(logging.INFO, logger="qirabot"):
-            h.bot.ai(object(), "do it", max_steps=3, custom_tools=[gm_command])
-        h.bot.close()
-        assert not any("does not support" in r.getMessage() for r in caplog.records)
-        assert any("custom tools registered" in r.getMessage() for r in caplog.records)
-
-    def test_server_warning_logged(self, caplog):
-        done = dict(DONE)
-        done["tool_registration"] = {"registered": ["gm_command"], "excluded": []}
-        done["warning"] = (
-            "custom_tools/exclude_tools already registered for this session; "
-            "incoming values ignored"
-        )
-        h = _ToolLoopHarness([done])
-        with caplog.at_level(logging.WARNING, logger="qirabot"):
-            h.bot.ai(object(), "do it", max_steps=3, custom_tools=[gm_command])
-        h.bot.close()
-        assert any("already registered" in r.getMessage() for r in caplog.records)
+        assert h.bodies == []  # nothing reached the engine

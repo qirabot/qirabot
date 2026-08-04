@@ -1,17 +1,16 @@
 """Unit tests for the bot.ai() knowledge= resolver (``qirabot._knowledge``)
-plus the wire/echo behavior in the ai() loop.
+plus its registration in the ai() loop.
 
 Everything is client-side and offline: the resolver turns str/Path/list input
 into the plain text sent to the engine, and every failure mode must raise
-``ValueError`` before any request goes out. The loop tests reuse the scripted
-harness from test_custom_tools — knowledge shares the same first-request
-registration and missing-echo-detection contract as tools. Engine-side echo
-behavior lives in tests/engine/test_local_backend.py, not here.
+``ValueError`` before any engine call goes out. The loop tests reuse the
+scripted harness from test_custom_tools — knowledge shares the same
+run-registration contract as tools. Engine-side validation lives in
+tests/engine/test_local_backend.py, not here.
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import pytest
@@ -91,37 +90,25 @@ def test_limit_counts_utf8_bytes_not_chars():
 
 
 class TestAiLoopKnowledge:
-    def test_first_request_carries_knowledge(self):
-        done = dict(DONE)
-        done["knowledge_registered"] = 15
-        h = _ToolLoopHarness([done])
+    def test_run_registers_knowledge(self):
+        h = _ToolLoopHarness([DONE])
         h.bot.ai(object(), "do it", max_steps=3, knowledge="GM 只能使用一次")
         h.bot.close()
 
-        assert h.bodies[0]["action"]["params"]["knowledge"] == "GM 只能使用一次"
+        (start,) = h.bot._backend.start_calls
+        assert start["knowledge"] == "GM 只能使用一次"
 
-    def test_no_knowledge_means_no_key(self):
+    def test_no_knowledge_registers_empty(self):
         h = _ToolLoopHarness([DONE])
         h.bot.ai(object(), "do it", max_steps=3)
         h.bot.close()
 
-        assert "knowledge" not in h.bodies[0]["action"]["params"]
+        (start,) = h.bot._backend.start_calls
+        assert start["knowledge"] == ""
 
-    def test_old_server_warning(self, caplog):
-        # A successful step-1 response without the knowledge_registered echo
-        # means the backend ignored the knowledge param.
+    def test_resolver_failure_raises_before_any_step(self, tmp_path: Path):
         h = _ToolLoopHarness([DONE])
-        with caplog.at_level(logging.WARNING, logger="qirabot"):
-            h.bot.ai(object(), "do it", max_steps=3, knowledge="规则文本")
+        with pytest.raises(ValueError, match="cannot read"):
+            h.bot.ai(object(), "do it", max_steps=3, knowledge=tmp_path / "nope.md")
         h.bot.close()
-        assert any("does not support knowledge" in r.getMessage() for r in caplog.records)
-
-    def test_no_false_warning_when_echoed(self, caplog):
-        done = dict(DONE)
-        done["knowledge_registered"] = 12
-        h = _ToolLoopHarness([done])
-        with caplog.at_level(logging.INFO, logger="qirabot"):
-            h.bot.ai(object(), "do it", max_steps=3, knowledge="规则文本")
-        h.bot.close()
-        assert not any("does not support" in r.getMessage() for r in caplog.records)
-        assert any("knowledge registered: 12 bytes" in r.getMessage() for r in caplog.records)
+        assert h.bot._backend.start_calls == []  # nothing reached the engine

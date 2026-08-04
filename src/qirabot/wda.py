@@ -3,7 +3,7 @@
 :class:`WdaClient` is the SDK-level target for driving an iOS device whose
 WebDriverAgent is already running (USB real device: ``iproxy 8100 8100``)::
 
-    bot.run("...", target=WdaClient("http://127.0.0.1:8100"))
+    bot.ai(WdaClient("http://127.0.0.1:8100"), "...")
 
 qirabot needs ~10 of WDA's endpoints — screenshot, tap/swipe, keys, buttons,
 window size — all stable for years (they are what Appium's XCUITest driver

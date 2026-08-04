@@ -8,7 +8,7 @@ from typing import Any
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo, ScreenshotConfig, split_combo
 
 # Wire key names -> pyautogui key names. pyautogui's keys are lowercase and use
-# short forms (esc, down, pageup), so the server's CamelCase/Arrow* names must be
+# short forms (esc, down, pageup), so the engine's CamelCase/Arrow* names must be
 # translated or press()/hotkey() silently no-op on an unknown key name.
 _PYAUTOGUI_KEYS = {
     "enter": "enter", "return": "enter", "escape": "esc", "esc": "esc",
@@ -86,16 +86,7 @@ class PyAutoGuiAdapter(DeviceAdapter):
     def screenshot(self, config: ScreenshotConfig | None = None) -> bytes:
         cfg = config or ScreenshotConfig()
         img = self._pag.screenshot()
-        import io
-        buf = io.BytesIO()
-        kwargs: dict[str, Any] = {"format": cfg.format}
-        if cfg.format == "jpeg":
-            kwargs["quality"] = cfg.quality
-            # JPEG has no alpha channel; screenshots are often RGBA (e.g. macOS).
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-        img.save(buf, **kwargs)
-        return buf.getvalue()
+        return self._encode_image(img, cfg)
 
     def click(self, x: float, y: float) -> None:
         lx, ly = self._to_logical(x, y)
@@ -231,7 +222,7 @@ class PyAutoGuiAdapter(DeviceAdapter):
         return notches  # X11: one button-4/5 click per notch
 
     def scroll(self, x: float, y: float, direction: str, distance: int) -> None:
-        # The server's plain `scroll` sends no x/y, so they arrive as 0 and the
+        # The engine's plain `scroll` sends no x/y, so they arrive as 0 and the
         # scroll would anchor at the top-left corner (menu bar / non-scrollable
         # region) and do nothing. Fall back to the screen center, matching the
         # default anchor used elsewhere.
@@ -254,12 +245,6 @@ class PyAutoGuiAdapter(DeviceAdapter):
             self._pag.hscroll(-clicks, x=lx, y=ly)
         elif direction == "right":
             self._pag.hscroll(clicks, x=lx, y=ly)
-
-    # Actions that don't change the screen (or handle their own timing), so the
-    # next screenshot needs no settle delay after them. hover is deliberately NOT
-    # here: its whole purpose is to reveal delayed UI (tooltips/submenus), so it
-    # needs the settle more than most actions, not less.
-    _NO_SETTLE = frozenset({"wait", "done", "save_note"})
 
     # Desktop UI (scroll inertia, window transitions) needs a generous floor; see
     # ``DeviceAdapter.settle_seconds`` for the rationale and override mechanism.

@@ -54,7 +54,8 @@ import sys
 import threading
 import time
 import urllib.request
-from typing import IO, Any, Protocol
+from dataclasses import dataclass
+from typing import IO, Any, Callable, Protocol
 
 logger = logging.getLogger("qirabot")
 
@@ -808,3 +809,258 @@ def record(
         audio=audio,
         audio_offset=audio_offset,
     )
+
+
+def _env_truthy(value: str) -> bool:
+    """Parse a boolean-ish env var value (``1``/``true``/``yes``/``on``)."""
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass
+class RecordConfig:
+    """Recording settings after merging constructor args with the QIRA_* env.
+
+    Built once by :meth:`resolve`; the manager below reads it, the client
+    never touches the individual flags again.
+    """
+
+    record: bool = False
+    fps: int = 12
+    # Windows-only extras: follow the window under test (resolved lazily from
+    # the first action's target) and capture system audio. By default
+    # record-window crops a desktop grab to the window's visible rect (works
+    # for GPU/game windows the per-window path renders black);
+    # ``window_native`` forces the legacy gdigrab per-window mode, which can
+    # follow a background/occluded *non-GPU* window but goes black on games.
+    window: bool = False
+    window_native: bool = False
+    audio: bool | str = False
+    audio_offset: float | None = None
+    # Record an MJPEG stream (WDA's device-screen stream, port 9100) instead
+    # of the host screen — the only way recording can capture an iOS device's
+    # screen rather than the desktop the SDK runs on.
+    mjpeg_url: str | None = None
+    # Record the automated device's own screen: the recorder is picked from
+    # the first action's target (Appium driver → session recording API;
+    # AdbDevice → adb screenrecord), so the start is deferred like window's.
+    device: bool = False
+
+    @classmethod
+    def resolve(
+        cls,
+        *,
+        record: bool = False,
+        fps: int = 12,
+        window: bool = False,
+        audio: bool | str = False,
+        audio_offset: float | None = None,
+        mjpeg_url: str | None = None,
+        device: bool = False,
+    ) -> "RecordConfig":
+        """Merge explicit arguments with their QIRA_* env fallbacks.
+
+        Raises ``ValueError`` for an unparsable ``QIRA_AUDIO_OFFSET``.
+        """
+        if audio_offset is None:
+            env_off = os.environ.get("QIRA_AUDIO_OFFSET", "")
+            if env_off:
+                try:
+                    audio_offset = float(env_off)
+                except ValueError:
+                    raise ValueError(
+                        f"QIRA_AUDIO_OFFSET must be a number, got {env_off!r}"
+                    )
+        return cls(
+            record=record or _env_truthy(os.environ.get("QIRA_RECORD", "")),
+            fps=fps,
+            window=window or _env_truthy(os.environ.get("QIRA_RECORD_WINDOW", "")),
+            window_native=_env_truthy(os.environ.get("QIRA_RECORD_WINDOW_NATIVE", "")),
+            audio=audio or _env_truthy(os.environ.get("QIRA_RECORD_AUDIO", "")),
+            audio_offset=audio_offset,
+            mjpeg_url=mjpeg_url or os.environ.get("QIRA_RECORD_MJPEG_URL", "") or None,
+            device=device or _env_truthy(os.environ.get("QIRA_RECORD_DEVICE", "")),
+        )
+
+
+class RecordingManager:
+    """One Qirabot session's recorder slot and auto/deferred start flow.
+
+    Owns everything ``Qirabot(record=...)`` implies: which :class:`Recorder`
+    implementation fills the slot (host screen / MJPEG stream / device
+    session), the deferred start for window/device modes (they need the first
+    action's target), and the re-entrancy guard that keeps the auto path and
+    manual ``start_recording()`` from ever spawning two ffmpegs. The client
+    only forwards its public start/stop calls and the per-action
+    :meth:`maybe_start` hook.
+    """
+
+    def __init__(
+        self,
+        cfg: RecordConfig,
+        *,
+        want_recording: bool = True,
+        output_dir: "Callable[[], str]",
+        window_info: "Callable[[Any], dict[str, Any] | None] | None" = None,
+    ) -> None:
+        """``output_dir`` is called lazily (the run directory is created on
+        first use); ``window_info`` resolves an action target to the client's
+        window metadata (title/hwnd) for window-following — any exception it
+        raises degrades to full-screen."""
+        self.cfg = cfg
+        self.recorder: Recorder | None = None
+        # Epoch time the current recording started; anchors the report's
+        # per-step video-seek offsets. 0.0 = no recording started this run.
+        self.started_ts = 0.0
+        # True while a recording is still owed: claimed (set False) right
+        # before a recorder starts, which also guards against re-entrancy when
+        # window-following resolves the target through the client's adapter
+        # lookup.
+        self.pending = (cfg.record or cfg.device or bool(cfg.mjpeg_url)) and want_recording
+        self._output_dir = output_dir
+        self._window_info = window_info
+
+    @property
+    def active(self) -> bool:
+        """True while a recorder is running."""
+        return self.recorder is not None and self.recorder.active
+
+    def maybe_start(self, target: Any = None) -> None:
+        """Auto-start when recording was requested.
+
+        Called once at client construction (no ``target``) and again on every
+        action (with the action's ``target``). Skipped once a recorder exists
+        or the slot has been claimed. In window/device mode the start is
+        deferred until an action supplies a ``target`` to resolve the
+        window/device from. Best-effort via :meth:`start` — a missing ffmpeg /
+        unsupported platform warns.
+        """
+        if self.recorder is not None or not self.pending:
+            return
+        if (self.cfg.window or self.cfg.device) and target is None and not self.cfg.mjpeg_url:
+            return  # defer: need a target to resolve the window/device from
+        # Claim the slot BEFORE starting so the adapter lookup made while
+        # resolving the window doesn't re-enter this and start a second ffmpeg.
+        self.pending = False
+        self.start(target=target)
+
+    def start(
+        self,
+        *,
+        fps: int | None = None,
+        target: Any = None,
+        window: str | None = None,
+        audio: bool | str | None = None,
+    ) -> bool:
+        """Start a recorder into ``<output_dir>/recording.mp4``.
+
+        Semantics documented on :meth:`qirabot.Qirabot.start_recording` (the
+        public wrapper). Idempotent while a recording runs; best-effort —
+        returns ``False`` and only warns when ffmpeg is missing or the
+        platform is unsupported.
+        """
+        if self.recorder is not None and self.recorder.active:
+            logger.info("recording already in progress; ignoring start_recording()")
+            return True
+        # Manual start also claims the slot so a later action's auto-start
+        # hook doesn't spawn a second recorder.
+        self.pending = False
+        output = os.path.join(self._output_dir(), "recording.mp4")
+        recorder: Recorder | None
+        if self.cfg.mjpeg_url:
+            # Device-screen stream (WDA MJPEG): window/region/audio are
+            # host-screen concepts and don't apply.
+            recorder = MjpegStreamRecorder(output, self.cfg.mjpeg_url)
+        elif self.cfg.device:
+            # Device-screen recording resolved from the action target (Appium
+            # driver / AdbDevice). Falling back to the host screen would
+            # record the wrong thing (the desktop the SDK runs on), so an
+            # unsupported target skips recording — the report then carries the
+            # requested-but-not-produced notice.
+            recorder = device_recorder(output, target)
+            if recorder is None:
+                logger.warning(
+                    "record: don't know how to record the device screen for %s "
+                    "(need an Appium driver or an AdbDevice target); recording skipped",
+                    type(target).__name__,
+                )
+                return False
+        else:
+            region: tuple[int, int, int, int] | None = None
+            if window is None and target is not None and self.cfg.window:
+                # Default: crop a desktop grab to the window's visible rect
+                # (GPU/game safe). Fall back to legacy per-window capture when
+                # forced via QIRA_RECORD_WINDOW_NATIVE or when the rect can't
+                # be resolved (non-Windows, no hwnd, DWM off).
+                if not self.cfg.window_native:
+                    region = self._resolve_window_region(target)
+                if region is None:
+                    window = self._resolve_window_target(target)
+            audio_spec = audio if audio is not None else self.cfg.audio
+            recorder = ScreenRecorder(
+                output,
+                fps=fps if fps is not None else self.cfg.fps,
+                window=window,
+                region=region,
+                audio=audio_spec,
+                audio_offset=self.cfg.audio_offset,
+            )
+        started = recorder.start()
+        self.recorder = recorder if started else None
+        if started:
+            # A restart overwrites recording.mp4 from scratch, so the anchor
+            # moves with it.
+            self.started_ts = time.time()
+        return started
+
+    def stop(self) -> str | None:
+        """Stop the current recording and return the saved path (or ``None``).
+
+        A no-op returning ``None`` when nothing is recording.
+        """
+        if self.recorder is None:
+            return None
+        recorder = self.recorder
+        self.recorder = None
+        try:
+            return recorder.stop()
+        except Exception:
+            logger.debug("failed to stop recording", exc_info=True)
+            return None
+
+    def _resolve_window_target(self, target: Any) -> str | None:
+        """Window title (or handle) to record for ``target``, or ``None``.
+
+        Reads the client-supplied ``window_info`` callback (only the Windows
+        window backend returns one); prefers the title, falls back to the
+        numeric handle. Any failure degrades to ``None`` (full-screen).
+        """
+        try:
+            info = self._window_info(target) if self._window_info else None
+        except Exception:
+            logger.debug("window_info() failed; recording full screen", exc_info=True)
+            return None
+        if not info:
+            return None
+        title = info.get("title")
+        if title:
+            return str(title)
+        hwnd = info.get("hwnd")
+        return str(hwnd) if hwnd is not None else None
+
+    def _resolve_window_region(self, target: Any) -> tuple[int, int, int, int] | None:
+        """Visible (x, y, w, h) of ``target``'s window for desktop-crop capture.
+
+        Resolves the ``window_info`` hwnd to its physical-px rect via
+        :func:`window_region`. Returns ``None`` (so the caller degrades to
+        per-window or full-screen) when there's no hwnd or the rect can't be
+        resolved.
+        """
+        try:
+            info = self._window_info(target) if self._window_info else None
+        except Exception:
+            logger.debug("window_info() failed; not using region capture", exc_info=True)
+            return None
+        hwnd = info.get("hwnd") if info else None
+        if hwnd is None:
+            return None
+        return window_region(int(hwnd))

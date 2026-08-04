@@ -37,7 +37,7 @@ All four take the instruction as the positional argument and share:
 | `-n/--name` | derived from the instruction (first line, ≤60 chars) | run name shown in the report |
 | `-m/--model` | env `QIRA_MODEL`, else the built-in default | `"{provider}/{model}"`, e.g. `gemini-vertex/gemini-3.6-flash` — providers listed by `qirabot models` |
 | `--thinking-level` | model's setting | thinking override: `minimal`/`low`/`medium`/`high` |
-| `--media-resolution` | env `QIRA_MEDIA_RESOLUTION`, else `high` | screenshot detail the model sees: `low`/`medium`/`high`/`ultra_high` (Gemini only) |
+| `--media-resolution` | env `QIRA_MEDIA_RESOLUTION`, else `high` | detail of the current screenshot the model sees: `low`/`medium`/`high`/`ultra_high` (Gemini only). History screenshots are always sent at `low` — they only confirm the previous action took effect |
 | `-l/--language` | engine default | e.g. `zh`, `en` |
 | `--max-steps` | `20` | AI step budget |
 | `--report/--no-report` | report | HTML run report |

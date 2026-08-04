@@ -144,6 +144,10 @@ class TestConversationMessages:
         # task, history screenshot, assistant tool_call, tool result, current screenshot
         assert [m.role for m in msgs] == ["user", "user", "assistant", "tool", "user"]
         assert msgs[1].images[0].mime_type == "image/jpeg"
+        # History screenshots are context only ("did the UI change?") — always
+        # low resolution. The current screenshot follows the task-level setting.
+        assert msgs[1].images[0].resolution == "low"
+        assert msgs[4].images[0].resolution == ""
         call = msgs[2].tool_calls[0]
         assert call.id == "click" and call.name == "click"
         # History replays the model's own normalized frame plus the reason.

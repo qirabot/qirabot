@@ -15,6 +15,7 @@ import pytest
 
 from tests.conftest import FakeBackend
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo, ScreenshotConfig
+from qirabot._annotate import render_step_images as _render_step_images
 from qirabot.client import (
     ExtractResult,
     LocateResult,
@@ -22,8 +23,10 @@ from qirabot.client import (
     StepResult,
     RunResult,
     VerifyResult,
-    _render_step_images,
+    _SingleAction,
 )
+from qirabot.engine.session import StepOutcome
+from qirabot.engine.types import TokenUsage
 from qirabot.exceptions import ActionError, AuthenticationError
 
 
@@ -62,17 +65,16 @@ class _SettleFakeAdapter(DeviceAdapter):
 
 
 class TestStepResult:
-    def test_from_dict(self):
-        data = {
-            "actionType": "click",
-            "params": {"x": 100, "y": 200},
-            "output": "clicked",
-            "finished": False,
-            "decision": "clicking the button",
-            "inputTokens": 500,
-            "outputTokens": 50,
-        }
-        s = StepResult.from_dict(data, step=3)
+    def test_from_outcome(self):
+        outcome = StepOutcome(
+            action_type="click",
+            params={"x": 100, "y": 200},
+            output="clicked",
+            finished=False,
+            decision="clicking the button",
+            token_usage=TokenUsage(input_tokens=500, output_tokens=50),
+        )
+        s = StepResult.from_outcome(outcome, step=3)
         assert s.step == 3
         assert s.action_type == "click"
         assert s.params == {"x": 100, "y": 200}
@@ -82,29 +84,29 @@ class TestStepResult:
         assert s.input_tokens == 500
         assert s.output_tokens == 50
 
-    def test_from_dict_empty(self):
-        s = StepResult.from_dict({}, step=1)
+    def test_from_outcome_empty(self):
+        s = StepResult.from_outcome(StepOutcome(), step=1)
         assert s.step == 1
         assert s.action_type == ""
         assert s.params == {}
         assert s.output == ""
         assert s.finished is False
 
-    def test_from_dict_finished(self):
-        s = StepResult.from_dict({"finished": True, "output": "done"}, step=5)
+    def test_from_outcome_finished(self):
+        s = StepResult.from_outcome(StepOutcome(finished=True, output="done"), step=5)
         assert s.finished is True
         assert s.output == "done"
 
 
 class TestVerifyResult:
-    def test_from_dict_passed(self):
-        r = VerifyResult.from_dict({
-            "finished": True,
-            "output": "the banner is visible",
-            "inputTokens": 500,
-            "outputTokens": 60,
-            "thinkingTokens": 20,
-        })
+    def test_passed(self):
+        r = VerifyResult(
+            passed=True,
+            reason="the banner is visible",
+            input_tokens=500,
+            output_tokens=60,
+            thinking_tokens=20,
+        )
         assert r.passed is True
         assert r.reason == "the banner is visible"
         assert r.input_tokens == 500
@@ -112,87 +114,60 @@ class TestVerifyResult:
         assert r.thinking_tokens == 20
 
     def test_bool_truthy_when_passed(self):
-        assert bool(VerifyResult.from_dict({"finished": True})) is True
-        assert VerifyResult.from_dict({"finished": True})  # usable in if/assert
+        assert bool(VerifyResult(passed=True)) is True
+        assert VerifyResult(passed=True)  # usable in if/assert
 
     def test_bool_falsy_when_failed(self):
-        r = VerifyResult.from_dict({"finished": False, "output": "no banner"})
+        r = VerifyResult(passed=False, reason="no banner")
         assert bool(r) is False
         assert not r
         assert r.reason == "no banner"  # reason still readable on a failed check
 
-    def test_from_dict_empty(self):
-        r = VerifyResult.from_dict({})
-        assert r.passed is False
-        assert r.reason == ""
-        assert r.input_tokens == 0
-
 
 class TestExtractResult:
     def test_is_str_subclass(self):
-        r = ExtractResult.from_dict({"output": "hello", "inputTokens": 10, "outputTokens": 5})
+        r = ExtractResult("hello", input_tokens=10, output_tokens=5)
         assert isinstance(r, str)
         assert r == "hello"
         assert r.upper() == "HELLO"
         assert r + "!" == "hello!"
 
     def test_carries_tokens(self):
-        r = ExtractResult.from_dict({
-            "output": "42",
-            "inputTokens": 700,
-            "outputTokens": 30,
-            "thinkingTokens": 8,
-        })
+        r = ExtractResult("42", input_tokens=700, output_tokens=30, thinking_tokens=8)
         assert r.input_tokens == 700
         assert r.output_tokens == 30
         assert r.thinking_tokens == 8
         assert float(r) == 42.0
 
-    def test_from_dict_empty(self):
-        r = ExtractResult.from_dict({})
+    def test_empty(self):
+        r = ExtractResult("")
         assert r == ""
         assert r.input_tokens == 0
         assert r.output_tokens == 0
 
 
 class TestLocateResult:
-    def test_from_dict(self):
-        r = LocateResult.from_dict({
-            "params": {"locate": "OK button", "x": 100.6, "y": 200},
-            "inputTokens": 10,
-            "outputTokens": 5,
-            "thinkingTokens": 2,
-        })
-        assert r.x == 101
-        assert r.y == 200
-        assert isinstance(r.x, int)
-        assert r.input_tokens == 10
-        assert r.output_tokens == 5
-        assert r.thinking_tokens == 2
-
-    def test_from_dict_empty(self):
-        r = LocateResult.from_dict({})
-        assert r.x == 0
-        assert r.y == 0
-        assert r.input_tokens == 0
-
     def test_tuple_unpacking(self):
         x, y = LocateResult(x=10, y=20)
         assert (x, y) == (10, 20)
+
+    def test_carries_tokens(self):
+        r = LocateResult(x=1, y=2, input_tokens=10, output_tokens=5, thinking_tokens=2)
+        assert (r.x, r.y) == (1, 2)
+        assert r.input_tokens == 10
+        assert r.output_tokens == 5
+        assert r.thinking_tokens == 2
 
 
 class TestQirabotLocate:
     def _make_mocked_bot(self, make_bot):
         bot = make_bot()
         bot._get_adapter = MagicMock(return_value=MagicMock())
-        bot._ai_action = MagicMock(return_value={
-            "success": True,
-            "actionType": "locate",
-            "params": {"locate": "OK button", "x": 100, "y": 200},
-            "finished": True,
-            "inputTokens": 0,
-            "outputTokens": 0,
-        })
+        bot._ai_action = MagicMock(return_value=_SingleAction(
+            action_type="locate",
+            params={"locate": "OK button", "x": 100, "y": 200},
+            finished=True,
+        ))
         return bot
 
     def test_builds_locate_action_and_skips_execution(self, make_bot):
@@ -257,7 +232,7 @@ class TestUserAbortViaFailSafe:
             "actionType": "click", "params": {"x": 1, "y": 2},
         })
 
-        def corner(adapter, result):
+        def corner(adapter, action_type, params):
             raise FailSafeException("mouse in a screen corner")
 
         bot._execute_action = corner
@@ -275,8 +250,8 @@ class TestUserAbortViaFailSafe:
              "params": {"result": "ok", "success": True}, "output": "ok"},
         ])
 
-        def flaky(adapter, result):
-            if result.get("actionType") == "click":
+        def flaky(adapter, action_type, params):
+            if action_type == "click":
                 raise ValueError("transient")
 
         bot._execute_action = flaky
@@ -343,15 +318,16 @@ class TestAiLoopStatus:
         bot._backend.results.extend(dict(act_result) for _ in range(repeat))
         return bot
 
-    def test_backend_terminal_error_yields_error(self, make_bot):
+    def test_step_error_raises_and_keeps_error_text(self, make_bot):
+        # Engine step failures raise ActionError; ai() records the "error"
+        # outcome and keeps the message for close()'s bookkeeping.
         bot = self._bot_returning(make_bot, {
-            "success": False, "finished": True, "error": "session expired",
+            "success": False, "finished": False, "error": "decide exploded",
         })
-        result = bot.ai(object(), "do thing", max_steps=3)
-        assert result.success is False
-        assert result.status == "error"
-        assert result.output == "session expired"
-        assert bot._section_outcomes["do thing"] == "error"
+        with pytest.raises(ActionError, match="decide exploded"):
+            bot.ai(object(), "do thing", max_steps=3)
+        assert bot._timeline.section_outcomes["do thing"] == "error"
+        assert "decide exploded" in bot._last_ai_error
 
     def test_max_steps_yields_max_steps(self, make_bot):
         # Never finishes: every step is a successful non-terminal action.
@@ -363,7 +339,7 @@ class TestAiLoopStatus:
         assert result.status == "max_steps"
         assert result.output == "max steps reached"
         assert len(result.steps) == 2
-        assert bot._section_outcomes["do thing"] == "max_steps"
+        assert bot._timeline.section_outcomes["do thing"] == "max_steps"
 
     def test_non_terminal_error_raises_and_records_error(self, make_bot):
         bot = self._bot_returning(make_bot, {
@@ -371,7 +347,7 @@ class TestAiLoopStatus:
         })
         with pytest.raises(ActionError):
             bot.ai(object(), "do thing", max_steps=3)
-        assert bot._section_outcomes["do thing"] == "error"
+        assert bot._timeline.section_outcomes["do thing"] == "error"
 
     def test_max_steps_records_section_error_not_step(self, make_bot):
         # A max-steps ending is a section-level banner, NOT a synthetic step
@@ -384,7 +360,7 @@ class TestAiLoopStatus:
         bot._record_step = lambda *a, **k: recorded.append(k) or None
         bot.ai(object(), "do thing", max_steps=1)
         assert len(recorded) == 1
-        assert bot._section_errors["do thing"] == "max steps reached (1)"
+        assert bot._timeline.section_errors["do thing"] == "max steps reached (1)"
 
     def test_repeat_instruction_gets_numbered_section_key(self, make_bot):
         # Two ai() runs with the same instruction must NOT share a section
@@ -396,48 +372,48 @@ class TestAiLoopStatus:
         }, repeat=3)
         sections = []
         bot._record_step = (
-            lambda *a, **k: sections.append(bot._current_section) or None
+            lambda *a, **k: sections.append(bot._timeline.current_section) or None
         )
         bot.ai(object(), "do thing", max_steps=3)
         bot.ai(object(), "do thing", max_steps=3)
         bot.ai(object(), "other", max_steps=3)
-        assert set(bot._section_outcomes) == {"do thing", "do thing #2", "other"}
-        assert bot._section_outcomes["do thing"] == "completed"
-        assert bot._section_outcomes["do thing #2"] == "completed"
+        assert set(bot._timeline.section_outcomes) == {"do thing", "do thing #2", "other"}
+        assert bot._timeline.section_outcomes["do thing"] == "completed"
+        assert bot._timeline.section_outcomes["do thing #2"] == "completed"
         # Log entries carry the numbered key too, so the report renders the
         # runs as separate sections.
         assert sections == ["do thing", "do thing #2", "other"]
         # Section is restored between runs, so standalone actions afterwards
         # still land in "setup".
-        assert bot._current_section == "setup"
+        assert bot._timeline.current_section == "setup"
 
-    def test_repeat_instruction_errors_stay_separate(self, make_bot):
-        # First run truncates at max steps, second hits a terminal error:
-        # each run's banner text must survive under its own key.
+    def test_repeat_instruction_outcomes_stay_separate(self, make_bot):
+        # First run truncates at max steps, second hits a step error: each
+        # run's outcome must survive under its own key.
         bot = self._bot_returning(make_bot, {
             "success": True, "finished": False, "actionType": "wait", "params": {},
         })
         bot.ai(object(), "do thing", max_steps=1)
         bot._backend.results.append({
-            "success": False, "finished": True, "error": "session expired",
+            "success": False, "finished": False, "error": "decide exploded",
         })
-        bot.ai(object(), "do thing", max_steps=1)
-        assert bot._section_errors["do thing"] == "max steps reached (1)"
-        assert bot._section_errors["do thing #2"] == "session expired"
-        assert bot._section_outcomes["do thing"] == "max_steps"
-        assert bot._section_outcomes["do thing #2"] == "error"
+        with pytest.raises(ActionError):
+            bot.ai(object(), "do thing", max_steps=1)
+        assert bot._timeline.section_errors["do thing"] == "max steps reached (1)"
+        assert bot._timeline.section_outcomes["do thing"] == "max_steps"
+        assert bot._timeline.section_outcomes["do thing #2"] == "error"
 
-    def test_backend_terminal_error_records_section_error_not_step(self, make_bot):
-        # Same for a backend-reported terminal error: no step committed
-        # engine-side, so none is recorded locally either.
+    def test_step_error_records_no_step(self, make_bot):
+        # A failed step committed nothing engine-side, so none is recorded
+        # locally either — no synthetic step entries in the report.
         bot = self._bot_returning(make_bot, {
-            "success": False, "finished": True, "error": "session expired",
+            "success": False, "finished": False, "error": "decide exploded",
         })
         recorded = []
         bot._record_step = lambda *a, **k: recorded.append(k) or None
-        bot.ai(object(), "do thing", max_steps=3)
+        with pytest.raises(ActionError):
+            bot.ai(object(), "do thing", max_steps=3)
         assert recorded == []
-        assert bot._section_errors["do thing"] == "session expired"
 
 
 class TestSessionUsage:
@@ -521,16 +497,16 @@ class TestSessionUsage:
         assert u.cache_write_tokens == 1_000
         assert u.total_tokens == 100 + 9_000 + 1_000 + 50
 
-    def test_failed_call_keeps_tokens_but_not_the_step(self, make_bot):
-        # The engine attaches the failed attempt's usage to the error body;
+    def test_failed_locate_keeps_tokens_but_not_the_step(self, make_bot):
+        # The engine reports the failed attempt's usage on the outcome;
         # the spend counts, the step does not (none committed).
         bot = self._bot(make_bot)
         bot._backend.results.append({
-            "success": False, "finished": False, "error": "grounding failed",
+            "success": False, "error": "element not found: anything",
             "inputTokens": 900, "outputTokens": 45,
         })
         with pytest.raises(ActionError):
-            bot.verify(object(), "anything", retry=0)
+            bot.click(object(), "anything", retry=0)
         u = bot.usage
         assert u.ai_steps == 0
         assert u.input_tokens == 900
@@ -539,11 +515,11 @@ class TestSessionUsage:
     def test_failed_ai_step_keeps_tokens(self, make_bot):
         bot = self._bot(make_bot)
         bot._backend.results.append({
-            "success": False, "finished": True, "error": "session expired",
+            "success": False, "finished": False, "error": "decide exploded",
             "inputTokens": 700, "outputTokens": 20,
         })
-        result = bot.ai(object(), "task", max_steps=3)
-        assert result.status == "error"
+        with pytest.raises(ActionError):
+            bot.ai(object(), "task", max_steps=3)
         u = bot.usage
         assert u.ai_steps == 0
         assert u.total_tokens == 720
@@ -1106,8 +1082,8 @@ class TestPressKey:
         before = time.time()
         bot.press_key(target, "Enter")
 
-        assert len(bot._log) == 1
-        entry = bot._log[0]
+        assert len(bot._timeline.entries) == 1
+        entry = bot._timeline.entries[0]
         assert entry["action_type"] == "press_key"
         assert entry["params"] == {"key": "Enter"}
         # Every entry is timestamped so the report can render a time column
@@ -1123,7 +1099,7 @@ class TestPressKey:
 
         bot.press_key(target, "Enter")
 
-        assert bot._log == []
+        assert bot._timeline.entries == []
         adapter.screenshot.assert_not_called()  # zero overhead when off
 
 

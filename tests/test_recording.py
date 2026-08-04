@@ -758,7 +758,7 @@ class _FakeRecorder:
 class TestClientRecordingWiring:
     def _use_fake(self, monkeypatch):
         _FakeRecorder.instances = []
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _FakeRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _FakeRecorder)
 
     def test_record_true_autostarts(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
@@ -772,7 +772,7 @@ class TestClientRecordingWiring:
         self._use_fake(monkeypatch)
         bot = Qirabot(report_dir=str(tmp_path))
         assert _FakeRecorder.instances == []
-        assert bot._recorder is None
+        assert bot._recording.recorder is None
 
     def test_env_var_enables_recording(self, monkeypatch, tmp_path):
         self._use_fake(monkeypatch)
@@ -792,7 +792,7 @@ class TestClientRecordingWiring:
         rec = _FakeRecorder.instances[0]
         assert bot.stop_recording() == rec.output
         assert rec.stopped is True
-        assert bot._recorder is None
+        assert bot._recording.recorder is None
         # close() must not try to stop again (slot already cleared)
         bot.close()
         assert len(_FakeRecorder.instances) == 1
@@ -826,10 +826,10 @@ class TestClientRecordingWiring:
         )
         # No target at construction time -> deferred, nothing started yet.
         assert _FakeRecorder.instances == []
-        assert bot._recorder is None
+        assert bot._recording.recorder is None
         # First action resolves a window; the _get_adapter hook then starts it.
-        monkeypatch.setattr(bot, "_resolve_window_target", lambda target: "My Window")
-        bot._maybe_start_recording(target=object())
+        monkeypatch.setattr(bot._recording, "_resolve_window_target", lambda target: "My Window")
+        bot._recording.maybe_start(target=object())
         assert len(_FakeRecorder.instances) == 1
         rec = _FakeRecorder.instances[0]
         assert rec.window == "My Window" and rec.started is True
@@ -839,8 +839,8 @@ class TestClientRecordingWiring:
         bot = Qirabot(
             record=True, record_window=True, report_dir=str(tmp_path)
         )
-        monkeypatch.setattr(bot, "_resolve_window_target", lambda target: None)  # not resolvable
-        bot._maybe_start_recording(target=object())
+        monkeypatch.setattr(bot._recording, "_resolve_window_target", lambda target: None)  # not resolvable
+        bot._recording.maybe_start(target=object())
         assert len(_FakeRecorder.instances) == 1
         assert _FakeRecorder.instances[0].window is None  # full screen fallback
 
@@ -849,9 +849,9 @@ class TestClientRecordingWiring:
         bot = Qirabot(
             record=True, record_window=True, report_dir=str(tmp_path)
         )
-        monkeypatch.setattr(bot, "_resolve_window_target", lambda target: "W")
-        bot._maybe_start_recording(target=object())
-        bot._maybe_start_recording(target=object())  # later action -> no second ffmpeg
+        monkeypatch.setattr(bot._recording, "_resolve_window_target", lambda target: "W")
+        bot._recording.maybe_start(target=object())
+        bot._recording.maybe_start(target=object())  # later action -> no second ffmpeg
         assert len(_FakeRecorder.instances) == 1
 
     def test_record_audio_passed_to_recorder(self, monkeypatch, tmp_path):
@@ -893,8 +893,8 @@ class TestClientMjpegRecordingWiring:
     def _use_fakes(self, monkeypatch):
         _FakeRecorder.instances = []
         _FakeMjpegRecorder.instances = []
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _FakeRecorder)
-        monkeypatch.setattr(client_mod, "MjpegStreamRecorder", _FakeMjpegRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _FakeRecorder)
+        monkeypatch.setattr(recording, "MjpegStreamRecorder", _FakeMjpegRecorder)
 
     def test_mjpeg_url_routes_to_stream_recorder(self, monkeypatch, tmp_path):
         self._use_fakes(monkeypatch)
@@ -953,7 +953,7 @@ class TestClientDeviceRecordingWiring:
     def _setup(self, monkeypatch, factory_result="fake"):
         """Patch ScreenRecorder (must stay unused) and device_recorder."""
         _FakeRecorder.instances = []
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _FakeRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _FakeRecorder)
         made = []
 
         def fake_device_recorder(output, target):
@@ -964,7 +964,7 @@ class TestClientDeviceRecordingWiring:
             made.append(rec)
             return rec
 
-        monkeypatch.setattr(client_mod, "device_recorder", fake_device_recorder)
+        monkeypatch.setattr(recording, "device_recorder", fake_device_recorder)
         return made
 
     def test_defers_until_target_then_records_device(self, monkeypatch, tmp_path):
@@ -975,23 +975,23 @@ class TestClientDeviceRecordingWiring:
         )
         # No target at construction -> deferred (an eager start would grab the
         # host screen, which is the wrong thing for a device run).
-        assert made == [] and bot._recorder is None
+        assert made == [] and bot._recording.recorder is None
 
         driver = object()
-        bot._maybe_start_recording(target=driver)
+        bot._recording.maybe_start(target=driver)
         assert len(made) == 1
         assert made[0].started is True
         assert made[0].target is driver
         # Later actions must not spawn a second recorder.
-        bot._maybe_start_recording(target=driver)
+        bot._recording.maybe_start(target=driver)
         assert len(made) == 1
 
     def test_env_var_enables_device_recording(self, monkeypatch, tmp_path):
         made = self._setup(monkeypatch)
         monkeypatch.setenv("QIRA_RECORD_DEVICE", "1")
         bot = Qirabot(record=True, report_dir=str(tmp_path))
-        assert bot._recorder is None  # still deferred
-        bot._maybe_start_recording(target=object())
+        assert bot._recording.recorder is None  # still deferred
+        bot._recording.maybe_start(target=object())
         assert len(made) == 1
 
     def test_unsupported_target_skips_instead_of_host_screen(self, monkeypatch, tmp_path):
@@ -1002,8 +1002,8 @@ class TestClientDeviceRecordingWiring:
             record=True, record_device=True,
             report_dir=str(tmp_path),
         )
-        bot._maybe_start_recording(target=object())
-        assert bot._recorder is None
+        bot._recording.maybe_start(target=object())
+        assert bot._recording.recorder is None
         assert _FakeRecorder.instances == []  # host ScreenRecorder untouched
 
     def test_mjpeg_url_wins_over_record_device(self, monkeypatch, tmp_path):
@@ -1012,7 +1012,7 @@ class TestClientDeviceRecordingWiring:
         made = self._setup(monkeypatch)
         fake_mjpeg = []
         monkeypatch.setattr(
-            client_mod, "MjpegStreamRecorder",
+            recording, "MjpegStreamRecorder",
             lambda output, url: fake_mjpeg.append(url) or _FakeRecorder(output),
         )
         Qirabot(
@@ -1062,30 +1062,30 @@ class TestReportRecordingNotice:
         assert "class='notice'" not in markup
 
     def test_client_notes_failed_recording(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _FailingRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _FailingRecorder)
         bot = Qirabot(record=True, report_dir=str(tmp_path))
-        assert bot._recorder is None  # start() failed
-        bot._log.append(dict(_LOG_ENTRY))
+        assert bot._recording.recorder is None  # start() failed
+        bot._timeline.entries.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
         markup = Path(out).read_text(encoding="utf-8")
         assert "Recording was requested but not produced" in markup
         assert "<video" not in markup
 
     def test_client_zero_byte_recording_is_failure(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _FailingRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _FailingRecorder)
         bot = Qirabot(record=True, report_dir=str(tmp_path))
         (Path(bot.report_dir) / "recording.mp4").write_bytes(b"")  # 0 bytes
-        bot._log.append(dict(_LOG_ENTRY))
+        bot._timeline.entries.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
         markup = Path(out).read_text(encoding="utf-8")
         assert "Recording was requested but not produced" in markup
         assert "<video" not in markup
 
     def test_client_valid_recording_embeds_no_notice(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _FailingRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _FailingRecorder)
         bot = Qirabot(record=True, report_dir=str(tmp_path))
         (Path(bot.report_dir) / "recording.mp4").write_bytes(b"data")
-        bot._log.append(dict(_LOG_ENTRY))
+        bot._timeline.entries.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
         markup = Path(out).read_text(encoding="utf-8")
         assert "<video" in markup
@@ -1093,7 +1093,7 @@ class TestReportRecordingNotice:
 
     def test_no_notice_when_record_not_requested(self, tmp_path):
         bot = Qirabot(report_dir=str(tmp_path))
-        bot._log.append(dict(_LOG_ENTRY))
+        bot._timeline.entries.append(dict(_LOG_ENTRY))
         out = bot.report(str(tmp_path / "report.html"))
         markup = Path(out).read_text(encoding="utf-8")
         assert "Recording was requested but not produced" not in markup
@@ -1123,9 +1123,9 @@ class _InterruptingRecorder:
 class TestReportSurvivesCtrlC:
     def test_report_written_when_recording_stop_interrupted(self, monkeypatch, tmp_path):
         # A Ctrl+C during recording finalize must not skip the report.
-        monkeypatch.setattr(client_mod, "ScreenRecorder", _InterruptingRecorder)
+        monkeypatch.setattr(recording, "ScreenRecorder", _InterruptingRecorder)
         bot = Qirabot(record=True, report_dir=str(tmp_path))
-        bot._log.append(dict(_LOG_ENTRY))
+        bot._timeline.entries.append(dict(_LOG_ENTRY))
         report_path = Path(bot.report_dir) / "report.html"
 
         bot.close()  # must not raise, and must still produce the report
@@ -1137,7 +1137,7 @@ class TestReportSurvivesCtrlC:
         # no-op): a KeyboardInterrupt raised inside the write is swallowed so
         # close() finishes its teardown instead of aborting.
         bot = Qirabot(report_dir=str(tmp_path))
-        bot._log.append(dict(_LOG_ENTRY))
+        bot._timeline.entries.append(dict(_LOG_ENTRY))
 
         def boom(out=None):
             raise KeyboardInterrupt()

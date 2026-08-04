@@ -1,20 +1,12 @@
-"""User-level configuration (``qirabot login``), shared by the CLI and the SDK.
+"""Leftover-credential detection for ``qirabot doctor``.
 
-One JSON file holding the API key, so ``qirabot login`` is a one-time step
-instead of exporting ``QIRA_API_KEY`` in every shell:
+Earlier releases stored a cloud API key in a user-level JSON config file;
+current releases use no such key. ``doctor`` reads the file only to warn
+that it still exists and can be deleted:
 
 * Linux/macOS: ``$XDG_CONFIG_HOME/qirabot/config.json`` (default
-  ``~/.config/qirabot/config.json``), written with mode 0600.
+  ``~/.config/qirabot/config.json``).
 * Windows: ``%APPDATA%\\qirabot\\config.json``.
-
-Deliberately stdlib-only (json, no keyring/tomli-w) and read as the LAST
-resolution layer everywhere — CLI: ``--api-key`` flag > ``QIRA_API_KEY`` env
-var > ``./.env`` > this file; SDK: ``api_key=`` param > ``QIRA_API_KEY`` env
-var > this file (no implicit ``./.env`` in the SDK — a library's import-time
-cwd carries no meaning). Existing env/.env setups keep working untouched.
-
-Lives in the core package, not ``qirabot.cli``: the SDK client falls back to
-it, and the SDK must not import CLI modules.
 """
 
 from __future__ import annotations

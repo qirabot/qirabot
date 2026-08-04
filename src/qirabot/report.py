@@ -1,9 +1,10 @@
 """Self-contained HTML run report.
 
 Pure rendering — no model calls, no network. Builds an HTML file from the
-session step log that :class:`qirabot.Qirabot` accumulates during a run:
+session step log that :class:`qirabot.Qirabot` accumulates during a run and
+hands over at render time (each entry is one step dict; see ``write_html``):
 
-    write_html(bot._log, "report.html", title=..., outcomes=..., recording=...)
+    write_html(log_entries, "report.html", title=..., outcomes=..., recording=...)
 
 Each step carries an embedded thumbnail (base64 data URI) so the report is a
 single self-contained file, plus a link to the full-resolution screenshot under
@@ -181,6 +182,37 @@ def _summarize_params(params: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+def format_action_details(
+    params: Mapping[str, Any], *, locate_max: int = 0, text_max: int = 0
+) -> list[str]:
+    """Human-readable fragments of an action's key params, in display order:
+    the locate description, typed text, scroll direction+amount.
+
+    Public and shared by the CLI's step lines and the overlay's step body so
+    the two live surfaces never drift on which params matter or how they
+    read. ``locate_max``/``text_max`` > 0 clip those unbounded user/model
+    fields (the overlay's fixed window needs that; a terminal doesn't).
+    The report's own step table uses the exhaustive :func:`_summarize_params`
+    instead — nothing may silently vanish from the archived artifact.
+    """
+
+    def _fmt(value: Any, limit: int) -> str:
+        text = str(value)
+        if limit <= 0:
+            return text
+        text = " ".join(text.split())
+        return text if len(text) <= limit else text[: limit - 1] + "…"
+
+    parts: list[str] = []
+    if "locate" in params:
+        parts.append(f'"{_fmt(params["locate"], locate_max)}"')
+    if "text" in params:
+        parts.append(f'← "{_fmt(params["text"], text_max)}"')
+    if "direction" in params:
+        parts.append(f"{params['direction']} {params.get('amount', '')}".rstrip())
+    return parts
+
+
 def _badge(label: str, kind: str) -> str:
     return f'<span class="badge {kind}">{html.escape(label)}</span>'
 
@@ -212,8 +244,12 @@ def _normalize_status(value: bool | str) -> str:
     return str(value)
 
 
-def _fmt_tokens(n: int) -> str:
-    """Compact token count: 1234 -> ``1.2k``, 980 -> ``980``."""
+def fmt_tokens(n: int) -> str:
+    """Compact token count: 1234 -> ``1.2k``, 980 -> ``980``.
+
+    Public: the CLI renders its usage summary line with the same formatting
+    so the two surfaces never drift.
+    """
     return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
@@ -227,8 +263,11 @@ def _fmt_offset(secs: float) -> str:
     return f"+{m}:{sec:02d}"
 
 
-def _fmt_ms(ms: int) -> str:
-    """Human duration from milliseconds: ``820ms`` / ``23.4s`` / ``2m03s`` / ``1h05m``."""
+def fmt_ms(ms: int) -> str:
+    """Human duration from milliseconds: ``820ms`` / ``23.4s`` / ``2m03s`` / ``1h05m``.
+
+    Public for the same reason as :func:`fmt_tokens`.
+    """
     if ms < 1000:
         return f"{ms}ms"
     secs = ms / 1000
@@ -243,8 +282,8 @@ def _fmt_ms(ms: int) -> str:
 def _render_stats(stats: dict[str, int], model: str) -> str:
     """A one-line run summary (steps · tokens · timing · model).
 
-    The headline count is ``total_steps`` — every timeline entry, matching
-    the server's step count — with the AI-decision subset in parentheses.
+    The headline count is ``total_steps`` — every timeline entry — with the
+    AI-decision subset in parentheses.
     Returns an empty string only when nothing ran at all: a purely local run
     (0 AI steps) still gets its step count.
     """
@@ -262,17 +301,17 @@ def _render_stats(stats: dict[str, int], model: str) -> str:
     total = inp + cache + out
     bits = [f"{total_steps} steps ({stats.get('ai_steps', 0)} AI)"]
     if total:
-        detail = [f"in {_fmt_tokens(inp)}"]
+        detail = [f"in {fmt_tokens(inp)}"]
         if cache:
-            detail.append(f"cache {_fmt_tokens(cache)}")
-        detail.append(f"out {_fmt_tokens(out)}")
+            detail.append(f"cache {fmt_tokens(cache)}")
+        detail.append(f"out {fmt_tokens(out)}")
         if think:
             # Anthropic reports no separate thinking count (it stays 0 there)
             # — show the split only when a provider actually supplies it.
-            detail.append(f"think {_fmt_tokens(think)}")
-        bits.append(f"{_fmt_tokens(total)} tokens ({' / '.join(detail)})")
+            detail.append(f"think {fmt_tokens(think)}")
+        bits.append(f"{fmt_tokens(total)} tokens ({' / '.join(detail)})")
     if stats.get("step_duration_ms"):
-        bits.append(_fmt_ms(stats["step_duration_ms"]))
+        bits.append(fmt_ms(stats["step_duration_ms"]))
     if model:
         bits.append(f"model {model}")
     return f"<div class='stats'>{html.escape(' · '.join(bits))}</div>"

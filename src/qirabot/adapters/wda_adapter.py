@@ -29,10 +29,6 @@ _BUTTONS = {
 class WdaAdapter(DeviceAdapter):
     """Adapter for :class:`qirabot.wda.WdaClient` targets."""
 
-    # Actions that don't change the screen (or handle their own timing), so the
-    # next screenshot needs no settle delay after them.
-    _NO_SETTLE = frozenset({"wait", "done", "save_note"})
-
     # WDA animates gestures and returns promptly; iOS transitions are quick, so
     # a smaller floor than Android's (see DeviceAdapter.settle_seconds).
     _SETTLE_SECONDS = 0.6
@@ -72,16 +68,7 @@ class WdaAdapter(DeviceAdapter):
                         self._annotation_scale = probe.width / logical_w
             except Exception:
                 pass
-        if cfg.format == "png":
-            return png
-        from PIL import Image
-
-        img: Image.Image = Image.open(io.BytesIO(png))
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=cfg.quality)
-        return buf.getvalue()
+        return self._reencode_png(png, cfg)
 
     def annotation_scale(self) -> float:
         return self._annotation_scale if self._annotation_scale else 1.0
@@ -111,64 +98,20 @@ class WdaAdapter(DeviceAdapter):
             int(from_x), int(from_y), int(to_x), int(to_y), duration=0.5
         )
 
-    # ---- scrolling (same geometry as the other device adapters) --------------
+    # ---- scrolling (shared geometry: DeviceAdapter._swipe_scroll) ------------
 
     def scroll(self, x: float, y: float, direction: str, distance: int) -> None:
+        self._scroll_pixels(x, y, direction, distance * 100)
+
+    def _scroll_pixels(self, x: float, y: float, direction: str, pixels: int) -> None:
         info = self.device_info()
-        cx = x or info.width / 2.0
-        cy = y or info.height / 2.0
-        self._swipe(cx, cy, direction, distance * 100, info)
-
-    def _scroll_action(self, action_type: str, params: dict[str, Any]) -> None:
-        info = self.device_info()
-        raw = params.get("amount")
-        pixels = int(raw) if raw is not None and raw != "" else 0
-        if (
-            action_type == "scroll_at"
-            and params.get("x") is not None
-            and params.get("y") is not None
-        ):
-            cx, cy = float(params["x"]), float(params["y"])
-        else:
-            cx, cy = info.width / 2.0, info.height / 2.0
-        self._swipe(cx, cy, str(params.get("direction", "down")), pixels, info)
-
-    def _swipe(
-        self, cx: float, cy: float, direction: str, pixels: int, info: DeviceInfo
-    ) -> None:
-        w, h = info.width, info.height
-        span = h if direction in ("up", "down") else w
-        if pixels <= 0:
-            pixels = int(span * 0.6)
-        pixels = min(pixels, int(span * 0.7))  # keep the whole gesture on-screen
-
-        if direction == "down":
-            ex, ey = cx, cy - pixels
-        elif direction == "up":
-            ex, ey = cx, cy + pixels
-        elif direction == "right":
-            ex, ey = cx - pixels, cy
-        elif direction == "left":
-            ex, ey = cx + pixels, cy
-        else:
-            return
-
-        def clamp(v: float, lo: float, hi: float) -> float:
-            return max(lo, min(hi, v))
-
-        self._client.swipe(
-            int(cx),
-            int(cy),
-            int(clamp(ex, w * 0.05, w * 0.95)),
-            int(clamp(ey, h * 0.05, h * 0.95)),
-            duration=0,
+        self._swipe_scroll(
+            x or info.width / 2.0, y or info.height / 2.0, direction, pixels, info
         )
 
-    def _dispatch(self, action_type: str, params: dict[str, Any]) -> None:
-        if action_type in ("scroll", "scroll_at"):
-            self._scroll_action(action_type, params or {})
-        else:
-            super()._dispatch(action_type, params)
+    def _swipe_from_to(self, from_x: float, from_y: float, to_x: float, to_y: float) -> None:
+        # Instant flick (duration=0), unlike drag()'s deliberate 0.5s hold.
+        self._client.swipe(int(from_x), int(from_y), int(to_x), int(to_y), duration=0)
 
     # ---- keys / text ---------------------------------------------------------
 

@@ -2,7 +2,7 @@
 
 ``knowledge`` accepts the knowledge text itself (``str``), a local file
 (``pathlib.Path``, read as UTF-8), or a list mixing both. Resolution happens
-entirely client-side — the server only ever receives the final text. Remote
+up front — the engine only ever receives the final text. Remote
 sources are deliberately unsupported: fetch them yourself (e.g.
 ``requests.get(url).text``) so auth, timeouts, and failure handling stay in
 your code, and a broken fetch raises instead of silently injecting garbage
@@ -13,15 +13,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Combined-size ceiling, in UTF-8 bytes. The server enforces the same limit
-# authoritatively; checking here fails before any request is sent. Large
+# Combined-size ceiling, in UTF-8 bytes. The engine enforces the same limit
+# authoritatively; checking here fails before any model call. Large
 # enough for a real rules document, small enough that the knowledge section
 # cannot drown the rest of the prompt.
 MAX_KNOWLEDGE_BYTES = 32 * 1024
 
 
 def resolve_knowledge(knowledge: str | Path | list[str | Path]) -> str:
-    """Resolve ``knowledge`` into the text sent to the server.
+    """Resolve ``knowledge`` into the text handed to the engine.
 
     Raises ``ValueError`` for unsupported entry types, unreadable files, or a
     combined size over ``MAX_KNOWLEDGE_BYTES``. The over-limit error names each

@@ -165,7 +165,7 @@ class TestRetry:
         def fn() -> str:
             calls["n"] += 1
             if calls["n"] < 3:
-                raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+                raise ProviderError("p", "down", category=ErrorCategory.UNAVAILABLE, status_code=503)
             return "ok"
 
         assert with_retry(fn, sleep=sleeps.append) == "ok"
@@ -179,6 +179,39 @@ class TestRetry:
 
         with pytest.raises(ProviderError):
             with_retry(fn, sleep=lambda _: None)
+
+    def test_rate_limit_waits_out_the_quota_window(self) -> None:
+        # 429 is a rolling per-minute quota window, not a blip: the schedule
+        # must span a full window instead of the generic ~3s, so a long ai()
+        # run pauses through the window rather than dying mid-task.
+        sleeps: list[float] = []
+        calls = {"n": 0}
+
+        def fn() -> str:
+            calls["n"] += 1
+            if calls["n"] < 4:
+                raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+            return "ok"
+
+        assert with_retry(fn, sleep=sleeps.append) == "ok"
+        assert calls["n"] == 4
+        assert sleeps == [5.0, 10.0, 20.0]
+
+    def test_rate_limit_exhausts_after_full_schedule(self) -> None:
+        sleeps: list[float] = []
+        calls = {"n": 0}
+
+        def fn() -> str:
+            calls["n"] += 1
+            raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+
+        with pytest.raises(ProviderError):
+            with_retry(fn, sleep=sleeps.append)
+        # One initial try plus one per scheduled delay; cumulative wait
+        # crosses a one-minute window boundary.
+        assert calls["n"] == 5
+        assert sleeps == [5.0, 10.0, 20.0, 30.0]
+        assert sum(sleeps) >= 60.0
 
     def test_deterministic_errors_fail_fast(self) -> None:
         calls = {"n": 0}

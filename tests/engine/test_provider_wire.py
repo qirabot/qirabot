@@ -197,6 +197,114 @@ class TestGeminiVertex:
         provider.chat(self.base_request(), timeout=30)
         assert "mediaResolution" not in sent_body(seen[0])["generationConfig"]
 
+    def two_image_messages(self) -> list[Message]:
+        """History screenshot (tagged low) followed by the current one."""
+        return [
+            Message(role="user", images=[Image(mime_type="image/jpeg", data=b"old", resolution="low")]),
+            Message(role="user", images=[Image(mime_type="image/jpeg", data=b"new")]),
+        ]
+
+    def image_parts(self, body: dict[str, Any]) -> list[dict[str, Any]]:
+        return [p for c in body["contents"] for p in c["parts"] if "inlineData" in p]
+
+    def test_part_media_resolution_for_tagged_images(self) -> None:
+        provider, seen = self.make()
+        provider.chat(
+            self.base_request(
+                messages=self.two_image_messages(), params={"media_resolution": "medium"}
+            ),
+            timeout=30,
+        )
+        parts = self.image_parts(sent_body(seen[0]))
+        assert parts[0]["mediaResolution"] == {"level": "MEDIA_RESOLUTION_LOW"}
+        assert "mediaResolution" not in parts[1]  # untagged follows the global setting
+
+    def test_part_media_resolution_omitted_when_equal_to_global(self) -> None:
+        # A redundant per-part field would only risk a rejection on endpoints
+        # without per-part support — never emit it.
+        provider, seen = self.make()
+        provider.chat(
+            self.base_request(
+                messages=self.two_image_messages(), params={"media_resolution": "low"}
+            ),
+            timeout=30,
+        )
+        assert all("mediaResolution" not in p for p in self.image_parts(sent_body(seen[0])))
+
+    def test_part_media_resolution_emitted_when_global_unset(self) -> None:
+        provider, seen = self.make()
+        provider.chat(self.base_request(messages=self.two_image_messages()), timeout=30)
+        parts = self.image_parts(sent_body(seen[0]))
+        assert parts[0]["mediaResolution"] == {"level": "MEDIA_RESOLUTION_LOW"}
+
+    def test_part_media_resolution_fallback_and_sticky(self) -> None:
+        # First call: endpoint rejects the part-level field (400 naming the
+        # part path) -> the provider strips it, retries once, and never emits
+        # it again on the same instance.
+        rejection = {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Invalid value at 'generate_content_request.contents[0]"
+                    ".parts[0].media_resolution'"
+                ),
+            }
+        }
+        responses = iter([(400, rejection), (200, GEMINI_OK), (200, GEMINI_OK)])
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            status, payload = next(responses)
+            return httpx.Response(status, json=payload)
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        provider = GeminiVertexProvider("proj-1", "global", FakeTokens(), client)  # type: ignore[arg-type]
+
+        req = self.base_request(
+            messages=self.two_image_messages(), params={"media_resolution": "medium"}
+        )
+        resp = provider.chat(req, timeout=30)
+        assert resp.tool_calls[0].name == "click"
+        assert len(seen) == 2
+        assert any("mediaResolution" in p for p in self.image_parts(sent_body(seen[0])))
+        stripped = sent_body(seen[1])
+        assert all("mediaResolution" not in p for p in self.image_parts(stripped))
+        # Everything else survives the strip, including the global setting.
+        assert stripped["generationConfig"]["mediaResolution"] == "MEDIA_RESOLUTION_MEDIUM"
+
+        # Sticky: the next chat builds without the field, no wasted request.
+        provider.chat(req, timeout=30)
+        assert len(seen) == 3
+        assert all("mediaResolution" not in p for p in self.image_parts(sent_body(seen[2])))
+
+    def test_unrelated_400_not_retried_without_part_fields(self) -> None:
+        # A 400 that doesn't name the part field must fail fast (single
+        # request) — the user pays for every attempt.
+        client, seen = capture_client({"error": {"code": 400, "message": "bad schema"}}, status=400)
+        provider = GeminiVertexProvider("proj-1", "global", FakeTokens(), client)  # type: ignore[arg-type]
+        with pytest.raises(ProviderError) as ei:
+            provider.chat(
+                self.base_request(
+                    messages=self.two_image_messages(), params={"media_resolution": "medium"}
+                ),
+                timeout=30,
+            )
+        assert ei.value.category == ErrorCategory.INVALID_REQUEST
+        assert len(seen) == 1
+
+    def test_part_rejection_without_part_fields_not_swallowed(self) -> None:
+        # Same rejection text but the request never carried the field (e.g. a
+        # server-side quirk): nothing to strip, so the error must propagate.
+        rejection = {
+            "error": {"code": 400, "message": "Invalid value at 'contents[0].parts[0].media_resolution'"}
+        }
+        client, seen = capture_client(rejection, status=400)
+        provider = GeminiVertexProvider("proj-1", "global", FakeTokens(), client)  # type: ignore[arg-type]
+        with pytest.raises(ProviderError):
+            provider.chat(self.base_request(), timeout=30)
+        assert len(seen) == 1
+
     def test_contents_conversion(self) -> None:
         provider, seen = self.make()
         messages = [
@@ -287,3 +395,31 @@ class TestGeminiApi:
             provider.chat(self.base_request(), timeout=30)
         assert ei.value.category == ErrorCategory.AUTH
         assert ei.value.provider == "gemini"
+
+    def test_part_media_resolution_fallback_wired(self) -> None:
+        # The AI Studio provider shares run_chat with gemini-vertex; verify
+        # the strip-and-retry path is wired here too.
+        rejection = {
+            "error": {"code": 400, "message": "Unknown name \"mediaResolution\" at 'contents[0].parts[0]'"}
+        }
+        responses = iter([(400, rejection), (200, GEMINI_OK)])
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            status, payload = next(responses)
+            return httpx.Response(status, json=payload)
+
+        provider = GeminiApiProvider("sk-1", httpx.Client(transport=httpx.MockTransport(handler)))
+        provider.chat(
+            self.base_request(
+                messages=[
+                    Message(role="user", images=[Image(mime_type="image/jpeg", data=b"old", resolution="low")]),
+                ],
+                params={"media_resolution": "medium"},
+            ),
+            timeout=30,
+        )
+        assert len(seen) == 2
+        parts = [p for c in sent_body(seen[1])["contents"] for p in c["parts"] if "inlineData" in p]
+        assert all("mediaResolution" not in p for p in parts)

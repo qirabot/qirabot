@@ -1640,8 +1640,7 @@ class TestOutputFormats:
 
         class _Bot:
             task_id = "local-abc12345"
-            _report = report
-            _log = [object()] if report else []
+            will_write_report = report
             report_dir = "/tmp/qira-run"
 
             def __init__(self):

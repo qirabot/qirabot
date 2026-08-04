@@ -74,6 +74,10 @@ class TokenUsage:
 class Image:
     mime_type: str
     data: bytes
+    # Per-image media-resolution hint ("low"/"medium"/"high"/"ultra_high");
+    # empty = follow the request-level setting. Providers without a per-image
+    # resolution concept ignore it.
+    resolution: str = ""
 
 
 @dataclass

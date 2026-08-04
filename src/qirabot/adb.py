@@ -1,7 +1,7 @@
 """Zero-dependency Android device handle over the ``adb`` binary.
 
 :class:`AdbDevice` is the SDK-level target for the direct Android backend:
-``bot.run("...", target=AdbDevice())``. It shells out to the platform-tools
+``bot.ai(AdbDevice(), "...")``. It shells out to the platform-tools
 ``adb`` binary (pure stdlib — no airtest/uiautomator agent, nothing installed
 on the device for screenshots/input), so the only host requirement is an adb
 on PATH or a discoverable Android SDK.

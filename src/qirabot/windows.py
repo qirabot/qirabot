@@ -2,7 +2,7 @@
 
 :class:`Window` is the SDK-level target for driving one Windows window::
 
-    bot.run("...", target=Window(title_re="Genshin"))
+    bot.ai(Window(title_re="Genshin"), "...")
 
 Everything here is stdlib ``ctypes`` against user32/gdi32 — no pywinauto, no
 pip dependencies. The DLLs are reached exclusively through the :func:`_user32`

@@ -146,9 +146,6 @@ WHEEL_NOTCH_GAP = 0.02
 class WindowsAdapter(DeviceAdapter):
     """Adapter for :class:`qirabot.windows.Window` targets (Windows only)."""
 
-    # Actions that don't change the screen (or handle their own timing).
-    _NO_SETTLE = frozenset({"wait", "done", "save_note"})
-
     # Desktop UI (window transitions, scroll inertia) needs a generous floor.
     _SETTLE_SECONDS = 1.0
 
@@ -227,16 +224,7 @@ class WindowsAdapter(DeviceAdapter):
                 x, y, w, h = win.client_rect(self._window.hwnd)
                 img = win.capture_screen_region(x, y, w, h)
         self._last_size = (img.width, img.height)
-        import io
-
-        buf = io.BytesIO()
-        if cfg.format == "jpeg":
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            img.save(buf, format="JPEG", quality=cfg.quality)
-        else:
-            img.save(buf, format="PNG")
-        return buf.getvalue()
+        return self._encode_image(img, cfg)
 
     def device_info(self) -> DeviceInfo:
         if self._last_size is not None:
@@ -375,26 +363,15 @@ class WindowsAdapter(DeviceAdapter):
     # ---- scrolling ------------------------------------------------------------
 
     def scroll(self, x: float, y: float, direction: str, distance: int) -> None:
-        info = self.device_info()
-        cx = x or info.width / 2.0
-        cy = y or info.height / 2.0
-        self._wheel(cx, cy, direction, distance * 100)
+        self._scroll_pixels(x, y, direction, distance * 100)
 
-    def _scroll_action(self, action_type: str, params: dict[str, Any]) -> None:
-        # {direction, amount} with no x/y: anchor at the window center (or the
-        # element for scroll_at) and honor the real pixel amount.
+    def _scroll_pixels(self, x: float, y: float, direction: str, pixels: int) -> None:
+        # Anchor at the window center unless the wire resolved an element
+        # (scroll_at); the wheel needs a real cursor position either way.
         info = self.device_info()
-        raw = params.get("amount")
-        pixels = int(raw) if raw is not None and raw != "" else 0
-        if (
-            action_type == "scroll_at"
-            and params.get("x") is not None
-            and params.get("y") is not None
-        ):
-            cx, cy = float(params["x"]), float(params["y"])
-        else:
-            cx, cy = info.width / 2.0, info.height / 2.0
-        self._wheel(cx, cy, str(params.get("direction", "down")), pixels)
+        self._wheel(
+            x or info.width / 2.0, y or info.height / 2.0, direction, pixels
+        )
 
     def _wheel(self, cx: float, cy: float, direction: str, pixels: int) -> None:
         if pixels <= 0:
@@ -417,12 +394,6 @@ class WindowsAdapter(DeviceAdapter):
                 if i:
                     time.sleep(WHEEL_NOTCH_GAP)
                 win.send_inputs([win.mouse_event(flags, data=delta)])
-
-    def _dispatch(self, action_type: str, params: dict[str, Any]) -> None:
-        if action_type in ("scroll", "scroll_at"):
-            self._scroll_action(action_type, params or {})
-        else:
-            super()._dispatch(action_type, params)
 
     # ---- keys ---------------------------------------------------------------
 

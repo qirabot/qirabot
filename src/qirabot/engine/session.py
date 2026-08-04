@@ -45,12 +45,13 @@ _UNPARSABLE_HINT = (
 
 
 class StepError(Exception):
-    """A step-level failure returned to the caller as a failed StepResponse.
-    finished mirrors the wire flag (True ends the SDK loop)."""
+    """A step-level engine failure. ``usage`` carries the spend of every
+    decide attempt the step burned before failing — the SDK folds it into
+    its session totals even though no step committed."""
 
-    def __init__(self, message: str, finished: bool = False) -> None:
+    def __init__(self, message: str, usage: TokenUsage | None = None) -> None:
         super().__init__(message)
-        self.finished = finished
+        self.usage = usage if usage is not None else TokenUsage()
 
 
 @dataclass
@@ -191,19 +192,14 @@ class LocalAISession:
                         exc,
                     )
                     continue
-                # `usage` holds every attempt's spend — attach it so the
-                # error payload carries the tokens (same as the grounding
-                # path below; the SDK folds them into its session totals).
-                err = StepError(str(exc))
-                err.usage = usage  # type: ignore[attr-defined]
-                raise err from exc
+                # `usage` holds every attempt's spend (same as the grounding
+                # path below).
+                raise StepError(str(exc), usage) from exc
 
             usage.add(result.token_usage)
             llm_ms += result.duration_ms
             if result.action is None:
-                err = StepError("AI returned no action")
-                err.usage = usage  # type: ignore[attr-defined]
-                raise err
+                raise StepError("AI returned no action", usage)
 
             act = result.action
             finished = act.type == actions.DONE
@@ -231,9 +227,7 @@ class LocalAISession:
                 msg = "inline grounding: model returned no usable coordinates"
                 if act.type == actions.DRAG:
                     msg = "inline grounding: drag returned no usable coordinates"
-                err = StepError(msg)
-                err.usage = usage  # type: ignore[attr-defined]
-                raise err
+                raise StepError(msg, usage)
             correction_hint = ground
             logger.warning(
                 "inline grounding produced unusable coordinates; re-deciding "
@@ -244,12 +238,26 @@ class LocalAISession:
 
         assert act is not None and result is not None
 
+        # The model-facing schema names the unit (duration_ms); the executor
+        # wire keeps the legacy `duration` (also ms) key that direct SDK
+        # callers share. History replays the model's frame (raw_params_json,
+        # captured above), so only the dispatched params are rewritten.
+        if act.type in (actions.WAIT, actions.LONG_PRESS) and "duration_ms" in act.params:
+            act.params["duration"] = act.params.pop("duration_ms")
+
         # Accumulate note content after the loop, keyed on the committed
-        # action, so a re-decide can't double-append.
+        # action, so a re-decide can't double-append. Older notes fully
+        # contained in the new one are replaced, not kept — models sometimes
+        # re-save the whole accumulated list despite the prompts, and keeping
+        # every generation would grow Saved notes quadratically. Only the
+        # notes store is touched: history triads must keep replaying the
+        # save_note calls as the model actually made them (their bytes are
+        # also the provider cache prefix).
         output = ""
         if is_save_note:
             content = act.params.get("content")
             if isinstance(content, str) and content:
+                self.notes = [n for n in self.notes if not note_subsumed_by(n, content)]
                 self.notes.append(content)
             output = "ok"
 
@@ -280,6 +288,43 @@ class LocalAISession:
             coordinate_parse_ms=coord_ms,
             step_duration_ms=int((time.monotonic() - step_start) * 1000),
         )
+
+
+def note_subsumed_by(old: str, new: str) -> bool:
+    """True when the new note carries all of the old note's information, so
+    the old one can be dropped without loss (observed live: a model saving
+    [A] -> [A,B] -> pretty-printed [A..E] despite the do-not-resave rules).
+    Two deterministic checks, both lossless:
+
+    - JSON arrays: element containment on canonicalized elements — immune to
+      the compact-vs-pretty-printed reformatting models flip between, which
+      defeats any plain substring test (as do the brackets: "[{A}]" is not a
+      substring of "[{A}, {B}]").
+    - Anything else: whitespace-normalized substring containment.
+
+    Partial overlap keeps both notes — losing data is worse than repeating
+    some."""
+    old_items = _canonical_json_array(old)
+    new_items = _canonical_json_array(new)
+    if old_items is not None and new_items is not None:
+        return old_items <= new_items
+    return _strip_ws(old) in _strip_ws(new)
+
+
+def _canonical_json_array(content: str) -> set[str] | None:
+    """The content's top-level JSON array elements, each canonicalized
+    (sorted keys), or None when the content is not a JSON array."""
+    try:
+        data = json.loads(content)
+    except ValueError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return {json.dumps(item, sort_keys=True, ensure_ascii=False) for item in data}
+
+
+def _strip_ws(s: str) -> str:
+    return "".join(s.split())
 
 
 def _resolve_coordinates(

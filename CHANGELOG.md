@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.1.0 (2026-08-06)
 
 ### Breaking: claude-vertex removed
 
@@ -22,12 +22,9 @@ of ADC — no gcloud setup needed. Pass `Qirabot(vertex_api_key=...)`, set
   accepts it: requests go to `aiplatform.googleapis.com` with the short
   `publishers/google/...` path, and `vertex_project` / `vertex_location`
   are ignored (logged) when a key is configured.
-- A configured key always wins over project/location settings. Exception:
-  `claude-vertex` — Vertex API keys only cover Google's own models, so an
-  env-provided key is ignored there (with a warning) and an explicit
-  `vertex_api_key=` on a claude model is an error.
-- `qirabot doctor` / `qirabot models` report key mode, and a missing ADC is
-  downgraded to a claude-vertex-only caveat when a key is configured.
+- A configured key always wins over project/location settings.
+- `qirabot doctor` / `qirabot models` report key mode; with a Vertex API
+  key configured, ADC is not needed for anything.
 
 ### New provider: `gemini` — Gemini Developer API with AI Studio keys
 

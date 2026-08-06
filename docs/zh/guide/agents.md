@@ -8,8 +8,8 @@ description: 通过 AI agent 操作 Qirabot——符合开放标准的预置 Age
 Qirabot 既可以从代码调用,也可以交由 AI agent 操作。预置的 skill 符合
 [Agent Skills 开放标准](https://agentskills.io),为 agent 提供 preflight
 环境检查、精简版 SDK 与 CLI 参考,以及各平台起步模板。agent 接到自然语言
-的自动化目标后,先校验环境,再选择执行路径——一次性任务直接调 CLI,流程
-需要分支或消费返回值时编写 SDK 脚本——最后核对运行结果。安装方式取决于
+的自动化目标后,先校验环境,再选择执行路径(一次性任务直接调 CLI,流程
+需要分支或消费返回值时编写 SDK 脚本),最后核对运行结果。安装方式取决于
 所用的 agent。
 
 ## Claude Code 插件
@@ -25,12 +25,12 @@ Claude Code 的 plugin marketplace 形式:
 凡是涉及自动化、测试或抓取 UI 的任务,Claude 会自动调用该 skill;也可以
 显式调用 `/qirabot:qirabot`。skill 包含:
 
-- **preflight 脚本** —— 在编写任何代码之前校验 Python 环境、后端依赖和
+- **preflight 脚本**:在编写任何代码之前校验 Python 环境、后端依赖和
   Google Cloud 凭据(ADC),每一项失败的检查都附带确切的修复命令。
-- **精简版 SDK + CLI 参考** —— agent 依照经过防漂移校验的准确 API 面
+- **精简版 SDK + CLI 参考**:agent 依照经过防漂移校验的准确 API 面
   编写代码。
-- **起步模板** —— 浏览器、Android(adb)、iOS(WDA 与 Appium)、自带
-  driver 挂载各一份,agent 在可运行的骨架上修改,无需从零生成样板代码。
+- **起步模板**:浏览器、Android(adb)、iOS(WDA 与 Appium)、自带
+  driver 挂载各一份,agent 在可运行的骨架上修改,不用从零生成样板代码。
 
 插件只包含指令和辅助脚本;`qirabot` 包本身由 preflight 在运行时引导安装。
 marketplace 副本随仓库 `main` 分支自动更新;如需与本机 SDK 版本严格一致的
@@ -59,10 +59,10 @@ qirabot skill install --dir <path>      # 其他任何兼容 Agent Skills 的工
 npx skills add qirabot/qirabot
 ```
 
-即使不安装 skill,两个特性也使任意 agent 能够直接操作 Qirabot:
+即使不安装 skill,任意 agent 也可以靠下面两个特性直接操作 Qirabot:
 
-**CLI 本身即是 agent 工具。** 一条 shell 命令即可执行完整的自然语言任务,
-一次性工作无需生成代码:
+**CLI 本身就是 agent 工具。** 一条 shell 命令就能执行完整的自然语言任务,
+一次性工作不用生成代码:
 
 ```bash
 qirabot browser "以 Jane Doe 填写注册表单,遇到验证码停下" --url example.com
@@ -74,8 +74,8 @@ qirabot browser "以 Jane Doe 填写注册表单,遇到验证码停下" --url ex
 
 **文档对 agent 可读。** 在 agent 的上下文或 rules 文件中引用:
 
-- `https://qirabot.com/docs/llms.txt` —— 索引 + 每页摘要
-- `https://qirabot.com/docs/llms-full.txt` —— 全部文档合成一个文件
+- `https://qirabot.com/docs/llms.txt`:索引 + 每页摘要
+- `https://qirabot.com/docs/llms-full.txt`:全部文档合成一个文件
 - 任何页面把 `.html` 换成 `.md` 即得纯 Markdown,例如
   `https://qirabot.com/docs/reference/methods.md`
 
@@ -83,8 +83,8 @@ Cursor 中可通过 `@Docs` 功能添加。
 
 ## 为什么 agent 适合视觉自动化
 
-agent 生成 Playwright 代码时,必须猜测它无法观察的选择器,而这些选择器在
-下一次页面改版时即告失效。使用 Qirabot,agent 以其推理所用的媒介——自然
-语言——描述元素;同一份 skill 还覆盖代码优先方案无法触及的场景:原生移动
-App、桌面软件、游戏。见 [Qirabot 是什么](/zh/)与
+agent 生成 Playwright 代码时,必须猜测它观察不到的选择器,而这些选择器在
+页面下一次改版时就会失效。用 Qirabot,agent 直接以自然语言描述元素,这也
+正是它推理时所用的媒介。同一份 skill 还支持代码优先方案覆盖不到的场景:
+原生移动 App、桌面软件、游戏。见 [Qirabot 是什么](/zh/)与
 [平台支持矩阵](/zh/reference/api#平台支持矩阵)。

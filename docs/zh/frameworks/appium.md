@@ -5,10 +5,10 @@ description: 用 AI 视觉驱动现有 Appium 会话——不写 UiAutomator 或
 
 # Appium + Qirabot
 
-已经在跑 Appium——本地服务器或云真机平台?Qirabot 直接挂载到你现有的
-driver 上。元素定位变成对截图的 AI 视觉识别,所以 Flutter、React
-Native、WebView、Unity 视图和原生界面的自动化写法完全一样,不再维护
-UiAutomator / XCUITest 选择器。
+如果你已经在跑 Appium,不论是本地服务器还是云真机平台,Qirabot 都可以
+直接挂载到现有的 driver 上。元素定位变成对截图的 AI 视觉识别,所以
+Flutter、React Native、WebView、Unity 视图和原生界面的自动化写法完全
+一样,也不需要再维护 UiAutomator / XCUITest 选择器。
 
 ```python
 from appium import webdriver
@@ -36,7 +36,7 @@ driver.quit()
 pip install "qirabot[appium]"
 ```
 
-iOS driver(XCUITest options)同样适用——`bind()` 同时识别 Android 和
+iOS driver(XCUITest options)同样适用:`bind()` 能同时识别 Android 和
 iOS 的 Appium 会话。
 
 ## CLI:选择 Appium 引擎
@@ -50,11 +50,11 @@ qirabot ios "..." --device "iPhone 15"      # 模拟器设备类型(选择 Appiu
 
 注意:CLI 的 Appium iOS 引擎面向**模拟器**(`--device` 是
 `xcrun simctl list devicetypes` 里的设备类型)。iPhone 真机更适合走
-[WDA 直连后端](/zh/backends/ios)——完全不需要 Appium。
+[WDA 直连后端](/zh/backends/ios),那条路完全不需要 Appium。
 
 ## 录制设备屏幕
 
-`record_device=True` 使用 Appium 的会话录屏 API——Android 和 iOS driver
+`record_device=True` 使用 Appium 的会话录屏 API,Android 和 iOS driver
 都支持:
 
 ```python
@@ -75,8 +75,9 @@ bot.stop_recording()   # 在 driver.quit() 之前调用——视频存在会话�
 | 额外包 | `qirabot[appium]` | 无 |
 | 手势 | Appium 全集 | tap/swipe/keyevent 级别 |
 
-经验法则:已投入 Appium 或需要设备云 → 留在 Appium,在上面加 Qirabot;
-本地设备从零开始 → [Android adb 后端](/zh/backends/android)和
+经验法则:如果已经在 Appium 上有投入,或者需要设备云,就留在 Appium,
+在上面加 Qirabot;如果是本地设备从零开始,
+[Android adb 后端](/zh/backends/android)和
 [iOS WDA 后端](/zh/backends/ios)的活动部件更少。
 
 相关:[Android 后端](/zh/backends/android) · [iOS 后端](/zh/backends/ios)

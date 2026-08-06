@@ -1,6 +1,6 @@
 ---
 title: 自主 AI 任务与自定义工具
-description: 用 bot.ai() 驱动多步任务——步骤回调、max_steps 预算、模型可在任务中途调用的自定义 Python 工具(API、数据库、取验证码、人工介入),以及裁剪内置工具。
+description: 用 bot.ai() 驱动多步任务——步骤回调、max_steps 预算、模型可在任务中途调用的自定义 Python 工具(API、数据库、取验证码、人工介入)、裁剪内置工具,以及挂载知识或已有 skill 文件(SKILL.md)。
 ---
 
 # AI 任务与自定义工具
@@ -8,7 +8,7 @@ description: 用 bot.ai() 驱动多步任务——步骤回调、max_steps 预�
 ## bot.ai():自主循环
 
 `bot.ai()` 把目标交给 AI。每一步它截取目标屏幕、推理下一步动作、视觉定位
-元素并执行——循环直到目标达成或步数预算用尽:
+元素并执行,循环直到目标达成或步数预算用尽:
 
 ```python
 from qirabot import Qirabot, StepResult
@@ -30,13 +30,13 @@ print(result.success, result.output)
 bot.close()
 ```
 
-运行如何结束记录在 `result.status`——四种结果和 `max_steps` 重试模式见
+运行如何结束记录在 `result.status` 里。四种结果和 `max_steps` 重试模式见
 [错误处理](/zh/advanced/error-handling)。
 
 ## 自定义工具:让模型调用你的代码
 
 `custom_tools` 把你自己的函数注册为模型在任务中途可调用的工具。任何
-Python 函数都行——调内部 API、查数据库、从邮件服务器取验证码、造测试
+Python 函数都可以:调内部 API、查数据库、从邮件服务器取验证码、造测试
 数据、等人工介入。工具名、描述和参数 schema 从函数名、docstring 和签名
 自动推导:
 
@@ -57,27 +57,27 @@ result = bot.ai(
 )
 ```
 
-模型选中工具后,SDK 在**你的本地机器**执行它,并把返回值作为下一步的
-观察反馈给模型。模型只看到工具的名字、描述和参数,以及工具的返回值——
-永远看不到背后的代码、接口和凭据。
+模型选中工具后,SDK 在你的本地机器执行它,并把返回值作为下一步的
+观察反馈给模型。模型只看到工具的名字、描述和参数,以及工具的返回值,
+看不到背后的代码、接口和凭据。
 
 ### 规则
 
-- **docstring 必填** —— 它就是模型阅读的工具描述。参数类型来自注解
+- **docstring 必填**:它就是模型阅读的工具描述。参数类型来自注解
   (`str`/`int`/`float`/`bool`;其他类型退化为字符串);无默认值的参数标记
   为必填。lambda 和 `*args`/`**kwargs` 会被拒绝。每次调用最多 16 个工具。
-- **字典形式(兜底)** —— 自动推导表达不了的 schema(枚举、逐参数描述):
+- **字典形式(兜底)**:自动推导表达不了的 schema(枚举、逐参数描述)用它:
   `{"name": ..., "description": ..., "parameters": {...}, "handler": fn}`。
-- **返回值** —— 字符串化后作为动作结果展示给模型(`None` 变成 `"ok"`);
+- **返回值**:字符串化后作为动作结果展示给模型(`None` 变成 `"ok"`);
   抛出的异常以 `ERROR: ...` 回报给模型,让它能应对而不是整个运行挂掉。
 - **`exclude_tools`** 按名字移除本次调用的内置工具(如 `"scroll"`、
-  `"long_press"`)——防止模型误入任务不需要的动作。`done` 不可移除。
+  `"long_press"`),防止模型误入任务不需要的动作。`done` 不可移除。
   工具名即[平台支持矩阵](/zh/reference/api#平台支持矩阵)中的动作名。
 - 两个参数都是按 `ai()` 调用生效,绑定代理上同样可用。
 
 ### 人工介入(human-in-the-loop)
 
-自定义工具可以直接阻塞等人操作——验证码和登录墙的标准解法:
+自定义工具可以直接阻塞等人操作,这是验证码和登录墙的标准解法:
 
 ```python
 def wait_for_human(reason: str) -> str:
@@ -90,6 +90,64 @@ def wait_for_human(reason: str) -> str:
 [custom_tool_gm.py](https://github.com/qirabot/qirabot/blob/main/examples/game/custom_tool_gm.py)
 ·
 [06_human_in_the_loop.py](https://github.com/qirabot/qirabot/blob/main/examples/automation/06_human_in_the_loop.py)
+
+## 知识与 skill 文件
+
+`knowledge` 为单次 `ai()` 调用挂载参考材料(游戏规则、业务术语、操作
+规程),可以是文本、UTF-8 文件的 `Path`,或两者混合的列表(共 32KB)。它在
+系统提示中与指令分开存放,规则文档不会被误认为任务本身,下一次 `ai()`
+调用从零开始:
+
+```python
+result = bot.ai(
+    device,
+    "完成所有日常任务",
+    knowledge=[Path("game-rules.md"), "GM 命令每局只能使用一次"],
+)
+```
+
+知识只能引导决策,无法强制执行。硬规则("每局一次")还应写进工具
+handler 的代码:在那里违规是不可能,而不只是不建议。
+
+### 复用已有 skill
+
+你已经为别的 agent 维护的指令文件,比如 agent skill(`SKILL.md`)、
+runbook、内部 SOP,可以原样用 `knowledge=` 挂载。有一个缺口需要补上:
+内置工具全部是 GUI 动作,文件里写"运行某某命令"时,模型没有执行它的
+通道。把这个能力显式注册为自定义工具,白名单写在代码里:
+
+```python
+import shlex
+import subprocess
+from pathlib import Path
+
+ALLOWED = {"npm", "git"}  # 只放 skill 文件真正需要的命令
+
+def run_command(command: str) -> str:
+    """运行一条 CLI 命令并返回其输出。可用命令:npm、git。"""
+    argv = shlex.split(command)
+    if not argv or argv[0] not in ALLOWED:
+        return f"command not allowed: {argv[0] if argv else '(empty)'}"
+    r = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    out = (r.stdout + r.stderr).strip()
+    return out or f"(no output, exit code {r.returncode})"
+
+result = bot.ai(
+    page,
+    "按照发布清单发布 2.4.1 版本",
+    knowledge=Path("SKILL.md"),
+    custom_tools=[run_command],
+)
+```
+
+不内置 shell 工具是刻意的:模型能运行哪些命令由你决定,而且这个决定写
+在 handler 代码里——提示词只能劝说,代码才能强制。保持上面的
+`shlex.split` + argv 形式(`shell=False`),额外命令就无法借 `;` 或
+`$(...)` 混进来。另外,返回值就是模型的下一步观察,输出啰嗦的命令在
+handler 里先裁剪,别拿模型的上下文去装它。
+
+可运行示例:
+[knowledge.py](https://github.com/qirabot/qirabot/blob/main/examples/game/knowledge.py)
 
 ## 模型与语言
 

@@ -5,8 +5,8 @@ description: 在命令行运行自然语言 GUI 自动化任务——browser、a
 
 # CLI 参考
 
-`qirabot` 命令不写 Python 就能端到端运行任务,随核心包安装。`android`、
-`ios` 和 `desktop --window-title/--hwnd` 走内置后端——无需 extras。只有
+`qirabot` 命令随核心包安装,不写 Python 就能端到端运行任务。`android`、
+`ios` 和 `desktop --window-title/--hwnd` 走内置后端,不需要 extras。只有
 `browser`(`qirabot[browser]`)、全屏 `desktop`(`qirabot[desktop]`)和
 Appium 引擎(`qirabot[appium]`)需要对应 extra。
 
@@ -56,7 +56,7 @@ qirabot models
 | `ios 指令` | 在 iOS 设备运行 AI 任务([WDA 直连](/zh/backends/ios),内置;`--appium-url`/`--device` 走 Appium) |
 | `desktop 指令` | 在[桌面](/zh/backends/desktop)运行 AI 任务(pyautogui;`--window-title`/`--hwnd` 绑定[单个 Windows 窗口](/zh/backends/windows-games),内置) |
 | `install-browser` | 一次性下载浏览器后端所需的 Chromium |
-| `open-browser` | 打开浏览器手动登录网站——登录态保存在 `--user-data-dir`,供后续运行复用 |
+| `open-browser` | 打开浏览器手动登录网站;登录态保存在 `--user-data-dir`,供后续运行复用 |
 | `doctor` | 检查 Python、Google Cloud 凭据(ADC + 项目)与各后端依赖 |
 | `models` | 打印内置的 Vertex provider 及其默认模型、本次会话的默认模型,以及所配置的认证方式(API key 和/或 ADC)能否解析 |
 | `skill install [AGENT]` | 把自带的 [Agent Skill](/zh/guide/agents) 装进 AI agent 的 skills 目录 |
@@ -65,7 +65,7 @@ qirabot models
 
 ## 全局选项
 
-全局选项写在**子命令之前**(用于配置 Vertex AI 连接):
+全局选项要写在子命令之前,用于配置 Vertex AI 连接:
 
 ```bash
 qirabot --vertex-project my-gcp-project --vertex-location global browser "..."
@@ -78,13 +78,13 @@ qirabot --vertex-project my-gcp-project --vertex-location global browser "..."
 
 `--vertex-api-key`(或 `QIRA_VERTEX_API_KEY`)使用
 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
-认证,替代 ADC——无需安装配置 gcloud。注意这是 Google Cloud 的 API
+认证来代替 ADC,不用安装和配置 gcloud。注意这是 Google Cloud 的 API
 key,不是 AI Studio 的 key;仅支持 `gemini-vertex` 系列模型,固定走全局
 端点,并优先于 `--vertex-project`/`--vertex-location`。
 
 `--gemini-api-key`(或 `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`)是
 `gemini` provider 用的
-[AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)——该
+[AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)。该
 provider 直接调用 Gemini Developer API 而非 Vertex,完全不涉及 Google
 Cloud(`-m gemini/gemini-3.6-flash`)。
 
@@ -96,8 +96,8 @@ provider 的默认模型(`gemini` →
 
 ## 退出码
 
-脚本友好:`0` 任务成功,`1` 任务失败或出错,`130` Ctrl+C 中断——因此
-`qirabot browser "..." && next-step` 只在成功时继续。
+退出码是为脚本设计的:`0` 任务成功,`1` 任务失败或出错,`130` Ctrl+C
+中断。因此 `qirabot browser "..." && next-step` 只在成功时继续。
 
 ## 机器可读输出
 
@@ -127,11 +127,11 @@ provider 的默认模型(`gemini` →
 ```
 
 `status` 取值 `completed` / `goal_failed` / `max_steps` / `error` /
-`cancelled`——与 SDK `RunResult.status` 相同,外加 Ctrl+C 和 ESC 中止对应的
+`cancelled`,与 SDK `RunResult.status` 相同,外加 Ctrl+C 和 ESC 中止对应的
 `cancelled`。`success` 仅在 `completed` 时为 `true`。关闭报告时 `report` 为
 `null`;报告文件在进程退出时写出,应在 CLI 返回后再读取。
 
-`--output-format stream-json` 输出 NDJSON——每行一个 JSON 对象、逐步 flush,
+`--output-format stream-json` 输出 NDJSON,每行一个 JSON 对象、逐步 flush,
 适合实时监控运行的上层工具:
 
 ```
@@ -143,8 +143,8 @@ provider 的默认模型(`gemini` →
 
 `step` 行的字段与 SDK 的 `StepResult` 一致(`step`、`action_type`、
 `params`、`decision`、`output`、`finished` 及单步 token/耗时计数);末尾的
-`result` 行与 `json` 格式的对象相同。中断运行的错误——包括设备不可达等
-setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消费方
+`result` 行与 `json` 格式的对象相同。中断运行的错误(包括设备不可达等
+setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 总能读到一条终止行。
 
 ## 通用运行选项
@@ -159,7 +159,7 @@ setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消�
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
 | `-l, --language` | — | 响应语言,如 `zh`、`en` |
 | `--max-steps` | `20` | AI 任务的步数预算 |
-| `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL——远程内容请先自行下载 |
+| `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL,远程内容请先自行下载 |
 | `--report / --no-report` | 开 | 写 HTML 运行报告 |
 | `--report-dir` | `./qira_runs/...` | 报告输出根目录(环境变量 `QIRA_REPORT_DIR`) |
 | `--annotate / --no-annotate` | 开 | 在保存的截图上用十字线标注点击/输入坐标 |
@@ -168,7 +168,7 @@ setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消�
 
 ## 各命令专属选项
 
-**`browser`** —— 见[浏览器后端](/zh/backends/browser):
+**`browser`**(详见[浏览器后端](/zh/backends/browser)):
 
 | 选项 | 默认值 | 作用 |
 |---|---|---|
@@ -180,7 +180,7 @@ setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消�
 | `--browser-arg` | — | 额外的 Chromium 启动参数,可重复 |
 | `--cdp-url` | — | 经 CDP 接管已运行的 Chrome;与上面四个选项互斥 |
 
-**`android`** —— 见 [Android 后端](/zh/backends/android):
+**`android`**(详见 [Android 后端](/zh/backends/android)):
 
 | 选项 | 默认值 | 作用 |
 |---|---|---|
@@ -188,21 +188,21 @@ setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消�
 | `--app-package` | — | 要启动的应用包名(如 `com.android.settings`) |
 | `--app-activity` | — | 要启动的应用 activity |
 | `--appium-url` | adb 直连,无服务器 | 传入即切换到 [Appium 引擎](/zh/frameworks/appium) |
-| `--record` | 关 | 录制**设备**屏幕(adb screenrecord / Appium API) |
+| `--record` | 关 | 录制设备屏幕(adb screenrecord / Appium API) |
 
-**`ios`** —— 见 [iOS 后端](/zh/backends/ios):
+**`ios`**(详见 [iOS 后端](/zh/backends/ios)):
 
 | 选项 | 默认值 | 作用 |
 |---|---|---|
-| `--wda-url` | `http://127.0.0.1:8100` | WebDriverAgent 地址——由它选择设备(USB 真机:`iproxy 8100 8100`) |
+| `--wda-url` | `http://127.0.0.1:8100` | WebDriverAgent 地址,由它选择设备(USB 真机:`iproxy 8100 8100`) |
 | `--bundle-id` | — | 要启动的应用 bundle id(如 `com.tencent.xin`) |
-| `--device` | — | `xcrun simctl list devicetypes` 里的模拟器设备类型——切换到 Appium 引擎,仅模拟器(无 `-d` 简写:切换引擎应显式写全) |
+| `--device` | — | `xcrun simctl list devicetypes` 里的模拟器设备类型;传入即切换到 Appium 引擎,仅模拟器(无 `-d` 简写:切换引擎应显式写全) |
 | `--appium-url` | WDA 直连,无服务器 | Appium 服务器地址(配合 `--device`) |
-| `--record` | 关 | 录制**设备**屏幕(WDA MJPEG + ffmpeg / Appium API) |
+| `--record` | 关 | 录制设备屏幕(WDA MJPEG + ffmpeg / Appium API) |
 | `--mjpeg-url` | `--wda-url` 主机的 9100 端口 | `--record` 的 MJPEG 流覆盖地址 |
 
-**`desktop`** —— 见[桌面](/zh/backends/desktop)与
-[Windows 与游戏](/zh/backends/windows-games):
+**`desktop`**(详见[桌面](/zh/backends/desktop)与
+[Windows 与游戏](/zh/backends/windows-games)):
 
 | 选项 | 默认值 | 作用 |
 |---|---|---|
@@ -212,10 +212,10 @@ setup 阶段失败——同样以 `result` 对象结束(`status: "error"`),消�
 | `--hwnd` | — | 绑定窗口句柄,十进制(Windows 窗口后端) |
 | `--ambiguous` | `error` | 多个窗口匹配 `--window-title` 时:`error` 报错并列出候选;`largest` 选面积最大的窗口 |
 
-**`skill install [AGENT]`** —— 安装自带的
+**`skill install [AGENT]`** 安装自带的
 [Agent Skill](/zh/guide/agents)(SKILL.md、preflight 脚本、API 参考、起步
-模板),版本与本机安装的 `qirabot` 严格一致。`AGENT` 可选 `agents`(共享的
-`.agents/skills` 约定——Codex、Cursor、Gemini CLI 等)、`claude`、`codex`、
+模板),版本与本机安装的 `qirabot` 严格一致。`AGENT` 可选 `agents`(Codex、Cursor、Gemini CLI
+等工具共享的 `.agents/skills` 约定)、`claude`、`codex`、
 `cursor`;其他工具用 `--dir PATH` 指定目录。`--project` 装进当前目录下的
 项目级 skills 目录而不是用户级。`pip install -U qirabot` 之后重跑即升级;
 不是本命令创建的目录绝不覆盖,除非加 `--force`。Claude Code 用户仍推荐
@@ -225,14 +225,14 @@ plugin marketplace 安装(可自动更新)。`skill uninstall` 接受同样的�
 `--record` 把 `recording.mp4` 存入运行目录并嵌入 HTML 报告。录制对象因
 平台而异:
 
-- `browser` / `desktop` —— 用 ffmpeg 录制**宿主机**屏幕(ffmpeg 需在
-  PATH)。绑定窗口时(`--window-title`/`--hwnd`)只录该窗口。
-- `android` —— 录制**设备**屏幕:默认引擎用 `adb screenrecord`,Appium
-  引擎用其录屏 API。
-- `ios` —— 录制**设备**屏幕:默认引擎用 WDA 的 MJPEG 流(需要 ffmpeg;
-  USB 真机还需 `iproxy 9100 9100`),Appium 引擎用其录屏 API。
+- `browser` / `desktop`:用 ffmpeg 录制宿主机屏幕(ffmpeg 需在 PATH)。
+  绑定窗口时(`--window-title`/`--hwnd`)只录该窗口。
+- `android`:录制设备屏幕。默认引擎用 `adb screenrecord`,Appium 引擎
+  用其录屏 API。
+- `ios`:录制设备屏幕。默认引擎用 WDA 的 MJPEG 流(需要 ffmpeg;USB
+  真机还需 `iproxy 9100 9100`),Appium 引擎用其录屏 API。
 
 录制机制、报告结构与音频采集见
-[报告与录屏](/zh/advanced/reports)。运行同样遵循 SDK 的环境变量——
-`QIRA_REPORT_DIR`、`QIRA_SETTLE_SECONDS`、`QIRA_RECORD*` 等;完整清单见
+[报告与录屏](/zh/advanced/reports)。运行同样遵循 SDK 的环境变量
+(`QIRA_REPORT_DIR`、`QIRA_SETTLE_SECONDS`、`QIRA_RECORD*` 等),完整清单见
 [配置](/zh/advanced/configuration)。

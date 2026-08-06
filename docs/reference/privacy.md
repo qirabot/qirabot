@@ -5,19 +5,19 @@ description: Exactly what Qirabot sends to your own Vertex AI endpoint (screensh
 
 # Data & Privacy
 
-Qirabot's decision engine runs locally inside the SDK: the model needs to
-see the screen, and nothing else. Screenshots go directly from your machine
+Qirabot's decision engine runs locally inside the SDK; the only thing the
+model needs to see is the screen. Screenshots go directly from your machine
 to the Vertex AI endpoint of your own Google Cloud project. The `qirabot`
-package makes no network calls to any Qirabot service — there is no
-account, no API key, and no server-side task store. This page states
-exactly what crosses the wire.
+package makes no network calls to any Qirabot service: it does not require
+an account or an API key, and it keeps no server-side task store. This page
+states exactly what crosses the wire.
 
 ## What is sent to your model endpoint
 
 Each AI step sends to the Vertex AI model you configured, under your Google
 Cloud project:
 
-- a **screenshot** of the bound target (JPEG quality 80 by default —
+- a **screenshot** of the bound target (JPEG quality 80 by default; see
   `screenshot_format` / `screenshot_quality` in
   [Configuration](/advanced/configuration)),
 - your **instruction text** (the natural-language description or task),
@@ -33,14 +33,14 @@ No other party receives it.
   execute locally through your framework or adapter.
 - **Cookies, credentials, session state.** Qirabot drives your browser or
   device; it doesn't read or transmit their storage.
-- **Custom tools.** Functions passed via `custom_tools` run locally — your
+- **Custom tools.** Functions passed via `custom_tools` run locally. Your
   endpoints, tokens, and databases are never seen by the model endpoint;
   only the tool's string return value is fed back to the model. See
   [AI Tasks & Custom Tools](/advanced/ai-tasks).
 
 ## What stays local
 
-All run data — name, status, steps, and step screenshots — stays on local
+All run data (name, status, steps, and step screenshots) stays on local
 disk. The [HTML report](/advanced/reports) (`report.html`, full-resolution
 `screenshots/`, `recording.mp4`) is written to `./qira_runs/` on your
 machine, is fully self-contained, and makes no network calls. Disable it

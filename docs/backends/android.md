@@ -5,16 +5,16 @@ description: Automate real Android devices and emulators with AI vision, no Appi
 
 # Android — Direct over adb
 
-Qirabot's built-in Android backend needs **no Appium server, no framework,
-and nothing installed on the device for input**: it shells out to adb
-(screenshot via `screencap`, input via `input tap/swipe/keyevent`). If
-`adb devices` sees it, Qirabot can drive it — real device or emulator.
+The built-in Android backend talks to the device through plain adb:
+screenshots via `screencap`, input via `input tap/swipe/keyevent`. There is
+no Appium server or framework to run, and nothing to install on the device
+for input. Any real device or emulator that appears in `adb devices` works.
 
-Because element location is AI vision on the screenshot, there are no
-UiAutomator selectors and no accessibility-tree dependency: native apps,
+Element location is AI vision on the screenshot, so there are no UiAutomator
+selectors to write and no dependency on the accessibility tree. Native apps,
 WebViews, Flutter, React Native, and games all look the same to it.
 
-The core package is enough — no extras (see
+The core package is enough; no extras are needed (see
 [Installation](/guide/installation)). The quickest check is the CLI:
 
 ```bash
@@ -37,18 +37,18 @@ bot.close()
 ```
 
 `bind(device)` fixes the target once, so every later call drops the first
-argument (`bot.click("...")` instead of `bot.click(device, "...")`) — see
+argument (`bot.click("...")` instead of `bot.click(device, "...")`). See
 [Custom Adapters & Bolt-On](/backends/custom-adapters) for the details.
 
 ## Non-ASCII typing (Chinese, emoji)
 
-Typing beyond ASCII works through the bundled ADBKeyboard IME — installed on
-demand and switched back afterwards. `bot.type_text(...)` with Chinese or
-emoji just works.
+Typing beyond ASCII works through the bundled ADBKeyboard IME, which is
+installed on demand and switched back afterwards. `bot.type_text(...)`
+accepts Chinese or emoji with no extra setup.
 
 ## Screen recording
 
-Record the **device** screen (not the host) into the run report:
+Record the device screen (not the host) into the run report:
 
 ```python
 bot = Qirabot(record_device=True)   # or QIRA_RECORD_DEVICE=1
@@ -61,8 +61,8 @@ Under the hood it's `adb screenrecord`; runs longer than screenrecord's
 
 ## Through Appium instead
 
-Have an existing Appium setup or a cloud device farm? The same API drives an
-Appium driver — install `qirabot[appium]` and pass the driver:
+If you have an existing Appium setup or a cloud device farm, the same API
+drives an Appium driver. Install `qirabot[appium]` and pass the driver:
 
 ```python
 from appium import webdriver
@@ -82,9 +82,8 @@ driver.quit()
 
 On the CLI, passing `--appium-url` selects the Appium engine:
 `qirabot android "..." --appium-url http://localhost:4723`. The full
-Appium workflow — device clouds, recording, and an
-Appium-vs-built-in comparison — is in
-[Appium + Qirabot](/frameworks/appium).
+Appium workflow (device clouds, recording, and an Appium-vs-built-in
+comparison) is in [Appium + Qirabot](/frameworks/appium).
 
 ## Platform notes
 
@@ -92,9 +91,10 @@ Appium-vs-built-in comparison — is in
   sends `keyevent BACK`.
 - `long_press` is available (touch platforms); `hover` is a no-op,
   `right_click` degrades to a tap.
-- `clear_text` over raw adb is best-effort (caret-to-end + repeated delete) —
+- `clear_text` over raw adb is best-effort (caret-to-end + repeated delete);
   there is no element model on purpose.
-- Coming from Airtest 1.x? `connect_device("Android:///emu-5554")` becomes
-  `AdbDevice("emu-5554")` — the rest of your `bind()` code is unchanged.
+- If you are coming from Airtest 1.x, `connect_device("Android:///emu-5554")`
+  becomes `AdbDevice("emu-5554")`; the rest of your `bind()` code is
+  unchanged.
 - Full per-action behavior:
   [platform support matrix](/reference/api#platform-support-matrix).

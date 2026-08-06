@@ -5,9 +5,10 @@ description: Bolt AI vision onto an existing Selenium WebDriver session - descri
 
 # Selenium + Qirabot
 
-Selenium suites accumulate XPath. Qirabot lets the new steps skip it: pass
-your existing `driver`, describe elements in plain English, and let AI
-vision locate them on the rendered page. Old tests keep running unchanged.
+Selenium suites tend to accumulate XPath. New steps written with Qirabot
+don't need it: pass your existing `driver`, describe elements in plain
+English, and AI vision locates them on the rendered page. Existing tests
+keep running unchanged.
 
 ```python
 from selenium import webdriver
@@ -24,7 +25,7 @@ bot.close()      # close the bot first (finishes recording/report), then the dri
 driver.quit()
 ```
 
-Selenium is not an extra — bring your own driver:
+Selenium is not a package extra, so bring your own driver:
 
 ```bash
 pip install qirabot selenium
@@ -64,13 +65,13 @@ assert bot.verify("a green success banner is visible")
 ```
 
 `go_back` maps to history-back; `navigate(driver, "example.com")` prepends
-`https://` when missing. Tab management (`close_tab`) is Playwright-only —
-on Selenium manage windows natively.
+`https://` when missing. Tab management (`close_tab`) is Playwright-only,
+so on Selenium manage windows natively.
 
 ## When Qirabot helps most in a Selenium suite
 
-- Assertions about rendered state (`verify`) where DOM checks lie —
-  element present but invisible, overlapped, or off-screen.
+- Assertions about rendered state (`verify`) where DOM checks lie: the
+  element is present but invisible, overlapped, or off-screen.
 - Pages you don't own (payment iframes, SSO screens, captchas-adjacent
   flows) where selectors change under you.
 - One-off data pulls (`extract`) that would otherwise mean a parsing

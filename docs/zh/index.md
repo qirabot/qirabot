@@ -17,24 +17,33 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/qirabot/qirabot
+  image:
+    src: /logo.svg
+    alt: Qirabot
 
 features:
-  - title: 浏览器自动化
+  - icon: 🌐
+    title: 浏览器自动化
     details: 底层为 Playwright——bot.open() 自动启动 Chromium,也可通过 CDP 接管已运行的 Chrome。支持 headless、持久化 profile、远程浏览器池。
     link: /zh/backends/browser
-  - title: Android 免 Appium
+  - icon: 🤖
+    title: Android 免 Appium
     details: adb 直连——无需服务器,设备端零安装。截图、点击、滑动、输入(含中文和 emoji),adb 能看到的设备都能驱动。
     link: /zh/backends/android
-  - title: iOS 免 Appium
+  - icon: 📱
+    title: iOS 免 Appium
     details: 通过 HTTP 直连真机上的 WebDriverAgent。无需 Appium 服务器、无需额外包——只要 iproxy 和一个 WDA 会话。
     link: /zh/backends/ios
-  - title: Windows 窗口与游戏
+  - icon: 🎮
+    title: Windows 窗口与游戏
     details: 按标题或 HWND 绑定单个窗口。输入为 DirectInput 扫描码——游戏真正轮询的层级,虚拟键自动化无法触达。可驱动 Unity、Unreal 与原生应用。
     link: /zh/backends/windows-games
-  - title: 挂载现有框架
+  - icon: 🔌
+    title: 挂载现有框架
     details: 已在用 Playwright、Selenium、Appium 或 pyautogui?直接传入你的 page/driver 对象,在现有套件中注入 AI 步骤——无需重写。
     link: /zh/backends/custom-adapters
-  - title: 一套 API 全端通用
+  - icon: 🧩
+    title: 一套 API 全端通用
     details: bot.ai() 自主完成整个任务;bot.click() / extract() / verify() 提供 AI 定位的确定性步骤。所有平台调用方式一致。
     link: /zh/guide/quickstart
 ---

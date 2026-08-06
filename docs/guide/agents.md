@@ -10,9 +10,9 @@ pre-built skill following the
 [Agent Skills open standard](https://agentskills.io) equips the agent with a
 preflight environment check, condensed SDK and CLI references, and
 per-platform starter templates. Given a natural-language automation goal, the
-agent validates the environment, selects the execution path — the CLI for
+agent validates the environment, selects the execution path (the CLI for
 one-shot tasks, an SDK script when the flow requires branching or returned
-values — and verifies the run's outcome. Installation depends on the agent.
+values), and verifies the run's outcome. Installation depends on the agent.
 
 ## Claude Code plugin
 
@@ -28,13 +28,13 @@ Claude invokes the skill automatically whenever a task involves automating,
 testing, or scraping a UI; it can also be invoked explicitly as
 `/qirabot:qirabot`. The skill contains:
 
-- **A preflight script** — validates the Python environment, backend
+- **A preflight script** validates the Python environment, backend
   dependencies, and Google Cloud credentials (ADC) before any code is
   written, and prints the exact fix command for each failing check.
-- **Condensed SDK + CLI references** — the agent codes against an accurate,
+- **Condensed SDK + CLI references**: the agent codes against an accurate,
   drift-tested API surface.
 - **Starter templates** for browser, Android (adb), iOS (WDA and Appium),
-  and bring-your-own-driver integration — the agent adapts a working
+  and bring-your-own-driver integration, so the agent adapts a working
   skeleton instead of generating boilerplate from scratch.
 
 The plugin contains instructions and helper scripts only; the `qirabot`
@@ -59,7 +59,8 @@ qirabot skill install --dir <path>      # any other Agent-Skills-compatible tool
 The installed copy is version-matched to the SDK: the API reference the agent
 reads always describes the `qirabot` it runs. `--project` installs into the
 repository (`.agents/skills/`) instead of the home directory; rerun the
-command after upgrading qirabot. Details: [CLI Reference](/guide/cli).
+command after upgrading qirabot. For details, see the
+[CLI Reference](/guide/cli).
 
 Alternatively, the [skills CLI](https://github.com/vercel-labs/skills)
 installs the same skill from the repository's `main` branch (latest
@@ -81,14 +82,14 @@ qirabot browser "Fill the signup form as Jane Doe and stop at the captcha" --url
 
 Exit codes are machine-checkable (`0` pass, `1` fail, `130` interrupted), and
 every run writes an [HTML report](/advanced/reports) with per-step
-screenshots for the agent or a human to inspect on failure. All commands:
-[CLI Reference](/guide/cli).
+screenshots for the agent or a human to inspect on failure. All commands are
+listed in the [CLI Reference](/guide/cli).
 
 **The documentation is agent-readable.** Reference these in the agent's
 context or rules file:
 
-- `https://qirabot.com/docs/llms.txt` — index with per-page summaries
-- `https://qirabot.com/docs/llms-full.txt` — the complete documentation in
+- `https://qirabot.com/docs/llms.txt`: an index with per-page summaries
+- `https://qirabot.com/docs/llms-full.txt`: the complete documentation in
   one file
 - every page as raw Markdown by substituting `.md` for `.html`, e.g.
   `https://qirabot.com/docs/reference/methods.md`
@@ -99,7 +100,7 @@ In Cursor, add them via the `@Docs` feature.
 
 An agent generating Playwright code must guess selectors it cannot observe,
 and those selectors break on the next markup change. With Qirabot the agent
-addresses elements in natural language — the modality it reasons in — and
-the same skill extends to surfaces code-first stacks cannot reach: native
+addresses elements in natural language, the modality it reasons in, and the
+same skill extends to surfaces that code-first stacks cannot reach: native
 mobile apps, desktop software, and games. See [What is Qirabot](/) and the
 [platform support matrix](/reference/api#platform-support-matrix).

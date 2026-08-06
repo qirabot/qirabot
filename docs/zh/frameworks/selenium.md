@@ -5,9 +5,9 @@ description: 把 AI 视觉挂载到现有 Selenium WebDriver 会话——用自�
 
 # Selenium + Qirabot
 
-Selenium 套件会不断堆积 XPath。Qirabot 让新增的步骤不再需要它:传入你
-已有的 `driver`,用自然语言描述元素,AI 视觉在渲染后的页面上定位。老
-测试原样继续跑。
+Selenium 套件写久了会积累大量 XPath。用上 Qirabot 之后,新增的步骤可以
+不再依赖它:把你已有的 `driver` 传进来,用自然语言描述元素,AI 视觉会在
+渲染后的页面上定位。老测试不受影响,照常跑。
 
 ```python
 from selenium import webdriver
@@ -24,7 +24,8 @@ bot.close()      # 先关 bot(收尾录屏/报告),再退出 driver
 driver.quit()
 ```
 
-Selenium 不是 extra——自带 driver 即可:
+Qirabot 没有为 Selenium 提供 extra,你自己安装 selenium、创建 driver
+即可:
 
 ```bash
 pip install qirabot selenium
@@ -63,16 +64,16 @@ assert bot.verify("绿色的成功横幅可见")
 ```
 
 `go_back` 映射为浏览器历史后退;`navigate(driver, "example.com")` 会自动
-补 `https://`。标签页管理(`close_tab`)仅 Playwright 支持——Selenium 下
-请用原生方式管理窗口。
+补 `https://`。标签页管理(`close_tab`)只有 Playwright 支持,Selenium
+下请用原生方式管理窗口。
 
 ## Selenium 套件里 Qirabot 最有用的场景
 
-- 对渲染状态的断言(`verify`)——DOM 检查会说谎的地方:元素存在但不可见、
-  被遮挡、在屏幕外。
-- 不受你控制的页面(支付 iframe、SSO 页面、验证码前后的流程)——选择器
-  随时可能变。
-- 一次性数据提取(`extract`)——否则每个页面都要写一个解析函数。
+- 对渲染状态的断言(`verify`),适合 DOM 检查靠不住的场景:元素存在但
+  不可见、被遮挡、在屏幕外。
+- 不受你控制的页面(支付 iframe、SSO 页面、验证码前后的流程),这类页面
+  的选择器随时可能变。
+- 一次性数据提取(`extract`),省得给每个页面写一个解析函数。
 
 相关:[浏览器后端](/zh/backends/browser) ·
 [pytest 集成](/zh/frameworks/pytest)

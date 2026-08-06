@@ -18,12 +18,12 @@ Two notes up front:
   [bound bot](/backends/custom-adapters#bind-—-drop-the-repeated-argument) it
   disappears from every call.
 - Actions like `right_click`, `hover`, `clear_text`, and `drag` appear in the
-  platform matrix but are **not** direct `bot.*` methods — they are tools the
+  platform matrix but are not direct `bot.*` methods; they are tools the
   model uses inside [`ai()`](#ai) runs.
 
 ## Common parameters
 
-The AI-located actions and AI operations share these keyword parameters —
+The AI-located actions and AI operations share these keyword parameters,
 documented once here:
 
 | Parameter | Default | Meaning |
@@ -68,8 +68,9 @@ falls back to headless with a warning. See [Browser](/backends/browser).
 current_page(target) -> page
 ```
 
-The live page/target — may differ from the original after a click opened a
-new tab. Mostly useful on a bound bot, where you don't see returned pages.
+The live page/target, which may differ from the original after a click
+opened a new tab. Mostly useful on a bound bot, where you don't see returned
+pages.
 
 ### close()
 
@@ -91,7 +92,7 @@ cancel(reason="") -> None
 
 Record a terminal outcome other than the success-complete that `close()`
 records by default: `fail()` marks the run failed, `cancel()` marks a
-deliberate abort — both reflected in the HTML report. Call before
+deliberate abort. Both are reflected in the HTML report. Call before
 `close()`.
 
 ### report_dir / task_id
@@ -104,7 +105,7 @@ Properties: the per-run output directory
 
 Property: session-wide AI usage totals so far, as a frozen `SessionUsage`
 snapshot (read again for updated numbers). Covers every AI call on the
-client — `ai()` steps, AI-located actions (`click()`/`type_text()`/…) and
+client: `ai()` steps, AI-located actions (`click()`/`type_text()`/…) and
 standalone `extract()`/`verify()`/`locate()`. A failed call's spend is
 included too; `ai_steps` counts successful calls only.
 
@@ -114,7 +115,7 @@ included too; `ai_steps` counts successful calls only.
 | `input_tokens` | `int` | Non-cached prompt tokens |
 | `cache_read_tokens` / `cache_write_tokens` | `int` | Cached prompt portion (prompt caching is active for Claude models; Gemini caches implicitly) |
 | `output_tokens` / `thinking_tokens` | `int` | Output already includes thinking (Anthropic semantics; the Gemini provider normalizes to match). Anthropic reports no separate thinking count, so `thinking_tokens` stays 0 there |
-| `total_tokens` | `int` | `input + cache read/write + output` — thinking not added again |
+| `total_tokens` | `int` | `input + cache read/write + output` (thinking not added again) |
 | `step_duration_ms` / `llm_decision_duration_ms` | `int` | Accumulated timing |
 
 The CLI prints this summary after every task, and the HTML report header
@@ -122,7 +123,7 @@ shows the same totals.
 
 ## AI-located actions
 
-All return the **current target** — reassign on browsers, where a click can
+All return the current target. Reassign on browsers, where a click can
 open a new tab (`page = bot.click(page, ...)`). All take the
 [common parameters](#common-parameters).
 
@@ -134,8 +135,8 @@ click(target, locate, *, modifier="", timeout=0.0, interval=2.0, wait="",
 ```
 
 `locate` is a natural-language element description (any language).
-`modifier` holds modifier keys around the click — `"alt"`,
-`"ctrl+shift"` — desktop backends only.
+`modifier` holds modifier keys around the click (`"alt"`,
+`"ctrl+shift"`); desktop backends only.
 
 ### double_click()
 
@@ -153,8 +154,9 @@ type_text(target, locate, text, *, press_enter=False,
 ```
 
 Locates the field, focuses it, types `text` (Chinese/emoji included).
-**Empty `locate` skips AI location** and types into whatever has keyboard
-focus — no AI, no model call; `timeout`/`wait` are ignored in that mode.
+An empty `locate` skips AI location and types into whatever has keyboard
+focus, without making a model call; `timeout`/`wait` are ignored in that
+mode.
 
 ### long_press()
 
@@ -162,7 +164,7 @@ focus — no AI, no model call; `timeout`/`wait` are ignored in that mode.
 long_press(target, locate, *, duration=2.0, <common>) -> target
 ```
 
-Touch platforms only (Android/iOS) — browser/desktop raise
+Touch platforms only (Android/iOS); browser/desktop raise
 `NotImplementedError`.
 
 ### mouse_down() / mouse_up()
@@ -172,9 +174,9 @@ mouse_down(target, locate, *, <common>) -> target
 mouse_up(target, locate="", *, <common>) -> target
 ```
 
-Split press/release for press-and-hold drags — desktop backends only.
-`mouse_up` with no `locate` releases at the current cursor position (no AI,
-no model call). Anything still held is auto-released at the end of an
+Split press/release for press-and-hold drags; desktop backends only.
+`mouse_up` with no `locate` releases at the current cursor position and
+makes no model call. Anything still held is auto-released at the end of an
 `ai()` run and on `close()`.
 
 ### key_down() / key_up()
@@ -184,7 +186,7 @@ key_down(target, key) -> target
 key_up(target, key) -> target
 ```
 
-Hold a key across other actions (desktop backends only). No AI, no model
+Hold a key across other actions (desktop backends only). Makes no model
 call.
 
 ## AI operations
@@ -199,7 +201,7 @@ ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
 The autonomous loop: screenshot → decide → act, until done or `max_steps`.
 `on_step` is called with a [`StepResult`](#stepresult) after each step.
 `custom_tools` registers your Python functions as callable tools;
-`exclude_tools` removes built-ins by action name — both detailed in
+`exclude_tools` removes built-ins by action name; both are detailed in
 [AI Tasks & Custom Tools](/advanced/ai-tasks). `knowledge` mounts domain
 reference material for the run (text, a `Path`, or a list of either; 32KB
 total).
@@ -211,7 +213,7 @@ extract(target, instruction, *, retry=None, thinking_level="",
         language="") -> ExtractResult
 ```
 
-Structured data straight off the screen. The return value
+Extracts structured data from the current screen. The return value
 [is a `str` subclass](#extractresult) carrying token usage.
 
 ### verify()
@@ -221,8 +223,8 @@ verify(target, assertion, *, retry=None, thinking_level="",
        language="") -> VerifyResult
 ```
 
-Visual assertion. A failed check doesn't raise — the result
-[is truthy/falsy](#verifyresult) with a `.reason`; transport/model-endpoint
+Visual assertion. A failed check doesn't raise; the result
+[is truthy/falsy](#verifyresult) with a `.reason`. Transport/model-endpoint
 errors still raise.
 
 ### locate()
@@ -232,8 +234,8 @@ locate(target, locate, *, timeout=0.0, interval=2.0, wait="",
        retry=None, thinking_level="", language="") -> LocateResult
 ```
 
-Resolves a natural-language element description to coordinates **without
-acting** — nothing is clicked or typed. Returns a
+Resolves a natural-language element description to coordinates without
+acting; nothing is clicked or typed. Returns a
 [`LocateResult`](#locateresult) that unpacks as a tuple:
 
 ```python
@@ -241,19 +243,19 @@ x, y = bot.locate(page, "the OK button")
 page.mouse.click(x, y)   # drive your own framework with the coordinates
 ```
 
-Coordinates are in the **adapter's screenshot pixel space**: window-relative
+Coordinates are in the adapter's screenshot pixel space: window-relative
 client pixels on the Windows window backend, physical screen pixels on
-pyautogui, device pixels on mobile — the same space the bot's own actions
-use, and what you see in the report screenshots, but not necessarily
-OS-global coordinates.
+pyautogui, device pixels on mobile. This is the same space the bot's own
+actions use, and what you see in the report screenshots, but not
+necessarily OS-global coordinates.
 
 The locate itself is a single vision call (no LLM tokens). With
-`timeout > 0` it auto-waits first, same semantics as `click()` — each poll
-is an LLM verify call against your model endpoint.
+`timeout > 0` it auto-waits first, with the same semantics as `click()`;
+each poll is an LLM verify call against your model endpoint.
 
 ::: warning Absent elements
-The vision resolver returns coordinates even when the element is **not on
-screen**, and those coordinates are unreliable. When presence isn't
+The vision resolver returns coordinates even when the element is not on
+screen, and those coordinates are unreliable. When presence isn't
 guaranteed, pass `timeout=` or check with `verify()` / `wait_for()` first.
 :::
 
@@ -266,8 +268,8 @@ wait_for(target, assertion, timeout=30.0, interval=2.0, *,
 
 Polls `verify` semantics every `interval` seconds; returns as soon as the
 condition holds, raises `QirabotTimeoutError` at `timeout`. Each poll is a
-verify call to your model endpoint — prefer it over sleeps for correctness,
-and keep `interval` reasonable to limit token usage.
+verify call to your model endpoint, so prefer it over sleeps for
+correctness but keep `interval` reasonable to limit token usage.
 
 ## Direct actions — no AI
 
@@ -298,7 +300,7 @@ Scrolls at the viewport center, or at `(x, y)` when given.
 press_key(target, key, duration_seconds=0) -> target
 ```
 
-One key name works everywhere — adb keycode on Android, DirectInput
+One key name works everywhere: adb keycode on Android, DirectInput
 scancode on the Windows window backend. Combos join with `+`
 (`"ctrl+shift+t"`, desktop/browser only). `duration_seconds > 0` holds the
 key(s) before releasing (capped at 10; pyautogui + Windows window backend
@@ -331,10 +333,10 @@ start_recording(*, fps=None, target=None, window=None, audio=None) -> bool
 stop_recording() -> str | None       # returns the saved path
 ```
 
-Normally you don't call these — `record=True` / `record_device=True` /
+Normally you don't call these: `record=True` / `record_device=True` /
 `record_mjpeg_url=...` on the constructor handle recording, and `close()`
-writes the report. Manual control and all knobs:
-[Reports & Recording](/advanced/reports).
+writes the report. Manual control and the full set of options are covered
+in [Reports & Recording](/advanced/reports).
 
 ## Result objects
 
@@ -345,7 +347,7 @@ Returned by `ai()`.
 | Field | Type | Meaning |
 |---|---|---|
 | `success` | `bool` | `True` iff `status == "completed"` |
-| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"error"` — see [Error Handling](/advanced/error-handling) |
+| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"error"`; see [Error Handling](/advanced/error-handling) |
 | `output` | `str` | The model's final answer / summary |
 | `steps` | `list[StepResult]` | Every step taken |
 
@@ -366,19 +368,19 @@ One entry per `ai()` step; also what `on_step` receives.
 
 ### ExtractResult
 
-Returned by `extract()` — a `str` subclass, so use it directly as the
+Returned by `extract()`. It is a `str` subclass, so use it directly as the
 extracted text. Extra fields: `input_tokens`, `output_tokens`,
 `thinking_tokens`. `output_tokens` already includes `thinking_tokens`, so a
-call's spend is `input_tokens + output_tokens`. Note: str operations that
-build a new string (slicing, `.strip()`, concatenation) return a plain
-`str` and drop the token fields — read them on the value `extract()`
+call's spend is `input_tokens + output_tokens`. Note that str operations
+that build a new string (slicing, `.strip()`, concatenation) return a plain
+`str` and drop the token fields; read them on the value `extract()`
 returned.
 
 ### VerifyResult
 
-Returned by `verify()` — truthy when the assertion holds, so it drops
-straight into `assert` / `if`. Fields: `passed` (`bool`), `reason` (the
-model's explanation — worth logging when an assertion fails unexpectedly),
+Returned by `verify()`. Truthy when the assertion holds, so it can be used
+directly in `assert` / `if`. Fields: `passed` (`bool`), `reason` (the
+model's explanation, worth logging when an assertion fails unexpectedly),
 and the same three token fields as `ExtractResult`.
 
 ### LocateResult
@@ -389,4 +391,4 @@ Returned by [`locate()`](#locate). Unpacks as a tuple:
 | Field | Type | Meaning |
 |---|---|---|
 | `x` / `y` | `int` | Resolved coordinates, in the adapter's screenshot pixel space |
-| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token usage — currently `0` (locate is a single vision call) |
+| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token usage; currently `0` (locate is a single vision call) |

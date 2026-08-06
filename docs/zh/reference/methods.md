@@ -17,12 +17,12 @@ description: Qirabot 每个方法的完整签名——click、type_text、extrac
   [bind 绑定的 bot](/zh/backends/custom-adapters#bind-——-省去重复的第一个参数)
   上,它从所有调用中消失。
 - `right_click`、`hover`、`clear_text`、`drag` 之类的动作出现在平台矩阵
-  里,但**不是**直接的 `bot.*` 方法——它们是模型在 [`ai()`](#ai) 运行中
+  里,但不是直接的 `bot.*` 方法,而是模型在 [`ai()`](#ai) 运行中
   使用的工具。
 
 ## 通用参数
 
-AI 定位动作和 AI 操作共享这些关键字参数——在此统一说明:
+AI 定位动作和 AI 操作共享这些关键字参数,在此统一说明:
 
 | 参数 | 默认值 | 含义 |
 |---|---|---|
@@ -64,7 +64,7 @@ open(url="", headless=False, *, viewport=(1280, 800), user_data_dir="",
 current_page(target) -> page
 ```
 
-当前活动的页面/目标——点击打开新标签页后,可能与最初传入的不同。主要
+当前活动的页面/目标;点击打开新标签页后,可能与最初传入的不同。主要
 用于 bind 绑定的 bot,因为你看不到返回的 page。
 
 ### close()
@@ -85,7 +85,7 @@ cancel(reason="") -> None
 ```
 
 记录 `close()` 默认记录的“成功完成”之外的终态:`fail()` 把运行标记为
-失败,`cancel()` 标记为主动中止——都会体现在 HTML 报告里。在 `close()`
+失败,`cancel()` 标记为主动中止;两者都会体现在 HTML 报告里。在 `close()`
 之前调用。
 
 ### report_dir / task_id
@@ -96,7 +96,7 @@ id(形如 `local-<8 位十六进制>`)。
 ### usage
 
 属性:到目前为止的会话级 AI 用量汇总,返回不可变的 `SessionUsage` 快照
-(再次读取获得最新数值)。覆盖该客户端上的每一次 AI 调用——`ai()` 的每一步、
+(再次读取获得最新数值)。覆盖该客户端上的每一次 AI 调用:`ai()` 的每一步、
 AI 定位动作(`click()`/`type_text()` 等)以及独立的
 `extract()`/`verify()`/`locate()`。失败调用的花费也计入;`ai_steps` 只统计
 成功的调用。
@@ -107,14 +107,14 @@ AI 定位动作(`click()`/`type_text()` 等)以及独立的
 | `input_tokens` | `int` | 未命中缓存的 prompt token |
 | `cache_read_tokens` / `cache_write_tokens` | `int` | 命中/写入缓存的 prompt 部分(Claude 模型主动启用 prompt cache;Gemini 有隐式缓存) |
 | `output_tokens` / `thinking_tokens` | `int` | output 已含 thinking(Anthropic 语义,Gemini provider 已归一化对齐)。Anthropic 不单独上报 thinking,该字段在 Claude 模型下恒为 0 |
-| `total_tokens` | `int` | `input + cache 读写 + output`——thinking 不重复相加 |
+| `total_tokens` | `int` | `input + cache 读写 + output`(thinking 不重复相加) |
 | `step_duration_ms` / `llm_decision_duration_ms` | `int` | 累计耗时 |
 
 CLI 在每个任务结束后会打印同一份汇总,HTML 报告头部也展示相同数据。
 
 ## AI 定位动作
 
-全部返回**当前目标**——浏览器上点击可能打开新标签页,记得重新赋值
+全部返回当前目标。浏览器上点击可能打开新标签页,记得重新赋值
 (`page = bot.click(page, ...)`)。全部接受[通用参数](#通用参数)。
 
 ### click()
@@ -125,7 +125,7 @@ click(target, locate, *, modifier="", timeout=0.0, interval=2.0, wait="",
 ```
 
 `locate` 是自然语言的元素描述(任何语言均可)。`modifier` 在点击前后
-按住修饰键——`"alt"`、`"ctrl+shift"`——仅桌面后端。
+按住修饰键(`"alt"`、`"ctrl+shift"`),仅桌面后端。
 
 ### double_click()
 
@@ -142,8 +142,8 @@ type_text(target, locate, text, *, press_enter=False,
           clear_before_typing=False, <common>) -> target
 ```
 
-定位输入框、聚焦、输入 `text`(中文/emoji 均可)。**空 `locate` 跳过
-AI 定位**,输入到当前拥有键盘焦点的元素——无 AI、无模型调用;该模式下
+定位输入框、聚焦、输入 `text`(中文/emoji 均可)。空 `locate` 跳过
+AI 定位,输入到当前拥有键盘焦点的元素,无 AI、无模型调用;该模式下
 `timeout`/`wait` 被忽略。
 
 ### long_press()
@@ -152,7 +152,7 @@ AI 定位**,输入到当前拥有键盘焦点的元素——无 AI、无模型�
 long_press(target, locate, *, duration=2.0, <common>) -> target
 ```
 
-仅触屏平台(Android/iOS)——浏览器/桌面抛 `NotImplementedError`。
+仅触屏平台(Android/iOS);浏览器/桌面抛 `NotImplementedError`。
 
 ### mouse_down() / mouse_up()
 
@@ -161,7 +161,7 @@ mouse_down(target, locate, *, <common>) -> target
 mouse_up(target, locate="", *, <common>) -> target
 ```
 
-拆分的按下/释放,用于按住拖动——仅桌面后端。`mouse_up` 不传 `locate`
+拆分的按下/释放,用于按住拖动;仅桌面后端。`mouse_up` 不传 `locate`
 时在当前光标位置释放(无 AI、无模型调用)。`ai()` 运行结束和 `close()`
 时自动释放仍按住的输入。
 
@@ -185,7 +185,7 @@ ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
 
 自主循环:截图 → 决策 → 执行,直到完成或达到 `max_steps`。每步之后以
 [`StepResult`](#stepresult) 为参数调用 `on_step`。`custom_tools` 把你的
-Python 函数注册为可调用工具;`exclude_tools` 按动作名移除内置工具——
+Python 函数注册为可调用工具;`exclude_tools` 按动作名移除内置工具。
 两者详见 [AI 任务与自定义工具](/zh/advanced/ai-tasks)。`knowledge` 为本次
 运行挂载领域参考材料(文本、`Path` 或二者的列表;合计 32KB)。
 
@@ -206,7 +206,7 @@ verify(target, assertion, *, retry=None, thinking_level="",
        language="") -> VerifyResult
 ```
 
-视觉断言。断言不成立不抛异常——结果
+视觉断言。断言不成立不抛异常,结果
 [按真假值使用](#verifyresult),带 `.reason`;传输/模型端点错误仍会抛出。
 
 ### locate()
@@ -216,7 +216,7 @@ locate(target, locate, *, timeout=0.0, interval=2.0, wait="",
        retry=None, thinking_level="", language="") -> LocateResult
 ```
 
-把自然语言元素描述解析成坐标,**不执行任何动作**——不点击、不输入。
+把自然语言元素描述解析成坐标,不执行任何动作(不点击、不输入)。
 返回 [`LocateResult`](#locateresult),支持元组解包:
 
 ```python
@@ -225,16 +225,16 @@ page.mouse.click(x, y)   # 拿坐标驱动你自己的框架调用
 ```
 
 坐标位于 **adapter 的截图像素坐标系**:Windows 窗口后端是窗口相对的客户
-区像素,pyautogui 是物理屏幕像素,移动端是设备像素——与 bot 自身动作
+区像素,pyautogui 是物理屏幕像素,移动端是设备像素。这与 bot 自身动作
 使用的坐标系一致,也就是报告截图里看到的位置,但不一定是操作系统全局
 坐标。
 
 locate 本身仅一次 vision 调用(无 LLM token)。`timeout > 0` 时会先自动
-等待,语义与 `click()` 相同——每次轮询是发往你模型端点的一次 LLM verify
+等待,语义与 `click()` 相同;每次轮询是发往你模型端点的一次 LLM verify
 调用。
 
 ::: warning 元素不存在时
-元素**不在屏幕上**时视觉解析器仍会返回坐标,且该坐标不可信。无法保证
+元素不在屏幕上时视觉解析器仍会返回坐标,且该坐标不可信。无法保证
 元素存在时,请传 `timeout=` 或先用 `verify()` / `wait_for()` 确认。
 :::
 
@@ -247,7 +247,7 @@ wait_for(target, assertion, timeout=30.0, interval=2.0, *,
 
 按 `verify` 语义每 `interval` 秒轮询一次;条件一成立立即返回,`timeout`
 到期抛 `QirabotTimeoutError`。每次轮询都是发往你模型端点的一次 verify
-调用——为了正确性优先用它取代 sleep,同时把 `interval` 设得合理以控制
+调用。为了正确性,优先用它取代 sleep,同时把 `interval` 设得合理以控制
 token 用量。
 
 ## 直接动作——无 AI
@@ -277,7 +277,7 @@ scroll(target, direction="down", distance=3, *, x=None, y=None) -> None
 press_key(target, key, duration_seconds=0) -> target
 ```
 
-一个键名全平台通用——Android 上是 adb keycode,Windows 窗口后端是
+一个键名全平台通用:Android 上是 adb keycode,Windows 窗口后端是
 DirectInput 扫描码。组合键用 `+` 连接(`"ctrl+shift+t"`,仅桌面/浏览器)。
 `duration_seconds > 0` 按住指定时长再释放(上限 10 秒;仅 pyautogui +
 Windows 窗口后端)。按键词汇表:
@@ -323,7 +323,7 @@ stop_recording() -> str | None       # 返回保存路径
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `success` | `bool` | 当且仅当 `status == "completed"` 时为 `True` |
-| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"error"`——见[错误处理](/zh/advanced/error-handling) |
+| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"error"`,见[错误处理](/zh/advanced/error-handling) |
 | `output` | `str` | 模型的最终回答/总结 |
 | `steps` | `list[StepResult]` | 执行过的每一步 |
 
@@ -344,7 +344,7 @@ stop_recording() -> str | None       # 返回保存路径
 
 ### ExtractResult
 
-`extract()` 的返回值——`str` 的子类,可直接当提取文本使用。额外字段:
+`extract()` 的返回值,是 `str` 的子类,可直接当提取文本使用。额外字段:
 `input_tokens`、`output_tokens`、`thinking_tokens`。`output_tokens` 已经
 包含 `thinking_tokens`,因此一次调用的花费是 `input_tokens +
 output_tokens`。注意:会生成新字符串的 str 操作(切片、`.strip()`、
@@ -353,8 +353,8 @@ output_tokens`。注意:会生成新字符串的 str 操作(切片、`.strip()`�
 
 ### VerifyResult
 
-`verify()` 的返回值——断言成立时为 truthy,可直接放进 `assert` / `if`。
-字段:`passed`(`bool`)、`reason`(模型的解释——断言意外失败时值得记录
+`verify()` 的返回值;断言成立时为 truthy,可直接放进 `assert` / `if`。
+字段:`passed`(`bool`)、`reason`(模型的解释,断言意外失败时值得记录
 日志),以及与 `ExtractResult` 相同的三个 token 字段。
 
 ### LocateResult
@@ -364,4 +364,4 @@ output_tokens`。注意:会生成新字符串的 str 操作(切片、`.strip()`�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `x` / `y` | `int` | 解析出的坐标,位于 adapter 的截图像素坐标系 |
-| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token 用量——当前恒为 `0`(locate 仅是一次 vision 调用) |
+| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token 用量,当前恒为 `0`(locate 仅是一次 vision 调用) |

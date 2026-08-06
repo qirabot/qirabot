@@ -5,14 +5,14 @@ description: Every Qirabot action - AI-located clicks and typing, extract/verify
 
 # API Reference
 
-This page is the working overview — what each call does and how it maps per
+This page is a working overview: what each call does and how it maps per
 platform. Full signatures, every keyword parameter, and the result objects
 are in the [Method Reference](/reference/methods).
 
 ## Simple actions (AI-located)
 
-Lightweight vision-based element location — each call is a single request
-to your configured model:
+These actions use vision-based element location. Each call is a single
+request to your configured model:
 
 ```python
 # Click on an element by description
@@ -43,8 +43,8 @@ bot.wait_for(page, "Page has finished loading", timeout=15.0, interval=2.0)
 ```
 
 `click`, `type_text`, and `double_click` return the current target (the same
-kind you passed in). When an action opens a link in a **new tab**, the return
-value is that new tab — reassign it to keep operating on the active page:
+kind you passed in). When an action opens a link in a new tab, the return
+value is that new tab. Reassign it to keep operating on the active page:
 
 ```python
 page = bot.click(page, "Open the first video")  # may switch to a new tab
@@ -57,7 +57,7 @@ result = bot.ai(page, "Search for SpaceX and summarize the first result", max_st
 print(result.success, result.status, result.output)
 ```
 
-Full coverage — step callbacks, `custom_tools`, `exclude_tools` — in
+Step callbacks, `custom_tools`, and `exclude_tools` are covered in
 [AI Tasks & Custom Tools](/advanced/ai-tasks); run outcomes in
 [Error Handling](/advanced/error-handling).
 
@@ -81,13 +81,14 @@ bot.type_text(page, "", "hello", press_enter=True)  # empty locate: type into th
                                     # focused element directly (no AI, no model call)
 ```
 
-**Direct typing.** `type_text` with an **empty `locate`** skips AI location
-and types into whatever currently has keyboard focus — for when focus is
-already where you want it (a game chat box opened with Enter, a field reached
-via Tab). Making sure focus is right is your responsibility; `press_enter` /
-`clear_before_typing` still work, `timeout`/`wait` are ignored.
+**Direct typing.** `type_text` with an empty `locate` skips AI location
+and types into whatever currently has keyboard focus. This is useful when
+focus is already where you want it (a game chat box opened with Enter, a
+field reached via Tab). Making sure focus is right is your responsibility;
+`press_enter` / `clear_before_typing` still work, and `timeout`/`wait` are
+ignored.
 
-**`press_key` — what you can pass.** One name works on every backend; each
+**`press_key` key names.** One name works on every backend; each backend
 maps it to its own vocabulary:
 
 | Category | Examples | Notes |
@@ -96,15 +97,15 @@ maps it to its own vocabulary:
 | Arrows / paging | `ArrowUp/Down/Left/Right` `PageUp` `PageDown` `Home` `End` | |
 | Combos (desktop/browser) | `ctrl+c` `ctrl+a` `alt+tab` `ctrl+shift+t` | modifiers `ctrl` `alt` `shift` `cmd` (= meta/win); join with `+` |
 | Mobile (Android/iOS) | `Back` `Home` `Menu` `Enter` | single keys only, no combos. `Back`/`Menu` are Android-only; iOS (WDA) supports `Home`, `Enter`, volume and lock keys and raises `NotImplementedError` for the rest |
-| Hold (desktop) | `duration_seconds=2` (float > 0, capped at 10) | holds the key(s) that long before releasing — quantified in-game movement (`w`, `shift+w`). pyautogui + Windows window backend only; web/mobile ignore it and tap |
+| Hold (desktop) | `duration_seconds=2` (float > 0, capped at 10) | holds the key(s) that long before releasing, e.g. quantified in-game movement (`w`, `shift+w`). pyautogui + Windows window backend only; web/mobile ignore it and tap |
 
 So `bot.press_key(t, "Enter")` becomes an adb keycode on Android and a
 DirectInput scancode on the Windows window backend automatically.
 
 **Smart `go_back` (Playwright):** if the current page has back history it
-goes back in place; if it doesn't — e.g. a click opened a link in a **new
-tab**, which starts with no history — and another tab is open, it closes the
-current tab and returns to the previous one:
+goes back in place. If it has none (for example, a click opened a link in a
+new tab, which starts with no history) and another tab is open, it closes
+the current tab and returns to the previous one:
 
 ```python
 for i in range(4):
@@ -113,7 +114,7 @@ for i in range(4):
     page = bot.go_back(page)                       # closes it, back to the list
 ```
 
-Reach for `close_tab` to force-close the current tab regardless of history.
+Use `close_tab` to force-close the current tab regardless of history.
 
 ## Platform support matrix
 
@@ -139,8 +140,8 @@ Reach for `close_tab` to force-close the current tab regardless of history.
 | `screenshot`   |     ✅     |    ✅    |       ✅        |         ✅          |      ✅       |    ✅     |        ✅        |
 
 AI-located actions (`click`, `type_text`, `double_click`) and the AI
-operations (`extract`, `verify`, `wait_for`, `ai`) work on **every**
-framework — the matrix shows how each underlying action maps per platform.
+operations (`extract`, `verify`, `wait_for`, `ai`) work on every framework;
+the matrix shows how each underlying action maps per platform.
 
 - ᵃ Touch platforms emulate `double_click` as two quick taps.
 - ᵇ Mobile has no right-click: it degrades to a tap.
@@ -148,12 +149,12 @@ framework — the matrix shows how each underlying action maps per platform.
 - ᵈ No element model over raw adb/WDA; `clear_text` is best-effort (caret-to-end + repeated delete on Android, backspace burst on iOS).
 - ᵉ The Windows window backend sends DirectInput scancodes (real hardware-level keys, incl. `ctrl`/`alt`/`win` combos); characters outside the scancode table are injected as unicode key events. `duration_seconds` (hold) works on pyautogui + the Windows window backend only; elsewhere it degrades to an instant tap.
 - ᶠ `long_press` is a touch-only gesture (Android/iOS). Browser/desktop adapters raise `NotImplementedError`.
-- ᵍ `mouse_down`/`mouse_up`/`key_down`/`key_up` are desktop-only split press/release primitives (pyautogui + the Windows window backend) for holding an input across other actions. Pair each press with its release; any input still held is auto-released at the end of an `ai()` run and on `close()`. `mouse_up`'s locate is optional (omit to release at the current cursor — deterministic, no AI). Browser/mobile adapters raise `NotImplementedError`.
+- ᵍ `mouse_down`/`mouse_up`/`key_down`/`key_up` are desktop-only split press/release primitives (pyautogui + the Windows window backend) for holding an input across other actions. Pair each press with its release; any input still held is auto-released at the end of an `ai()` run and on `close()`. `mouse_up`'s locate is optional (omit it to release at the current cursor position, deterministically and without an AI call). Browser/mobile adapters raise `NotImplementedError`.
 - ʰ iOS has no back button; `go_back` performs the universal left-edge swipe gesture.
 
-`navigate`/`go_back` raise `NotImplementedError` where unsupported;
+`navigate`/`go_back` raise `NotImplementedError` where unsupported.
 `close_tab` is Playwright-only, so the new-tab fallback inside `go_back`
-applies to Playwright only — on Selenium/Appium `go_back` is always
+applies to Playwright only: on Selenium/Appium `go_back` is always
 history-back, and on Android it maps to `keyevent BACK`.
 
 ## Screenshot (no AI)
@@ -187,7 +188,7 @@ Each `Qirabot` instance manages a local run that tracks all operations:
 created on construction with a local run id (`bot.task_id`, of the form
 `local-<8 hex chars>`), every `click()` / `extract()` / `ai()` recorded as
 a step, marked complete on `close()` or context-manager exit. All run
-bookkeeping stays on your machine — it feeds the HTML report, nothing else:
+bookkeeping stays on your machine and is used only to build the HTML report:
 
 ```python
 with Qirabot(task_name="my automation") as bot:
@@ -198,11 +199,11 @@ with Qirabot(task_name="my automation") as bot:
 
 If `close()` is never called, `atexit` cleans up on script exit.
 
-Two more lifecycle calls when you need a terminal outcome other than
+Two more lifecycle calls record a terminal outcome other than
 "completed": `bot.fail("what went wrong")` records the run as failed, and
-`bot.cancel("why")` records it as cancelled — both before/instead of the
-success-complete that `close()` records by default. The outcome shows up in
-the run's HTML report.
+`bot.cancel("why")` records it as cancelled. Call either before (or instead
+of) the success-complete that `close()` records by default. The outcome
+shows up in the run's HTML report.
 
 See also: [Configuration](/advanced/configuration) (constructor options,
 model selection, settle delay) ·

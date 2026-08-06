@@ -5,10 +5,10 @@ description: Automate any desktop app on macOS, Windows, or Linux with AI vision
 
 # Desktop (pyautogui)
 
-The desktop backend drives the **whole screen** on macOS, Windows, or Linux
-through pyautogui — with AI vision replacing pixel-hunting and template
-images. Describe the element; the AI finds it on the screenshot and the click
-lands there.
+The desktop backend drives the whole screen on macOS, Windows, or Linux
+through pyautogui, with AI vision replacing pixel-hunting and template
+images. Describe the element; the AI finds it on the screenshot and the
+click lands there.
 
 Requires the `desktop` extra: `pip install "qirabot[desktop]"`.
 
@@ -31,7 +31,7 @@ bot.ai(pyautogui, "Send 'hello' to honey in WeChat")
 bot.close()
 ```
 
-The target here is the **`pyautogui` module itself** — on the desktop there is
+The target here is the `pyautogui` module itself. On the desktop there is
 no page or driver object, so passing the module is how you say "drive the
 whole screen". (Every call takes a target this way; see
 [Custom Adapters & Bolt-On](/backends/custom-adapters) for the full list of
@@ -74,8 +74,8 @@ Exact semantics of each primitive are in the
 `Qirabot(record=True)` records the full screen with ffmpeg for the whole run
 and embeds `recording.mp4` in the HTML report. macOS: grant the terminal/IDE
 "Screen Recording" permission, and pick a monitor with `QIRA_SCREEN_INDEX` if
-you have several. Recording is best-effort — a missing ffmpeg only warns,
-never fails the task.
+you have several. Recording is best-effort: a missing ffmpeg produces a
+warning and never fails the task.
 
 ## When to use which desktop backend
 
@@ -86,5 +86,6 @@ never fails the task.
 | Input level | virtual keys | DirectInput scancodes (game-readable) |
 | Install | `qirabot[desktop]` | built in |
 
-Rule of thumb: automating a game or wanting window isolation on Windows →
-Window backend; anything else on the desktop → pyautogui.
+As a rule of thumb, use the Window backend when automating a game or when
+you want window isolation on Windows, and pyautogui for everything else on
+the desktop.

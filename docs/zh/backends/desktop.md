@@ -5,9 +5,9 @@ description: 在 macOS、Windows、Linux 上用 AI 视觉自动化任意桌面�
 
 # 桌面(pyautogui)
 
-桌面后端通过 pyautogui 驱动 macOS / Windows / Linux 的**整个屏幕**——AI
-视觉取代了找坐标和模板图片。描述元素,AI 在截图上找到它,点击落在正确
-位置。
+桌面后端通过 pyautogui 驱动 macOS / Windows / Linux 的整个屏幕,用 AI
+视觉取代找坐标和模板图片的工作。你描述元素,AI 在截图上找到它,点击就
+落在正确位置。
 
 需要 `desktop` extra:`pip install "qirabot[desktop]"`。
 
@@ -30,8 +30,8 @@ bot.ai(pyautogui, "在微信里给 honey 发一句 hello")
 bot.close()
 ```
 
-这里的目标是 **`pyautogui` 模块本身**——桌面上没有 page 或 driver 对象,
-传入模块就是在表达“驱动整个屏幕”。(每个调用都这样接收目标;可接受的
+这里的目标是 `pyautogui` 模块本身:桌面上没有 page 或 driver 对象,
+传入模块就表示“驱动整个屏幕”。(每个调用都这样接收目标;可接受的
 目标类型全表见[自定义 Adapter 与挂载](/zh/backends/custom-adapters),
 用 `bind()` 可省去重复传参。)
 
@@ -70,8 +70,8 @@ bot.mouse_up(pyautogui)                                   # 在当前光标处�
 
 `Qirabot(record=True)` 用 ffmpeg 录制整个运行过程的全屏画面,
 `recording.mp4` 嵌入 HTML 报告。macOS:给终端/IDE 授予"屏幕录制"权限,
-多显示器用 `QIRA_SCREEN_INDEX` 选择。录制是尽力而为——缺 ffmpeg 只警告,
-不会导致任务失败。
+多显示器用 `QIRA_SCREEN_INDEX` 选择。录制是尽力而为的:缺 ffmpeg 只会
+警告,不会导致任务失败。
 
 ## 两个桌面后端怎么选
 
@@ -82,5 +82,5 @@ bot.mouse_up(pyautogui)                                   # 在当前光标处�
 | 输入层级 | 虚拟键 | DirectInput 扫描码(游戏可读) |
 | 安装 | `qirabot[desktop]` | 内置 |
 
-经验法则:自动化游戏、或想在 Windows 上做窗口隔离 → Window 后端;其余
-桌面场景 → pyautogui。
+经验法则:自动化游戏,或想在 Windows 上把操作隔离在单个窗口里,用
+Window 后端;其余桌面场景用 pyautogui。

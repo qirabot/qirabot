@@ -5,13 +5,14 @@ description: Run your first AI-driven GUI automation in two commands, then the s
 
 # Quick Start
 
-Two ways in, both on this page: the **CLI** — a natural-language task as a
-shell command, no code — and the **Python SDK**. Start with the CLI even if
-you came for the SDK: it proves your setup in one line.
+This page covers two ways to use Qirabot: the CLI, which runs a
+natural-language task as a shell command without any code, and the Python
+SDK. Start with the CLI even if you came for the SDK, since it confirms your
+setup with a single command.
 
 The decision engine runs locally inside the SDK and calls a vision model on
-your own Google Cloud Vertex AI endpoint — there is no Qirabot account and
-no API key. Authenticate to Google Cloud once (Application Default
+your own Google Cloud Vertex AI endpoint. There is no Qirabot account and no
+API key. Authenticate to Google Cloud once (Application Default
 Credentials), then hand the AI a task:
 
 ```bash
@@ -19,13 +20,14 @@ gcloud auth application-default login   # once; or point GOOGLE_APPLICATION_CRED
 qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org
 ```
 
-No gcloud? For `gemini-vertex` models a
+If you don't want to set up gcloud, `gemini-vertex` models also accept a
 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
-works instead of ADC — set `QIRA_VERTEX_API_KEY` (a Google Cloud API key,
-not an AI Studio key; Google models only, global endpoint only). No Google
-Cloud at all? The `gemini` provider (`QIRA_MODEL=gemini/gemini-3.6-flash`)
-calls the [Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key)
-with an AI Studio key — set `QIRA_GEMINI_API_KEY` (or `GEMINI_API_KEY`).
+instead of ADC: set `QIRA_VERTEX_API_KEY`. Note this must be a Google Cloud
+API key, not an AI Studio key, and it only works with Google models on the
+global endpoint. If you don't use Google Cloud at all, the `gemini` provider
+(`QIRA_MODEL=gemini/gemini-3.6-flash`) calls the
+[Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key)
+with an AI Studio key; set `QIRA_GEMINI_API_KEY` (or `GEMINI_API_KEY`).
 
 That's a complete run: the browser opens, the AI does the task, and the result
 (plus an HTML report) lands in your terminal. All commands and options are in
@@ -42,7 +44,7 @@ export QIRA_VERTEX_PROJECT="my-gcp-project"
 ```
 
 The browser command assumes you took the one-line installer or
-`pip install "qirabot[browser]"` path — if you installed bare `qirabot` for a
+`pip install "qirabot[browser]"` path. If you installed bare `qirabot` for a
 device backend, see [Installation](/guide/installation) for the extras.
 
 ## The same task in Python
@@ -66,8 +68,8 @@ bot.close()
 ## Deterministic steps
 
 When you want to drive each step yourself instead of delegating the whole
-task, the same natural-language targeting is available as single-step calls —
-fast, low-cost, and under your control flow:
+task, the same natural-language targeting is available as single-step calls.
+These are fast, low-cost, and stay inside your own control flow:
 
 ```python
 from qirabot import Qirabot
@@ -94,13 +96,13 @@ The core calls:
 
 | Call | What it does |
 |---|---|
-| `bot.ai(target, task)` | Autonomous multi-step task — see, decide, act, loop until done |
+| `bot.ai(target, task)` | Autonomous multi-step task: see, decide, act, loop until done |
 | `bot.click(target, "desc")` | AI-located click (also `double_click`, `type_text`) |
 | `bot.extract(target, "desc")` | Pull structured data from the screen |
-| `bot.verify(target, "assertion")` | Visual assertion — truthy/falsy result, a failed check doesn't raise |
+| `bot.verify(target, "assertion")` | Visual assertion: truthy/falsy result, a failed check doesn't raise |
 | `bot.wait_for(target, "condition")` | Poll until a visual condition holds, else raise |
 
-`target` is whatever surface you're driving — the page returned by
+`target` is whatever surface you're driving: the page returned by
 `bot.open()`, a Playwright/Selenium/Appium object of your own, or the
 `pyautogui` module for the desktop. The full call list and per-platform
 behavior is in the [API reference](/reference/api).
@@ -109,7 +111,7 @@ behavior is in the [API reference](/reference/api).
 
 `result.success` is the pass/fail verdict; `result.status` says why:
 `"completed"`, `"goal_failed"` (login wall, captcha), `"max_steps"` (budget
-truncation — retry with more steps), or `"error"`. Details and the exception
+truncation; retry with more steps), or `"error"`. Details and the exception
 hierarchy are in [Error Handling](/advanced/error-handling).
 
 ```python
@@ -122,8 +124,8 @@ if result.status == "max_steps":
 ## Reports
 
 Every run writes a self-contained HTML report with per-step screenshots to
-`./qira_runs/<date>/<time-id>/` — including on error or Ctrl+C, so you can see
-where it stopped. Pass `record=True` (or `--record` on the CLI) to also
+`./qira_runs/<date>/<time-id>/`. This happens even on error or Ctrl+C, so you
+can see where the run stopped. Pass `record=True` (or `--record` on the CLI) to also
 capture a video of the run.
 
 ## Next steps
@@ -131,6 +133,6 @@ capture a video of the run.
 - Pick your backend: [Browser](/backends/browser) ·
   [Android](/backends/android) · [iOS](/backends/ios) ·
   [Windows & Games](/backends/windows-games) · [Desktop](/backends/desktop)
-- Bolting onto an existing Playwright / Selenium / Appium suite? See
-  [Custom Adapters & Bolt-On](/backends/custom-adapters)
+- If you're attaching to an existing Playwright / Selenium / Appium suite,
+  see [Custom Adapters & Bolt-On](/backends/custom-adapters)
 - [CLI Reference](/guide/cli)

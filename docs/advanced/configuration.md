@@ -21,8 +21,8 @@ run `gcloud auth application-default login` once, or run on GCE where the
 metadata server provides them. `qirabot doctor` and `qirabot models` both
 report whether ADC resolves on the machine.
 
-Settings can also live in a project `.env`: scripts opt in explicitly —
-`from qirabot import load_dotenv; load_dotenv()` — which reads
+Settings can also live in a project `.env`. Scripts opt in explicitly with
+`from qirabot import load_dotenv; load_dotenv()`, which reads
 `$QIRA_DOTENV` or `./.env` and never overrides exported variables. The CLI
 loads `.env` automatically; the SDK never reads it on its own. Typical
 `.env` contents are `QIRA_MODEL` and `QIRA_VERTEX_PROJECT`.
@@ -97,31 +97,31 @@ bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
 bot = Qirabot(model="gemini")  # bare provider → its default model
 ```
 
-A bare provider name resolves to that provider's default model. Unset
-everything and the SDK uses `gemini-vertex/gemini-3.6-flash`.
+A bare provider name resolves to that provider's default model. If nothing
+is set, the SDK uses `gemini-vertex/gemini-3.6-flash`.
 `qirabot models` lists the providers, their default models, and whether
 the configured auth resolves.
 
-There is no per-step billing by Qirabot — model calls go directly from your
+There is no per-step billing by Qirabot. Model calls go directly from your
 machine to your Vertex AI project and are billed by Google Cloud at that
 model's rates.
 
 **Watching cost:** `extract()` / `verify()` results and each `StepResult`
-from `ai()` carry `input_tokens` / `output_tokens` fields — a call's spend
+from `ai()` carry `input_tokens` / `output_tokens` fields; a call's spend
 is their sum. See the
 [Method Reference](/reference/methods#result-objects).
 
 ## Thinking level
 
-`thinking_level` scales reasoning depth within the same model — deeper
-thinking for hard judgment calls, shallower for obvious ones:
+`thinking_level` scales reasoning depth within the same model: deeper
+thinking for hard judgment calls, shallower for obvious ones.
 
 | Value | Trade-off |
 |---|---|
-| `minimal` | Fastest, cheapest — obvious targets, clean UIs |
-| `low` | The default — fast steps, enough reasoning for routine UI decisions |
+| `minimal` | Fastest and cheapest; obvious targets, clean UIs |
+| `low` | The default; fast steps, enough reasoning for routine UI decisions |
 | `medium` | Harder judgment calls |
-| `high` | Deepest reasoning — highest latency and thinking-token spend |
+| `high` | Deepest reasoning; highest latency and thinking-token spend |
 
 ```python
 bot = Qirabot(thinking_level="low")                           # task-wide default
@@ -137,8 +137,8 @@ One caveat: the effective granularity depends on the underlying model; some
 models merge or clamp adjacent levels, so treat the value as an intent, not
 a guarantee of four distinct depths.
 
-`language` sets the language of AI responses (extracted text, reasoning) —
-a short tag like `"zh"` or `"en"`:
+`language` sets the language of AI responses (extracted text, reasoning),
+as a short tag like `"zh"` or `"en"`:
 
 ```python
 bot = Qirabot(language="zh")
@@ -148,8 +148,9 @@ text = bot.extract(page, "Get the main heading", language="zh")
 ## Settle delay
 
 After every screen-changing action each adapter pauses briefly so the UI
-repaints before the next screenshot — without it the model can capture a
-mid-animation frame and wrongly conclude the action did nothing. Defaults
+repaints before the next screenshot. Without the pause the model can
+capture a mid-animation frame and wrongly conclude the action did
+nothing. Defaults
 are tuned per platform (desktop/Android `1.0`s, Selenium/Appium/WDA `0.6`s;
 Playwright relies on its own auto-waiting and adds none).
 
@@ -160,7 +161,7 @@ bot = Qirabot(settle_seconds=0)     # disable; lean on wait_for() instead
 ```
 
 This is a blunt fixed delay. For "wait until X appears" prefer the auto-wait
-`timeout=` / `wait_for()` polling — it returns as soon as the condition
+`timeout=` / `wait_for()` polling, which returns as soon as the condition
 holds.
 
 ## Run lifecycle

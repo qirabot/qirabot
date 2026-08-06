@@ -5,9 +5,10 @@ description: Use Qirabot inside pytest suites - visual assertions with bot.verif
 
 # pytest + Qirabot
 
-Qirabot slots into pytest as a library: one `Qirabot` instance per test (or
-per session via a fixture), assertions on what the screen *shows*, and an
-HTML report with per-step screenshots for every run — including failures.
+Qirabot is used from pytest as an ordinary library: one `Qirabot` instance
+per test (or per session via a fixture), assertions on what the screen
+*shows*, and an HTML report with per-step screenshots for every run,
+including failures.
 
 ## With pytest-playwright
 
@@ -55,7 +56,7 @@ def test_search(bot, page):
 ```
 
 `close()` is also covered by `atexit` if a test hard-crashes. The engine
-runs locally in your process, so long waits between steps are safe — see
+runs locally in your process, so long waits between steps are safe; see
 [Configuration](/advanced/configuration).
 
 ## Assertion patterns
@@ -77,7 +78,7 @@ Prefer `wait_for` over sleeps: it returns as soon as the condition holds.
 ## CI notes
 
 - Reports: point them at your artifacts dir (`Qirabot(report_dir=...)` or
-  `QIRA_REPORT_DIR`), and upload `qira_runs/` on failure — the report shows
+  `QIRA_REPORT_DIR`), and upload `qira_runs/` on failure. The report shows
   the exact screenshot at each step.
 - Turn reports off entirely with `Qirabot(report=False)` if you only want
   the assertions.

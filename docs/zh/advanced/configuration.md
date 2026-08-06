@@ -19,8 +19,8 @@ bot = Qirabot()  # model 参数 > QIRA_MODEL 环境变量 > gemini-vertex/gemini
 `gcloud auth application-default login`,或在 GCE 上由元数据服务器自动
 提供。`qirabot doctor` 和 `qirabot models` 都会报告本机 ADC 是否可用。
 
-配置也可以放项目 `.env`:脚本需显式启用——`from qirabot import
-load_dotenv; load_dotenv()`——读取 `$QIRA_DOTENV` 或 `./.env`,且从不
+配置也可以放项目 `.env`。脚本需显式启用:`from qirabot import
+load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 覆盖已导出的环境变量。CLI 自动加载 `.env`;SDK 自身从不读它。`.env` 里
 典型的内容是 `QIRA_MODEL` 和 `QIRA_VERTEX_PROJECT`。
 
@@ -97,24 +97,24 @@ bot = Qirabot(model="gemini")  # 只写 provider → 该 provider 的默认模�
 SDK 使用 `gemini-vertex/gemini-3.6-flash`。`qirabot models` 列出
 各 provider、各自的默认模型,以及所配置的认证能否解析。
 
-Qirabot 不按步计费——模型调用直接从你的机器发往你自己的 Vertex AI
+Qirabot 不按步计费:模型调用直接从你的机器发往你自己的 Vertex AI
 项目,由 Google Cloud 按该模型的价格计费。
 
 **关注成本:**`extract()` / `verify()` 的结果和 `ai()` 的每个
-`StepResult` 都带有 `input_tokens` / `output_tokens` 字段——一次调用的
+`StepResult` 都带有 `input_tokens` / `output_tokens` 字段,一次调用的
 花费就是两者之和。见[方法参考](/zh/reference/methods#结果对象)。
 
 ## 思考深度
 
-`thinking_level` 在同一个模型内伸缩推理深度——难的判断多想,简单的
+`thinking_level` 在同一个模型内伸缩推理深度,难的判断多想,简单的
 目标少想:
 
 | 取值 | 权衡 |
 |---|---|
-| `minimal` | 最快最省——目标明显、界面干净 |
-| `low` | 默认档——步进快,足够覆盖常规 UI 判断 |
+| `minimal` | 最快最省,适合目标明显、界面干净的场景 |
+| `low` | 默认档,步进快,足够覆盖常规 UI 判断 |
 | `medium` | 需要更多判断的场景 |
-| `high` | 推理最深——延迟和思考 token 开销也最高 |
+| `high` | 推理最深,延迟和思考 token 开销也最高 |
 
 ```python
 bot = Qirabot(thinking_level="low")                       # 任务级默认
@@ -128,7 +128,7 @@ token 越多,所以控成本的模式是:默认低档,只给难的调用升档�
 一点注意:实际粒度取决于底层模型;部分模型会合并或钳位相邻深度,应把
 取值理解为意图,而非四个严格区分的深度保证。
 
-`language` 设定 AI 响应(提取文本、推理)的语言——短语言标签如 `"zh"` /
+`language` 设定 AI 响应(提取文本、推理)的语言,值是短语言标签,如 `"zh"` /
 `"en"`:
 
 ```python
@@ -138,7 +138,7 @@ text = bot.extract(page, "提取主标题", language="zh")
 
 ## Settle 延迟
 
-每个改变屏幕的动作后,adapter 会短暂停顿,等 UI 重绘后再截下一张图——
+每个改变屏幕的动作后,adapter 会短暂停顿,等 UI 重绘后再截下一张图;
 否则模型可能截到动画中间帧,误判动作没有生效。默认值按平台调好
 (桌面/Android `1.0` 秒,Selenium/Appium/WDA `0.6` 秒;Playwright 依赖自身的
 auto-waiting,不加延迟)。
@@ -149,8 +149,8 @@ bot = Qirabot(settle_seconds=0.3)   # 流畅的本地应用:快一点
 bot = Qirabot(settle_seconds=0)     # 关闭;改用 wait_for()
 ```
 
-这是一刀切的固定延迟。"等 X 出现"请优先用自动等待的 `timeout=` /
-`wait_for()` 轮询——条件一成立立即返回。
+这是一刀切的固定延迟。要"等 X 出现",优先用自动等待的 `timeout=` /
+`wait_for()` 轮询,条件一成立立即返回。
 
 ## 运行生命周期
 

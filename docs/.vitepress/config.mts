@@ -128,7 +128,26 @@ export default defineConfig({
         href: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><defs><linearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22><stop offset=%220%22 stop-color=%22%238b5cf6%22/><stop offset=%221%22 stop-color=%22%236366f1%22/></linearGradient></defs><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22url(%23g)%22/><circle cx=%2250%22 cy=%2246%22 r=%2221%22 fill=%22none%22 stroke=%22white%22 stroke-width=%2211%22/><line x1=%2257%22 y1=%2253%22 x2=%2274%22 y2=%2271%22 stroke=%22white%22 stroke-width=%2211%22 stroke-linecap=%22round%22/></svg>',
       },
     ],
+    // Social cards. og:title / og:description are injected per page by
+    // transformPageData below; the image is shared site-wide.
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'Qirabot Docs' }],
+    ['meta', { property: 'og:image', content: 'https://qirabot.com/docs/og-image.png' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: 'https://qirabot.com/docs/og-image.png' }],
   ],
+  transformPageData(pageData, { siteConfig }) {
+    const site = siteConfig.site
+    const locale = pageData.relativePath.startsWith('zh/') ? site.locales.zh : site.locales.root
+    const title = pageData.frontmatter.title || pageData.title || locale.title || site.title
+    const description = pageData.frontmatter.description || locale.description || site.description
+    pageData.frontmatter.head ??= []
+    pageData.frontmatter.head.push(
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: description }],
+    )
+  },
+  lastUpdated: true,
   sitemap: {
     hostname: 'https://qirabot.com/docs/',
   },
@@ -197,6 +216,7 @@ export default defineConfig({
     },
   },
   themeConfig: {
+    logo: '/logo.svg',
     socialLinks: [{ icon: 'github', link: 'https://github.com/qirabot/qirabot' }],
     search: {
       provider: 'local',

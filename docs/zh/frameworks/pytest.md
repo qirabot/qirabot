@@ -5,9 +5,9 @@ description: 在 pytest 套件中使用 Qirabot——bot.verify() 视觉断言�
 
 # pytest + Qirabot
 
-Qirabot 以库的形式融入 pytest:每个测试(或经 fixture 每个会话)一个
-`Qirabot` 实例,断言基于屏幕*显示的内容*,每次运行自动生成带逐步截图的
-HTML 报告——失败时也有。
+Qirabot 以库的形式融入 pytest:每个测试(或经 fixture 每个会话)创建
+一个 `Qirabot` 实例,断言基于屏幕上实际显示的内容。每次运行都会自动
+生成带逐步截图的 HTML 报告,失败的运行也不例外。
 
 ## 配合 pytest-playwright
 
@@ -55,7 +55,7 @@ def test_search(bot, page):
 ```
 
 测试进程硬崩时还有 `atexit` 兜底调用 `close()`。引擎在你的进程里本地
-运行,步骤之间的长时间等待是安全的——见
+运行,步骤之间的长时间等待是安全的,详见
 [配置](/zh/advanced/configuration)。
 
 ## 断言模式
@@ -77,8 +77,8 @@ assert int(count) == 1
 ## CI 注意事项
 
 - 报告:指向 artifacts 目录(`Qirabot(report_dir=...)` 或
-  `QIRA_REPORT_DIR`),失败时上传 `qira_runs/`——报告里能看到每一步的
-  确切截图。
+  `QIRA_REPORT_DIR`),失败时上传 `qira_runs/`,这样报告里能看到每一步
+  的确切截图。
 - 只要断言不要报告:`Qirabot(report=False)`。
 - 凭据:在 runner 上把 `GOOGLE_APPLICATION_CREDENTIALS` 指向服务账号
   JSON(标准 Google Cloud ADC),并以环境变量设置 `QIRA_MODEL` /

@@ -6,10 +6,10 @@ description: Run natural-language GUI automation tasks from the command line —
 # CLI Reference
 
 The `qirabot` command runs a task end-to-end without writing Python. It ships
-in the core package. `android`, `ios`, and `desktop --window-title/--hwnd` run
-on the built-in backends — no extras. Only `browser` (`qirabot[browser]`),
-whole-screen `desktop` (`qirabot[desktop]`), and the Appium engine
-(`qirabot[appium]`) need one.
+in the core package. `android`, `ios`, and `desktop --window-title/--hwnd`
+run on the built-in backends and need no extras. Only `browser`
+(`qirabot[browser]`), whole-screen `desktop` (`qirabot[desktop]`), and the
+Appium engine (`qirabot[appium]`) need one.
 
 ```bash
 # Browser (needs qirabot[browser] + `playwright install chromium`)
@@ -57,7 +57,7 @@ qirabot models
 | `ios INSTRUCTION` | Run an AI task on an iOS device ([WDA direct](/backends/ios), built in; `--appium-url`/`--device` for Appium) |
 | `desktop INSTRUCTION` | Run an AI task on the [desktop screen](/backends/desktop) (pyautogui; `--window-title`/`--hwnd` binds [one Windows window](/backends/windows-games), built in) |
 | `install-browser` | One-time Chromium download for the browser backend |
-| `open-browser` | Open a browser to log in to websites by hand — the session persists in `--user-data-dir` for later runs |
+| `open-browser` | Open a browser to log in to websites by hand; the session persists in `--user-data-dir` for later runs |
 | `doctor` | Check Python, Google Cloud credentials (ADC + project), and per-backend dependencies |
 | `models` | Print the built-in Vertex providers with their default models, the session default model, and whether the configured auth (API key and/or ADC) resolves |
 | `skill install [AGENT]` | Copy the bundled [Agent Skill](/guide/agents) into an AI agent's skills directory |
@@ -81,14 +81,14 @@ available: `--version`.
 
 `--vertex-api-key` (or `QIRA_VERTEX_API_KEY`) authenticates with a
 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
-instead of ADC — no gcloud setup needed. It's a Google Cloud API key, not an
-AI Studio key; it only covers `gemini-vertex` models, always uses the global
-endpoint, and overrides `--vertex-project`/`--vertex-location`.
+instead of ADC, so no gcloud setup is needed. It's a Google Cloud API key,
+not an AI Studio key; it only covers `gemini-vertex` models, always uses the
+global endpoint, and overrides `--vertex-project`/`--vertex-location`.
 
 `--gemini-api-key` (or `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) is the
 [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key) for the
-`gemini` provider, which calls the Gemini Developer API instead of Vertex —
-no Google Cloud involved (`-m gemini/gemini-3.6-flash`).
+`gemini` provider, which calls the Gemini Developer API instead of Vertex;
+no Google Cloud is involved (`-m gemini/gemini-3.6-flash`).
 
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default
@@ -97,9 +97,9 @@ provider's default model (`gemini` → `gemini-3.6-flash`).
 
 ## Exit codes
 
-Script-friendly: `0` task succeeded, `1` task failed or any error, `130`
-interrupted with Ctrl+C — so `qirabot browser "..." && next-step` only
-proceeds on success.
+The exit codes are script-friendly: `0` task succeeded, `1` task failed or
+any error, `130` interrupted with Ctrl+C. This means
+`qirabot browser "..." && next-step` only proceeds on success.
 
 ## Machine-readable output
 
@@ -129,12 +129,12 @@ human-readable output is suppressed; exit codes are unchanged):
 ```
 
 `status` is `completed` / `goal_failed` / `max_steps` / `error` /
-`cancelled` — the same values as the SDK's `RunResult.status`, plus
+`cancelled`: the same values as the SDK's `RunResult.status`, plus
 `cancelled` for Ctrl+C and the ESC kill switch. `success` is `true` only for
 `completed`. `report` is `null` when reporting is off; the file itself is
 written as the process exits, so read it after the CLI returns.
 
-`--output-format stream-json` emits NDJSON — one JSON object per line, flushed
+`--output-format stream-json` emits NDJSON: one JSON object per line, flushed
 per step, for tools that supervise a run live:
 
 ```
@@ -147,8 +147,8 @@ per step, for tools that supervise a run live:
 `step` lines carry the same fields as the SDK's `StepResult` (`step`,
 `action_type`, `params`, `decision`, `output`, `finished`, per-step token and
 duration counts); the final `result` line is identical to the `json` format's
-object. Errors that stop the run — including setup failures such as an
-unreachable device — still end with a `result` object (`status: "error"`), so
+object. Errors that stop the run, including setup failures such as an
+unreachable device, still end with a `result` object (`status: "error"`), so
 a consumer always sees one terminal line.
 
 ## Shared run options
@@ -163,7 +163,7 @@ a consumer always sees one terminal line.
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
 | `-l, --language` | — | Response language, e.g. `zh`, `en` |
 | `--max-steps` | `20` | Step budget for the AI task |
-| `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs — fetch remote sources yourself first |
+| `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs; fetch remote sources yourself first |
 | `--report / --no-report` | on | Write an HTML run report |
 | `--report-dir` | `./qira_runs/...` | Report output root (env `QIRA_REPORT_DIR`) |
 | `--annotate / --no-annotate` | on | Crosshair click/type coordinates on saved screenshots |
@@ -172,7 +172,7 @@ a consumer always sees one terminal line.
 
 ## Per-command options
 
-**`browser`** — see the [Browser backend](/backends/browser):
+Options for **`browser`** (see the [Browser backend](/backends/browser)):
 
 | Option | Default | What it does |
 |---|---|---|
@@ -184,7 +184,7 @@ a consumer always sees one terminal line.
 | `--browser-arg` | — | Extra Chromium launch arg, repeatable |
 | `--cdp-url` | — | Attach to a running Chrome via CDP; mutually exclusive with the four options above |
 
-**`android`** — see the [Android backend](/backends/android):
+Options for **`android`** (see the [Android backend](/backends/android)):
 
 | Option | Default | What it does |
 |---|---|---|
@@ -192,21 +192,21 @@ a consumer always sees one terminal line.
 | `--app-package` | — | App package to launch (e.g. `com.android.settings`) |
 | `--app-activity` | — | App activity to launch |
 | `--appium-url` | direct adb, no server | Passing it switches to the [Appium engine](/frameworks/appium) |
-| `--record` | off | Record the **device** screen (adb screenrecord / Appium API) |
+| `--record` | off | Record the device screen (adb screenrecord / Appium API) |
 
-**`ios`** — see the [iOS backend](/backends/ios):
+Options for **`ios`** (see the [iOS backend](/backends/ios)):
 
 | Option | Default | What it does |
 |---|---|---|
-| `--wda-url` | `http://127.0.0.1:8100` | WebDriverAgent URL — this selects the device (USB real device: `iproxy 8100 8100`) |
+| `--wda-url` | `http://127.0.0.1:8100` | WebDriverAgent URL; this selects the device (USB real device: `iproxy 8100 8100`) |
 | `--bundle-id` | — | App bundle id to launch (e.g. `com.tencent.xin`) |
-| `--device` | — | Simulator device type from `xcrun simctl list devicetypes` — switches to the Appium engine, simulators only (no `-d` short: switching engines is deliberate) |
+| `--device` | — | Simulator device type from `xcrun simctl list devicetypes`; switches to the Appium engine, simulators only (no `-d` short: switching engines is deliberate) |
 | `--appium-url` | direct WDA, no server | Appium server URL (with `--device`) |
-| `--record` | off | Record the **device** screen (WDA MJPEG + ffmpeg / Appium API) |
+| `--record` | off | Record the device screen (WDA MJPEG + ffmpeg / Appium API) |
 | `--mjpeg-url` | `--wda-url` host on port 9100 | MJPEG stream override for `--record` |
 
-**`desktop`** — see [Desktop](/backends/desktop) and
-[Windows & Games](/backends/windows-games):
+Options for **`desktop`** (see [Desktop](/backends/desktop) and
+[Windows & Games](/backends/windows-games)):
 
 | Option | Default | What it does |
 |---|---|---|
@@ -216,11 +216,12 @@ a consumer always sees one terminal line.
 | `--hwnd` | — | Bind to a window handle, decimal (Windows window backend) |
 | `--ambiguous` | `error` | When several windows match `--window-title`: `error` fails listing them; `largest` picks the biggest matching window |
 
-**`skill install [AGENT]`** — installs the bundled
+**`skill install [AGENT]`** installs the bundled
 [Agent Skill](/guide/agents) (SKILL.md, preflight script, API reference,
-starter templates), version-matched to the installed `qirabot`. `AGENT` is one
-of `agents` (the shared `.agents/skills` convention — Codex, Cursor, Gemini
-CLI, …), `claude`, `codex`, `cursor`; any other tool via `--dir PATH`.
+starter templates), version-matched to the installed `qirabot`. `AGENT` is
+one of `agents` (the shared `.agents/skills` convention used by Codex,
+Cursor, Gemini CLI, and others), `claude`, `codex`, `cursor`; any other tool
+is targeted via `--dir PATH`.
 `--project` targets the project-level directory under the current directory
 instead of the user-level one. Rerun after `pip install -U qirabot` to
 upgrade; a directory the command didn't create is never overwritten without
@@ -231,16 +232,16 @@ install (it auto-updates). `skill uninstall` takes the same target options;
 `--record` saves `recording.mp4` into the run dir and embeds it in the HTML
 report. What gets recorded differs per target:
 
-- `browser` / `desktop` — the **host** screen via ffmpeg (needs ffmpeg on
+- `browser` / `desktop` record the host screen via ffmpeg (ffmpeg must be on
   PATH). With a window bound (`--window-title`/`--hwnd`), the recording
   follows that window.
-- `android` — the **device** screen: `adb screenrecord` on the default engine,
-  or Appium's recording API on the Appium engine.
-- `ios` — the **device** screen: WDA's MJPEG stream on the default engine
-  (needs ffmpeg; USB real device also needs `iproxy 9100 9100`), or Appium's
-  recording API on the Appium engine.
+- `android` records the device screen: `adb screenrecord` on the default
+  engine, or Appium's recording API on the Appium engine.
+- `ios` records the device screen: WDA's MJPEG stream on the default engine
+  (needs ffmpeg; a USB real device also needs `iproxy 9100 9100`), or
+  Appium's recording API on the Appium engine.
 
 Recording mechanics, report layout, and audio capture are covered in
 [Reports & Recording](/advanced/reports). Runs honor the same env vars as
-the SDK — `QIRA_REPORT_DIR`, `QIRA_SETTLE_SECONDS`, `QIRA_RECORD*`, etc.;
-the full list is in [Configuration](/advanced/configuration).
+the SDK (`QIRA_REPORT_DIR`, `QIRA_SETTLE_SECONDS`, `QIRA_RECORD*`, and so
+on); the full list is in [Configuration](/advanced/configuration).

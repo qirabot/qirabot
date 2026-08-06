@@ -296,6 +296,13 @@ Details (schemas, error handling, pruning built-in tools):
 Runnable examples: [custom_tool_gm.py](examples/game/custom_tool_gm.py) ·
 [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py).
 
+The two parameters together also cover instructions you already maintain for
+another agent — an agent skill (`SKILL.md`), a runbook: mount the file with
+`knowledge=`, and for CLI steps it contains, register a whitelisted
+`run_command` custom tool (built-in tools are deliberately GUI-only). Pattern
+and reference implementation:
+[Reusing an existing skill](https://qirabot.com/docs/advanced/ai-tasks.html#reusing-an-existing-skill).
+
 ## Progress overlay
 
 Every CLI task command shows a small always-on-top window in the screen's

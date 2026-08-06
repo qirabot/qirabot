@@ -5,20 +5,20 @@ description: 把 Qirabot 挂载到任意自动化栈——Playwright、Selenium�
 
 # 自定义 Adapter 与挂载
 
-Qirabot 的设计是**加入你已有的技术栈**,而不是替换它。每个动作的第一个
-参数就是框架对象(`page` / `driver` / 设备 / 模块)——传你的进来,AI 步骤
-和现有代码自由混合:
+Qirabot 的设计目标是加入你已有的技术栈,而不是替换它。每个动作的第一个
+参数就是框架对象(`page` / `driver` / 设备 / 模块)。把你自己的对象传
+进来,AI 步骤就能和现有代码自由混合:
 
 | 你在用 | 传入 | 说明 |
 |---|---|---|
-| [Playwright](/zh/frameworks/playwright) | `page` | 保持显式写法——点击可能返回新标签页 |
+| [Playwright](/zh/frameworks/playwright) | `page` | 保持显式写法:点击可能返回新标签页 |
 | [Selenium](/zh/frameworks/selenium) | `driver` | `pip install qirabot selenium` |
 | [Appium](/zh/frameworks/appium) | `driver` | `qirabot[appium]`;Android 和 iOS |
-| pyautogui | `pyautogui` 模块 | `qirabot[desktop]`——见[桌面](/zh/backends/desktop) |
+| pyautogui | `pyautogui` 模块 | `qirabot[desktop]`,见[桌面](/zh/backends/desktop) |
 | 内置设备 | `AdbDevice` / `WdaClient` / `Window` | 无需 extras |
 
-在 [pytest](/zh/frameworks/pytest) 里跑?同一套逻辑——fixture 持有 bot,
-测试传入自己的 `page`/`driver`。
+如果在 [pytest](/zh/frameworks/pytest) 里跑,逻辑相同:fixture 持有
+bot,测试传入自己的 `page`/`driver`。
 
 ## bind() —— 省去重复的第一个参数
 
@@ -39,15 +39,15 @@ with Qirabot().bind(driver) as bot:   # 也可作为上下文管理器
 
 ## 编写自定义 Adapter
 
-qirabot 没有内置的后端——云真机 SDK、自定义引擎桥、VNC 会话——都可以通过
-继承 `qirabot.DeviceAdapter` 接入。必需的原语只有:
+凡是 qirabot 没有内置的后端,比如云真机 SDK、自定义引擎桥、VNC 会话,
+都可以通过继承 `qirabot.DeviceAdapter` 接入。必需的原语只有:
 
 ```
 screenshot · click · double_click · type_text · press_key · scroll · device_info
 ```
 
-(这些就是[平台支持矩阵](/zh/reference/api#平台支持矩阵)里列出的动作——
-你的 adapter 定义每个动作如何映射到你的引擎;其余能力都由此派生。)
+(这些就是[平台支持矩阵](/zh/reference/api#平台支持矩阵)里列出的动作。
+你的 adapter 定义每个动作如何映射到你的引擎,其余能力都由此派生。)
 
 然后要么直接把实例传给 `bind()`:
 
@@ -69,8 +69,9 @@ bot = Qirabot().bind(native_object)
 
 ## 从 Airtest 迁移(qirabot 1.x)
 
-qirabot 2.0 移除了 airtest 集成——连同与现代环境冲突的 `numpy<2` /
-`opencv-contrib` 版本锁。内置后端即插即用:
+qirabot 2.0 移除了 airtest 集成,与现代环境冲突的 `numpy<2` /
+`opencv-contrib` 版本锁也一并去掉了。内置后端可以直接替换原来的连接
+方式,对应关系如下:
 
 ```python
 # 1.x                                          # 2.0
@@ -79,7 +80,7 @@ connect_device("iOS:///http://...:8100")       WdaClient("http://...:8100")
 connect_device("Windows:///132456")            Window(hwnd=132456)
 ```
 
-想保留 airtest 脚本?把上面的参考 adapter 复制进你的项目(airtest 是
+如果想保留 airtest 脚本,把上面的参考 adapter 复制进你的项目(airtest 是
 *你的*依赖,不再是 qirabot 的),`register_adapter` 注册一次,1.x 的
 `bind(connect_device(...))` 调用原样运行。1.x 系列在
 [`1.x` 分支](https://github.com/qirabot/qirabot/tree/1.x)维护

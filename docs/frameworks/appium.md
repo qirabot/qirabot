@@ -5,11 +5,11 @@ description: Drive an existing Appium session with AI vision - no UiAutomator or
 
 # Appium + Qirabot
 
-If you already run Appium — local server or a cloud device farm — Qirabot
-bolts onto the driver you have. Element location becomes AI vision on the
-screenshot, so Flutter, React Native, WebViews, Unity views, and native
-screens all automate the same way, with no UiAutomator / XCUITest selector
-maintenance.
+If you already run Appium, against a local server or a cloud device farm,
+Qirabot attaches to the driver you have. Element location becomes AI
+vision on the screenshot, so Flutter, React Native, WebViews, Unity views,
+and native screens are all automated the same way, and there is no
+UiAutomator or XCUITest selector maintenance.
 
 ```python
 from appium import webdriver
@@ -37,8 +37,8 @@ Requires the extra:
 pip install "qirabot[appium]"
 ```
 
-The same works for iOS drivers (XCUITest options) — Android and iOS Appium
-sessions are both recognized by `bind()`.
+The same works for iOS drivers (XCUITest options): `bind()` recognizes
+both Android and iOS Appium sessions.
 
 ## CLI: selecting the Appium engine
 
@@ -50,14 +50,15 @@ qirabot android "Clear all notifications" --appium-url http://localhost:4723
 qirabot ios "..." --device "iPhone 15"      # simulator device type (selects Appium)
 ```
 
-Note: the CLI's Appium iOS engine targets **simulators** (`--device` is a device
-type from `xcrun simctl list devicetypes`). Real iPhones are better served
-by the [WDA-direct backend](/backends/ios) — no Appium at all.
+Note that the CLI's Appium iOS engine targets simulators: `--device` is a
+device type from `xcrun simctl list devicetypes`. Real iPhones are better
+served by the [WDA-direct backend](/backends/ios), which does not use
+Appium at all.
 
 ## Recording the device screen
 
-`record_device=True` uses Appium's session recording API — works for both
-Android and iOS drivers:
+`record_device=True` uses Appium's session recording API, which works for
+both Android and iOS drivers:
 
 ```python
 bot = Qirabot(record_device=True).bind(driver)
@@ -78,9 +79,9 @@ run report.
 | Extra package | `qirabot[appium]` | none |
 | Gestures | full Appium set | tap/swipe/keyevent level |
 
-Rule of thumb: already invested in Appium or need a device cloud → stay on
-Appium and add Qirabot on top. Starting fresh on local devices → the
-[Android adb backend](/backends/android) and [iOS WDA backend](/backends/ios)
-are less moving parts.
+As a rule of thumb: if you are already invested in Appium or need a device
+cloud, stay on Appium and add Qirabot on top. If you are starting fresh on
+local devices, the [Android adb backend](/backends/android) and
+[iOS WDA backend](/backends/ios) involve fewer moving parts.
 
 Related: [Android backend](/backends/android) · [iOS backend](/backends/ios)

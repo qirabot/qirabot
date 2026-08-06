@@ -8,9 +8,9 @@ description: Every Qirabot run writes a self-contained HTML report with per-step
 ## HTML run reports
 
 By default every run writes a self-contained HTML report (with per-step
-screenshots) when the bot closes — **including on error or Ctrl+C**, so you
-can see where it stopped. No model calls, no network; it's built from data
-captured during the run.
+screenshots) when the bot closes, including on error or Ctrl+C, so you
+can see where it stopped. Building the report makes no model calls and no
+network requests; it is assembled from data captured during the run.
 
 ```python
 bot = Qirabot(task_name="checkout")            # default: ./qira_runs/<date>/<time-id>/
@@ -55,13 +55,13 @@ finally:
 Needs the `ffmpeg` binary on PATH. macOS: grant "Screen Recording"
 permission (or you get black frames), and pick a monitor with
 `QIRA_SCREEN_INDEX` if you have several. Recording is best-effort: a missing
-ffmpeg or denied permission warns and never fails the task (check
+ffmpeg or denied permission logs a warning and does not fail the task (check
 `recording.ffmpeg.log` in the run dir).
 
 ## Device screen recording (Android / iOS)
 
-The default recorder captures the *host* screen — a phone doesn't appear on
-it. Two switches record the device's own screen (both used by the CLI's
+The default recorder captures the *host* screen, so a phone doesn't appear
+on it. Two switches record the device's own screen (both used by the CLI's
 `android` / `ios --record`):
 
 ```python
@@ -76,10 +76,10 @@ bot = Qirabot(record_mjpeg_url="http://127.0.0.1:9100")
 ```
 
 `adb screenrecord` segments beyond its 3-minute cap are merged with ffmpeg.
-If you quit an Appium driver yourself, call `bot.stop_recording()` first —
-the video lives in the session.
+If you quit an Appium driver yourself, call `bot.stop_recording()` first,
+because the video lives in the session.
 
-The CLI's `--record` flag maps onto these switches per target — see the
+The CLI's `--record` flag maps onto these switches per target; see the
 [CLI Reference](/guide/cli). Every `record*` constructor knob and its env
 var is listed in [Configuration](/advanced/configuration).
 
@@ -95,11 +95,12 @@ bot.close()                         # recording.mp4 = just that window, with sou
 ```
 
 - `record_window=True` records only the window under test (Windows window
-  backend; falls back to full screen otherwise). Keep the window visible —
+  backend; falls back to full screen otherwise). Keep the window visible:
   `gdigrab` produces black frames for minimized or GPU-composited (game)
-  windows; for games, record full screen.
-- `record_audio=True` captures system audio via a DirectShow loopback device
-  — install
+  windows. For games, record the full screen.
+- `record_audio=True` captures system audio via a DirectShow loopback
+  device. Install
   [screen-capture-recorder](https://github.com/rdp/screen-capture-recorder-to-video-windows-free)
-  or enable "Stereo Mix". Auto-detected; override with a device name or
-  `QIRA_AUDIO_DEVICE`; sync-nudge with `record_audio_offset=-0.4`.
+  or enable "Stereo Mix". The device is auto-detected; override it with a
+  device name or `QIRA_AUDIO_DEVICE`, and nudge A/V sync with
+  `record_audio_offset=-0.4`.

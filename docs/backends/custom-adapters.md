@@ -5,20 +5,20 @@ description: Bolt Qirabot onto any automation stack — Playwright, Selenium, Ap
 
 # Custom Adapters & Bolt-On
 
-Qirabot is designed to **join the stack you already have**, not replace it.
+Qirabot is designed to join the stack you already have, not replace it.
 Every action takes the framework object (`page` / `driver` / device / module)
-as its first argument — pass yours and mix AI steps with your existing code:
+as its first argument. Pass yours and mix AI steps with your existing code:
 
 | You run | You pass | Notes |
 |---|---|---|
-| [Playwright](/frameworks/playwright) | `page` | keep the explicit form — clicks can return a new tab |
+| [Playwright](/frameworks/playwright) | `page` | keep the explicit form; clicks can return a new tab |
 | [Selenium](/frameworks/selenium) | `driver` | `pip install qirabot selenium` |
 | [Appium](/frameworks/appium) | `driver` | `qirabot[appium]`; Android and iOS |
-| pyautogui | the `pyautogui` module | `qirabot[desktop]` — see [Desktop](/backends/desktop) |
+| pyautogui | the `pyautogui` module | `qirabot[desktop]`; see [Desktop](/backends/desktop) |
 | Built-in devices | `AdbDevice` / `WdaClient` / `Window` | no extras |
 
-Running inside [pytest](/frameworks/pytest)? Same story — the fixture holds
-the bot, your tests pass their own `page`/`driver`.
+If you run inside [pytest](/frameworks/pytest), the same applies: the
+fixture holds the bot, and your tests pass their own `page`/`driver`.
 
 ## bind() — drop the repeated argument
 
@@ -40,17 +40,18 @@ follows stay visible; with a bound proxy, reach the live page via
 
 ## Writing a custom adapter
 
-Anything qirabot doesn't ship — cloud-device SDKs, custom engine bridges, a
-VNC session — plugs in by subclassing `qirabot.DeviceAdapter`. The required
-primitives are just:
+Anything qirabot doesn't ship (cloud-device SDKs, custom engine bridges, a
+VNC session) plugs in by subclassing `qirabot.DeviceAdapter`. The required
+primitives are:
 
 ```
 screenshot · click · double_click · type_text · press_key · scroll · device_info
 ```
 
 (These are the same actions listed in the
-[platform support matrix](/reference/api#platform-support-matrix) — your
-adapter defines how each maps to your engine; everything else is derived.)
+[platform support matrix](/reference/api#platform-support-matrix); your
+adapter defines how each maps to your engine, and everything else is
+derived.)
 
 Then either pass an instance straight to `bind()`:
 
@@ -73,7 +74,7 @@ is a complete reference implementation.
 
 ## Migrating from Airtest (qirabot 1.x)
 
-qirabot 2.0 removed the airtest integration — and with it the `numpy<2` /
+qirabot 2.0 removed the airtest integration, and with it the `numpy<2` /
 `opencv-contrib` pins that collided with modern environments. The built-in
 backends are drop-in replacements:
 
@@ -84,10 +85,10 @@ connect_device("iOS:///http://...:8100")       WdaClient("http://...:8100")
 connect_device("Windows:///132456")            Window(hwnd=132456)
 ```
 
-Keeping your airtest scripts? Copy the reference adapter above into your
-project (airtest stays *your* dependency, not qirabot's), `register_adapter`
-it once, and your 1.x `bind(connect_device(...))` calls run unchanged. The
-1.x series lives on the
+If you want to keep your airtest scripts, copy the reference adapter above
+into your project (airtest stays your dependency, not qirabot's), call
+`register_adapter` once, and your 1.x `bind(connect_device(...))` calls run
+unchanged. The 1.x series lives on the
 [`1.x` branch](https://github.com/qirabot/qirabot/tree/1.x) in
 maintenance mode (bug and security fixes only); `pip install "qirabot<2"`
 always resolves to the newest 1.9.x patch.

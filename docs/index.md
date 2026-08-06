@@ -17,24 +17,33 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/qirabot/qirabot
+  image:
+    src: /logo.svg
+    alt: Qirabot
 
 features:
-  - title: Browser automation
+  - icon: 🌐
+    title: Browser automation
     details: Playwright under the hood — bot.open() launches Chromium for you, or attach to a running Chrome over CDP. Headless, persistent profiles, remote pools.
     link: /backends/browser
-  - title: Android without Appium
+  - icon: 🤖
+    title: Android without Appium
     details: Direct over adb — no server, nothing installed on the device. Screenshot, tap, swipe, and type (including Chinese and emoji) on any device adb can see.
     link: /backends/android
-  - title: iOS without Appium
+  - icon: 📱
+    title: iOS without Appium
     details: Talks HTTP straight to WebDriverAgent on a real iPhone. No Appium server, no extra packages — just iproxy and a WDA session.
     link: /backends/ios
-  - title: Windows windows & games
+  - icon: 🎮
+    title: Windows windows & games
     details: Bind one window by title or HWND. Input is DirectInput scancodes — the level games actually poll, which virtual-key automation can't reach. Drives Unity, Unreal, and native apps.
     link: /backends/windows-games
-  - title: Bolt onto your stack
+  - icon: 🔌
+    title: Bolt onto your stack
     details: Already running Playwright, Selenium, Appium, or pyautogui? Pass your page or driver object and inject AI steps into the suite you have — no rewrite.
     link: /backends/custom-adapters
-  - title: One API everywhere
+  - icon: 🧩
+    title: One API everywhere
     details: bot.ai() runs whole tasks autonomously; bot.click() / extract() / verify() give you deterministic steps with AI element location. Same calls on every platform.
     link: /guide/quickstart
 ---

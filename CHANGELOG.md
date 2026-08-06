@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.1.1 (2026-08-06)
 
 ### Language: any language, better adherence, new default
 

@@ -21,6 +21,7 @@ from typing import Any
 
 from . import actions
 from .custom_tools import custom_tool_names
+from .tools import response_language
 from .types import DecisionInput, Image, Message, ToolCall, ToolResult, detect_image_mime
 
 logger = logging.getLogger("qirabot.engine")
@@ -162,7 +163,7 @@ def build_dynamic_prompt(
 ) -> str:
     """Dynamic prompt filled with task context. Everything here is constant
     for the duration of a task (the date can flip at midnight — accepted)."""
-    lang_name = get_language_display_name(language)
+    lang_name = response_language(language)
     moment = now if now is not None else datetime.now()
 
     parts = ["# Current task context\n## Current date\n", _format_date(moment.date())]
@@ -328,9 +329,3 @@ def format_notes(notes: list[str]) -> str:
     if not notes:
         return ""
     return "\n---\n".join(notes)
-
-
-def get_language_display_name(lang: str) -> str:
-    if lang.lower().startswith("zh"):
-        return "中文"
-    return "English"

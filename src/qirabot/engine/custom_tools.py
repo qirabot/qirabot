@@ -213,7 +213,7 @@ def custom_tool_names(defs: list[CustomToolDef]) -> set[str]:
     return {d.name for d in defs}
 
 
-def custom_tool_definitions(defs: list[CustomToolDef]) -> list[ToolDefinition]:
+def custom_tool_definitions(defs: list[CustomToolDef], language: str = "") -> list[ToolDefinition]:
     """Convert defs to LLM tool definitions, preserving client order (appended
     after built-ins so the prompt-cache prefix stays stable within a session).
     The common reason field is injected like for built-ins; locate/point-field
@@ -222,7 +222,7 @@ def custom_tool_definitions(defs: list[CustomToolDef]) -> list[ToolDefinition]:
         ToolDefinition(
             name=d.name,
             description=d.description,
-            parameters=merge_common_fields(d.parameters),
+            parameters=merge_common_fields(d.parameters, language),
         )
         for d in defs
     ]

@@ -161,7 +161,7 @@ a consumer always sees one terminal line.
 | `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}`, provider one of `gemini-vertex` / `gemini` (see [Configuration](/advanced/configuration)) |
 | `--thinking-level` | engine default | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
-| `-l, --language` | — | Response language, e.g. `zh`, `en` |
+| `-l, --language` | instruction's language | Response language: a tag (`zh`, `ja`, `de`, …) or any language name |
 | `--max-steps` | `20` | Step budget for the AI task |
 | `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs; fetch remote sources yourself first |
 | `--report / --no-report` | on | Write an HTML run report |

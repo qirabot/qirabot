@@ -13,6 +13,7 @@ from qirabot.engine.tools import (
     prop,
     resolve_desc,
     resolve_schema,
+    response_language,
     tool_definitions_for_platform,
     with_point_fields,
 )
@@ -187,6 +188,43 @@ class TestMergeCommonFields:
         merged = merge_common_fields(None)
         assert list(merged["properties"]) == ["reason"]
         assert merged["required"] == ["reason"]
+
+    def test_reason_carries_language(self) -> None:
+        assert merge_common_fields(None, "zh")["properties"]["reason"]["description"].endswith(
+            "Respond in 中文"
+        )
+        assert merge_common_fields(None)["properties"]["reason"]["description"].endswith(
+            "Respond in the same language as the user's instruction"
+        )
+
+
+class TestResponseLanguage:
+    def test_known_tags_map_to_native_names(self) -> None:
+        assert response_language("zh") == "中文"
+        assert response_language("en") == "English"
+        assert response_language("ja") == "日本語"
+        assert response_language("ko") == "한국어"
+        assert response_language("de") == "Deutsch"
+        assert response_language("fr") == "Français"
+
+    def test_region_subtags(self) -> None:
+        assert response_language("zh-TW") == "繁體中文"
+        assert response_language("zh_HK") == "繁體中文"
+        assert response_language("zh-CN") == "中文"  # falls back to primary subtag
+        assert response_language("pt-BR") == "Português"
+
+    def test_empty_follows_instruction(self) -> None:
+        assert response_language("") == "the same language as the user's instruction"
+        assert response_language("   ") == "the same language as the user's instruction"
+
+    def test_unknown_values_pass_through(self) -> None:
+        assert response_language("tlh") == "tlh"
+        assert response_language("廣東話") == "廣東話"
+        assert response_language("formal German") == "formal German"
+
+    def test_pass_through_is_sanitized(self) -> None:
+        assert response_language("a\nb\tc") == "a b c"
+        assert len(response_language("x" * 100)) == 40
 
     def test_every_llm_tool_has_reason(self) -> None:
         for platform in ("chrome", "android", "ios", "desktop"):

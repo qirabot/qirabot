@@ -36,7 +36,7 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
 | `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
-| `language` | — | model default | Response language, e.g. `"zh"` / `"en"` |
+| `language` | — | instruction's language | Response language: a tag (`"zh"`, `"ja"`, `"de"`, …) or any language name |
 | `task_name` | — | `""` | Task name (shown in the HTML report) |
 | `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | Element-location output format; `bbox_yx_1000` switches to normalized y/x bounding boxes |
 | `report` | — | `True` | Write an HTML run report on close |
@@ -137,8 +137,11 @@ One caveat: the effective granularity depends on the underlying model; some
 models merge or clamp adjacent levels, so treat the value as an intent, not
 a guarantee of four distinct depths.
 
-`language` sets the language of AI responses (extracted text, reasoning),
-as a short tag like `"zh"` or `"en"`:
+`language` sets the language of AI responses (extracted text, reasoning).
+Common tags (`"zh"`, `"ja"`, `"ko"`, `"de"`, `"fr"`, …) map to the language
+they name; any other value — a rarer tag or a plain language name — is passed
+to the model as written. Unset, responses follow the language the instruction
+is written in:
 
 ```python
 bot = Qirabot(language="zh")

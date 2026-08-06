@@ -12,7 +12,6 @@ from qirabot.engine.prompts import (
     build_system_prompts,
     excluded_tools_section,
     format_notes,
-    get_language_display_name,
     parse_history_args,
     resolve_prompt,
 )
@@ -94,11 +93,9 @@ class TestDynamicPrompt:
         assert "## Summary of completed steps" not in cacheable + dynamic
         assert "## Saved notes" not in cacheable + dynamic
 
-    def test_language_display_name(self) -> None:
-        assert get_language_display_name("zh") == "中文"
-        assert get_language_display_name("ZH-tw") == "中文"
-        assert get_language_display_name("en") == "English"
-        assert get_language_display_name("") == "English"
+    def test_no_language_follows_instruction(self) -> None:
+        p = build_dynamic_prompt("买一杯咖啡", "", False, NOW)
+        assert p.endswith("Respond in the same language as the user's instruction")
 
 
 class TestConversationMessages:

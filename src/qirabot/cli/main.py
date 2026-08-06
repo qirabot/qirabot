@@ -388,7 +388,7 @@ def _task_options(f: _FC) -> _FC:
         help="Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total)",
     )(f)
     f = _option("--max-steps", group=_TASK_GROUP, default=20, help="Max steps for AI")(f)
-    f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Language (e.g. zh, en)")(f)
+    f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Response language: a tag (zh, ja, de) or any language name; default follows the instruction's language")(f)
     f = _option("--media-resolution", group=_TASK_GROUP, default="", help="Screenshot resolution sent to the model: low, medium, high or ultra_high (env QIRA_MEDIA_RESOLUTION; gemini-vertex only)")(f)
     f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high")(f)
     f = _option(

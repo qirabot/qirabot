@@ -508,10 +508,62 @@ def is_locate_field(name: str) -> bool:
     return any(f[0] == name for f in LOCATE_POINT_FIELDS)
 
 
-def tool_definitions_for_platform(platform: str) -> list[ToolDefinition]:
+# Native-language names for common tags: the model follows "Respond in 日本語"
+# more reliably than "Respond in ja". The table is a quality optimization, not
+# a capability boundary — unlisted values pass through to the prompt verbatim
+# (Gemini understands ISO codes and plain language names alike), so an unknown
+# tag is never silently downgraded to another language.
+_LANGUAGE_NAMES = {
+    "zh": "中文",
+    "zh-tw": "繁體中文",
+    "zh-hk": "繁體中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español",
+    "pt": "Português",
+    "it": "Italiano",
+    "ru": "Русский",
+    "ar": "العربية",
+    "vi": "Tiếng Việt",
+    "th": "ไทย",
+    "id": "Bahasa Indonesia",
+    "tr": "Türkçe",
+    "nl": "Nederlands",
+    "pl": "Polski",
+}
+
+# The value goes into the system prompt and tool schemas — both part of the
+# provider cache prefix — so it must stay single-line and bounded. It is fixed
+# within a task, so the prefix stays stable across steps.
+_MAX_LANGUAGE_LEN = 40
+
+FOLLOW_INSTRUCTION_LANGUAGE = "the same language as the user's instruction"
+
+
+def response_language(lang: str) -> str:
+    """The text completing "Respond in ..." in prompts and tool schemas.
+
+    Empty means follow the language the user wrote their instruction in;
+    known tags (full tag first, then primary subtag: "zh-CN" → "zh") map to
+    native names; anything else is passed through as written, so free-form
+    values like "廣東話" work too."""
+    cleaned = " ".join(lang.split())[:_MAX_LANGUAGE_LEN]
+    if not cleaned:
+        return FOLLOW_INSTRUCTION_LANGUAGE
+    tag = cleaned.lower().replace("_", "-")
+    name = _LANGUAGE_NAMES.get(tag) or _LANGUAGE_NAMES.get(tag.split("-")[0])
+    return name or cleaned
+
+
+def tool_definitions_for_platform(platform: str, language: str = "") -> list[ToolDefinition]:
     """LLM tool definitions for a platform. The common meta-field (reason) is
     injected into every schema, and each locate field is replaced by scalar
-    point fields so the model emits coordinates directly."""
+    point fields so the model emits coordinates directly. language is fixed
+    within a task, so the tool list (part of the prompt-cache prefix) stays
+    stable across steps."""
     defs: list[ToolDefinition] = []
     for tool in TOOL_REGISTRY:
         if tool.prompt is None:
@@ -523,7 +575,7 @@ def tool_definitions_for_platform(platform: str) -> list[ToolDefinition]:
             ToolDefinition(
                 name=tool.type,
                 description=resolve_desc(tool.prompt, platform),
-                parameters=merge_common_fields(schema),
+                parameters=merge_common_fields(schema, language),
             )
         )
     return defs
@@ -581,12 +633,16 @@ def resolve_schema(p: ToolPromptDef, platform: str) -> dict[str, Any]:
     return p.schema
 
 
-def merge_common_fields(schema: dict[str, Any] | None) -> dict[str, Any]:
-    """Inject the common `reason` field into a tool schema."""
+def merge_common_fields(schema: dict[str, Any] | None, language: str = "") -> dict[str, Any]:
+    """Inject the common `reason` field into a tool schema. The language
+    requirement is stated on the field itself (like the locate tool's error
+    field) because a single "Respond in ..." line in the system prompt is
+    routinely ignored when the task context drifts to another language."""
     props: dict[str, Any] = {
         "reason": prop(
             "string",
-            "Describe what changed in the UI and give the detailed reasoning for this decision",
+            "Describe what changed in the UI and give the detailed reasoning for this "
+            "decision. Respond in " + response_language(language),
         ),
     }
     if schema:

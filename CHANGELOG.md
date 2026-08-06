@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Language: any language, better adherence, new default
+
+- `language` now accepts any value: common tags (`zh`, `ja`, `ko`, `de`,
+  `fr`, …) map to the native name of the language in the prompt; anything
+  else — a rarer tag or a plain language name like `廣東話` — is passed to
+  the model as written. Previously everything except `zh` silently fell
+  back to English.
+- **Behavior change:** with `language` unset, responses now follow the
+  language the instruction is written in, instead of defaulting to English.
+  Pass `language="en"` to keep the old behavior.
+- The language requirement is now also stated on each tool's `reason`
+  field, so per-step reasoning drifts to the wrong language far less often
+  on tasks whose content is in another language.
+
 ## 3.1.0 (2026-08-06)
 
 ### Breaking: claude-vertex removed

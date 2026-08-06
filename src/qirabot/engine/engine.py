@@ -20,11 +20,10 @@ from .prompts import (
     LOCATE_SYSTEM_PROMPT,
     build_conversation_messages,
     build_system_prompts,
-    get_language_display_name,
 )
 from .custom_tools import custom_tool_definitions, filter_excluded
 from .providers.base import ChatRequest, Provider
-from .tools import prop, tool_definitions_for_platform
+from .tools import prop, response_language, tool_definitions_for_platform
 from .types import (
     LOCATE_FORMAT_BBOX,
     Action,
@@ -72,9 +71,9 @@ class LocalEngine:
         model, params = self._resolve_model_params(input.model_config)
 
         messages = build_conversation_messages(input)
-        tools = tool_definitions_for_platform(input.platform)
+        tools = tool_definitions_for_platform(input.platform, input.language)
         tools = filter_excluded(tools, input.exclude_tools)
-        tools = tools + custom_tool_definitions(input.custom_tools)
+        tools = tools + custom_tool_definitions(input.custom_tools, input.language)
 
         cacheable, dynamic = build_system_prompts(
             input.platform,
@@ -158,7 +157,7 @@ class LocalEngine:
             raise ValueError("extract: screenshot is required")
 
         model, params = self._resolve_model_params(input.model_config)
-        lang_name = get_language_display_name(input.language)
+        lang_name = response_language(input.language)
 
         resp = self._provider.chat(
             ChatRequest(
@@ -230,7 +229,7 @@ class LocalEngine:
             raise ValueError("check_condition: screenshot is required")
 
         model, params = self._resolve_model_params(input.model_config)
-        lang_name = get_language_display_name(input.language)
+        lang_name = response_language(input.language)
 
         resp = self._provider.chat(
             ChatRequest(
@@ -420,7 +419,7 @@ def locate_tool_definition(fmt: str, language: str) -> ToolDefinition:
         "error": prop(
             "string",
             "required when found=false: short reason, e.g. what is visible instead. "
-            "Respond in " + get_language_display_name(language),
+            "Respond in " + response_language(language),
         ),
     }
     if fmt == "bbox":

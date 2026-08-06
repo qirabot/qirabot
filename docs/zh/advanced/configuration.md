@@ -33,7 +33,7 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
 | `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
-| `language` | — | 模型默认 | 响应语言,如 `"zh"` / `"en"` |
+| `language` | — | 跟随指令语言 | 响应语言:语言标签(`"zh"`、`"ja"`、`"de"` 等)或任意语言名称 |
 | `task_name` | — | `""` | 任务名(显示在 HTML 报告里) |
 | `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | 元素定位输出格式;`bbox_yx_1000` 切换为归一化 y/x 包围盒 |
 | `report` | — | `True` | 关闭时写 HTML 运行报告 |
@@ -128,8 +128,9 @@ token 越多,所以控成本的模式是:默认低档,只给难的调用升档�
 一点注意:实际粒度取决于底层模型;部分模型会合并或钳位相邻深度,应把
 取值理解为意图,而非四个严格区分的深度保证。
 
-`language` 设定 AI 响应(提取文本、推理)的语言,值是短语言标签,如 `"zh"` /
-`"en"`:
+`language` 设定 AI 响应(提取文本、推理)的语言。常见语言标签(`"zh"`、`"ja"`、
+`"ko"`、`"de"`、`"fr"` 等)会映射为对应语言;其余值——少见的标签或直接写语言
+名称——原样传给模型。不设置时,响应跟随指令本身的语言:
 
 ```python
 bot = Qirabot(language="zh")

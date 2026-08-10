@@ -84,7 +84,7 @@ CLI 的 `qirabot ios "..." --record` 会自动做这件事,并在启动前检查
 - `long_press` 可用;`hover` 为空操作,`right_click` 降级为点按;
   `clear_text` 是尽力而为的连续退格(纯 WDA 下没有元素模型,这是刻意的
   设计)。
-- 如果从 Airtest 1.x 迁移,`connect_device("iOS:///http://...:8100")` 改为
+- 如果从 Airtest 迁移,`connect_device("iOS:///http://...:8100")` 改为
   `WdaClient("http://...:8100")`,`dev.driver.app_launch(...)` 改为
   `client.app_launch(...)`。
 - 每个动作的完整行为见

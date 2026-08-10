@@ -105,7 +105,7 @@ comparison) is in [Appium + Qirabot](/frameworks/appium).
   `right_click` degrades to a tap.
 - `clear_text` over raw adb is best-effort (caret-to-end + repeated delete);
   there is no element model on purpose.
-- If you are coming from Airtest 1.x, `connect_device("Android:///emu-5554")`
+- If you are coming from Airtest, `connect_device("Android:///emu-5554")`
   becomes `AdbDevice("emu-5554")`; the rest of your `bind()` code is
   unchanged.
 - Full per-action behavior:

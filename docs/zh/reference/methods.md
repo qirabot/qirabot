@@ -88,6 +88,17 @@ cancel(reason="") -> None
 失败,`cancel()` 标记为主动中止;两者都会体现在 HTML 报告里。在 `close()`
 之前调用。
 
+### clear_user_abort()
+
+```python
+clear_user_abort() -> None
+```
+
+在长按 ESC 急停之后重新解除封锁。中止是粘性的:之后每次 `ai()` 都会
+立刻抛异常(code 为 `user_abort`)且不注入任何输入,这样围绕单次运行的
+`try/except` 就无法重新夺走你刚刚收回的机器。整个期间单步调用始终可用,
+便于收尾清理。见[进度悬浮窗与急停](/zh/advanced/overlay#长按-esc-中止)。
+
 ### report_dir / task_id
 
 属性:每次运行的输出目录(`./qira_runs/<date>/<time-id>/`)和本地运行
@@ -105,8 +116,8 @@ AI 定位动作(`click()`/`type_text()` 等)以及独立的
 |---|---|---|
 | `ai_steps` | `int` | 至今成功的 AI 调用次数 |
 | `input_tokens` | `int` | 未命中缓存的 prompt token |
-| `cache_read_tokens` / `cache_write_tokens` | `int` | 命中/写入缓存的 prompt 部分(Claude 模型主动启用 prompt cache;Gemini 有隐式缓存) |
-| `output_tokens` / `thinking_tokens` | `int` | output 已含 thinking(Anthropic 语义,Gemini provider 已归一化对齐)。Anthropic 不单独上报 thinking,该字段在 Claude 模型下恒为 0 |
+| `cache_read_tokens` / `cache_write_tokens` | `int` | 由 Gemini 隐式缓存提供的 prompt token,已从 `input_tokens` 中扣除。引擎不调用显式 `cachedContent` API,因此 `cache_write_tokens` 恒为 `0`,缓存读取完全取决于 Google 的隐式缓存是否碰巧命中——实测经常不命中 |
+| `output_tokens` / `thinking_tokens` | `int` | Gemini 单独上报 thinking,且 `output_tokens` 已经包含它,所以一次调用的花费是 `input_tokens + output_tokens`——不要再把 `thinking_tokens` 加一遍 |
 | `total_tokens` | `int` | `input + cache 读写 + output`(thinking 不重复相加) |
 | `step_duration_ms` / `llm_decision_duration_ms` | `int` | 累计耗时 |
 
@@ -229,9 +240,9 @@ page.mouse.click(x, y)   # 拿坐标驱动你自己的框架调用
 使用的坐标系一致,也就是报告截图里看到的位置,但不一定是操作系统全局
 坐标。
 
-locate 本身仅一次 vision 调用(无 LLM token)。`timeout > 0` 时会先自动
-等待,语义与 `click()` 相同;每次轮询是发往你模型端点的一次 LLM verify
-调用。
+locate 本身就是一次模型调用,与其他调用一样计费——返回的 `LocateResult`
+携带它的 token 用量。`timeout > 0` 时会先自动等待,语义与 `click()` 相同,
+每次轮询都是发往你模型端点的一次额外 verify 调用。
 
 ::: warning 元素不存在时
 元素不在屏幕上时视觉解析器仍会返回坐标,且该坐标不可信。无法保证
@@ -364,4 +375,4 @@ output_tokens`。注意:会生成新字符串的 str 操作(切片、`.strip()`�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `x` / `y` | `int` | 解析出的坐标,位于 adapter 的截图像素坐标系 |
-| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token 用量,当前恒为 `0`(locate 仅是一次 vision 调用) |
+| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | 本次 locate 调用的 token 用量。自动等待的轮询另行计费,不计入这里 |

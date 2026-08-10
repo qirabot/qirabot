@@ -1,10 +1,10 @@
-"""Keep driving airtest devices on qirabot 2.x.
+"""Drive airtest devices with qirabot.
 
 Copy adapter.py (next to this file) into your project first — airtest is a
 dependency of your project, not of qirabot.
 
 Install (your project):
-    python -m pip install qirabot airtest
+    uv pip install qirabot airtest
 
 Run:
     gcloud auth application-default login   # auth: Google Cloud ADC, once
@@ -17,7 +17,7 @@ from qirabot import Qirabot, register_adapter
 
 from adapter import AirtestAdapter  # the copied file, wherever you put it
 
-# Once registered, bind() accepts airtest targets exactly like qirabot 1.x did.
+# Once registered, bind() accepts airtest targets directly.
 register_adapter(AirtestAdapter)
 
 device = connect_device("Android:///")  # first adb device; or Android:///emulator-5554

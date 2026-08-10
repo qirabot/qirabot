@@ -17,6 +17,7 @@ const enSidebar = [
     items: [
       { text: 'Installation', link: '/guide/installation' },
       { text: 'Quick Start', link: '/guide/quickstart' },
+      { text: 'Upgrading from v2', link: '/guide/migration-v3' },
       { text: 'CLI Reference', link: '/guide/cli' },
       { text: 'Use with AI Agents', link: '/guide/agents' },
       { text: 'Demos', link: '/demos' },
@@ -49,6 +50,7 @@ const enSidebar = [
       { text: 'Progress Overlay & Kill Switch', link: '/advanced/overlay' },
       { text: 'Reports & Recording', link: '/advanced/reports' },
       { text: 'Configuration', link: '/advanced/configuration' },
+      { text: 'Controlling Cost', link: '/advanced/cost' },
       { text: 'Error Handling', link: '/advanced/error-handling' },
       { text: 'FAQ', link: '/advanced/faq' },
     ],
@@ -69,6 +71,7 @@ const zhSidebar = [
     items: [
       { text: '安装', link: '/zh/guide/installation' },
       { text: '快速开始', link: '/zh/guide/quickstart' },
+      { text: '从 v2 升级', link: '/zh/guide/migration-v3' },
       { text: 'CLI 参考', link: '/zh/guide/cli' },
       { text: '配合 AI Agent 使用', link: '/zh/guide/agents' },
       { text: '实战演示', link: '/zh/demos' },
@@ -101,6 +104,7 @@ const zhSidebar = [
       { text: '进度悬浮窗与急停', link: '/zh/advanced/overlay' },
       { text: '报告与录屏', link: '/zh/advanced/reports' },
       { text: '配置', link: '/zh/advanced/configuration' },
+      { text: '控制成本', link: '/zh/advanced/cost' },
       { text: '错误处理', link: '/zh/advanced/error-handling' },
       { text: '常见问题 FAQ', link: '/zh/advanced/faq' },
     ],
@@ -144,9 +148,17 @@ export default defineConfig({
     const title = pageData.frontmatter.title || pageData.title || locale.title || site.title
     const description = pageData.frontmatter.description || locale.description || site.description
     pageData.frontmatter.head ??= []
+    // Canonical URL. URLs keep the .html suffix (cleanUrls: false) but the
+    // CloudFront dir-index function also serves /docs/ and /docs/zh/, so
+    // without this the same page is reachable under several URLs. Must match
+    // the sitemap's <loc> exactly: index.md maps to the bare directory.
+    const canonicalPath = pageData.relativePath
+      .replace(/(^|\/)index\.md$/, '$1')
+      .replace(/\.md$/, '.html')
     pageData.frontmatter.head.push(
       ['meta', { property: 'og:title', content: title }],
       ['meta', { property: 'og:description', content: description }],
+      ['link', { rel: 'canonical', href: `https://qirabot.com/docs/${canonicalPath}` }],
     )
   },
   lastUpdated: true,

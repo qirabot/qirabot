@@ -19,7 +19,7 @@ The entire task prompt is one sentence: *"This is Fantasy Westward Journey
 mobile. Create a character, then complete the new-player flow; skip whatever
 can be skipped."* Highlights cut from a single unedited run:
 [full 5:50 video](https://qirabot.com/docs/demos.html#mhxy_zero_to_15) ·
-[script](examples/game/ios_appium_mmorpg.py)
+[script](examples/game/ios_mmorpg.py)
 
 More real, unedited runs — the AI sees only pixels. Click a poster to watch
 ([all demos →](https://qirabot.com/docs/demos.html)):
@@ -65,10 +65,6 @@ pip, virtualenvs, per-framework extras, and troubleshooting:
 [Installation guide](https://qirabot.com/docs/guide/installation.html).
 Whichever path you took, `qirabot doctor` reports what is installed, what is
 missing (with the exact fix), and whether your Google Cloud credentials resolve.
-
-Upgrading from v2? The cloud backend (accounts, API keys) is gone in v3 — see
-[CHANGELOG.md](CHANGELOG.md) for the migration table, or pin
-`pip install "qirabot<3"` to stay on the v2 cloud behavior.
 
 ## Quick Start
 
@@ -286,7 +282,7 @@ result = bot.ai(
 )
 ```
 
-The tool runs locally in your process, like everything else in v3 — the model
+The tool runs locally in your process, like everything else qirabot does — the model
 sees only the tool's name, description, parameters, and return value, never
 your endpoints or credentials — and that return value becomes the model's
 next observation. One instruction now spans systems that used to take a page of

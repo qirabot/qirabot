@@ -20,7 +20,7 @@ Qirabot 执行。
 在 iPhone 真机上创建角色并自主完成新手流程——对话、任务、战斗、升级全程无人工
 干预，200 步内练到 15 级（步数上限所致，并非能力上限）。录屏为 3 倍速。
 
-脚本：[examples/game/ios_appium_mmorpg.py](https://github.com/qirabot/qirabot-python/blob/main/examples/game/ios_appium_mmorpg.py)
+脚本：[examples/game/ios_mmorpg.py](https://github.com/qirabot/qirabot/blob/main/examples/game/ios_mmorpg.py)
 
 ### 《剑与远征：启程》创号通关新手教程，进入大世界 {#afk_journey_tutorial}
 
@@ -83,7 +83,7 @@ Qirabot 执行。
 ## 自己跑一个
 
 - [快速开始](/zh/guide/quickstart)——两条命令跑通第一个任务
-- [示例代码](https://github.com/qirabot/qirabot-python/tree/main/examples)——
+- [示例代码](https://github.com/qirabot/qirabot/tree/main/examples)——
   上述演示背后的脚本，以及 pytest 与框架接入示例
 - [Android](/zh/backends/android) · [iOS](/zh/backends/ios) ·
   [浏览器](/zh/backends/browser)——各平台设备准备

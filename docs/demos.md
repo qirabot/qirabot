@@ -22,7 +22,7 @@ top-grossing NetEase MMORPG — and completes the entire new-player flow:
 dialogues, quests, battles, leveling to 15 with no human input. Capped at 200
 steps, not by ability. Recording at 3× speed.
 
-Script: [examples/game/ios_appium_mmorpg.py](https://github.com/qirabot/qirabot-python/blob/main/examples/game/ios_appium_mmorpg.py)
+Script: [examples/game/ios_mmorpg.py](https://github.com/qirabot/qirabot/blob/main/examples/game/ios_mmorpg.py)
 
 ### Clear AFK Journey's tutorial and reach the open world {#afk_journey_tutorial}
 
@@ -93,7 +93,7 @@ skips if already liked.
 ## Run something like this yourself
 
 - [Quick Start](/guide/quickstart) — first task in two commands
-- [Examples](https://github.com/qirabot/qirabot-python/tree/main/examples) —
+- [Examples](https://github.com/qirabot/qirabot/tree/main/examples) —
   the scripts behind these runs, plus pytest and framework bolt-on samples
 - [Android](/backends/android) · [iOS](/backends/ios) ·
   [Browser](/backends/browser) — device setup per platform

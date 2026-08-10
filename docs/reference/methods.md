@@ -95,6 +95,18 @@ records by default: `fail()` marks the run failed, `cancel()` marks a
 deliberate abort. Both are reflected in the HTML report. Call before
 `close()`.
 
+### clear_user_abort()
+
+```python
+clear_user_abort() -> None
+```
+
+Re-arms the client after a hold-ESC abort. The abort is sticky: every
+later `ai()` raises immediately (code `user_abort`) without injecting any
+input, so a `try/except` around one run can't re-take the machine you just
+reclaimed. Single-step calls stay available for cleanup throughout. See
+[Progress Overlay & Kill Switch](/advanced/overlay#hold-esc-to-abort).
+
 ### report_dir / task_id
 
 Properties: the per-run output directory
@@ -113,8 +125,8 @@ included too; `ai_steps` counts successful calls only.
 |---|---|---|
 | `ai_steps` | `int` | Successful AI calls so far |
 | `input_tokens` | `int` | Non-cached prompt tokens |
-| `cache_read_tokens` / `cache_write_tokens` | `int` | Cached prompt portion (prompt caching is active for Claude models; Gemini caches implicitly) |
-| `output_tokens` / `thinking_tokens` | `int` | Output already includes thinking (Anthropic semantics; the Gemini provider normalizes to match). Anthropic reports no separate thinking count, so `thinking_tokens` stays 0 there |
+| `cache_read_tokens` / `cache_write_tokens` | `int` | Prompt tokens served from Gemini's implicit cache, excluded from `input_tokens`. The engine never calls the explicit `cachedContent` API, so `cache_write_tokens` is always `0` and cache reads depend entirely on whether Google's implicit cache happens to hit — in practice, often not |
+| `output_tokens` / `thinking_tokens` | `int` | Gemini reports thinking separately and `output_tokens` already includes it, so a call's spend is `input_tokens + output_tokens` — never add `thinking_tokens` again |
 | `total_tokens` | `int` | `input + cache read/write + output` (thinking not added again) |
 | `step_duration_ms` / `llm_decision_duration_ms` | `int` | Accumulated timing |
 
@@ -249,9 +261,10 @@ pyautogui, device pixels on mobile. This is the same space the bot's own
 actions use, and what you see in the report screenshots, but not
 necessarily OS-global coordinates.
 
-The locate itself is a single vision call (no LLM tokens). With
-`timeout > 0` it auto-waits first, with the same semantics as `click()`;
-each poll is an LLM verify call against your model endpoint.
+The locate itself is one model call, billed like any other — the returned
+`LocateResult` carries its token usage. With `timeout > 0` it auto-waits
+first, with the same semantics as `click()`, and each poll is an additional
+verify call against your model endpoint.
 
 ::: warning Absent elements
 The vision resolver returns coordinates even when the element is not on
@@ -391,4 +404,4 @@ Returned by [`locate()`](#locate). Unpacks as a tuple:
 | Field | Type | Meaning |
 |---|---|---|
 | `x` / `y` | `int` | Resolved coordinates, in the adapter's screenshot pixel space |
-| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | LLM token usage; currently `0` (locate is a single vision call) |
+| `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | Token usage for the locate call. Auto-wait polls are billed on top and are not counted here |

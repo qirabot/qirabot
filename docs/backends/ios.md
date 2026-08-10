@@ -92,7 +92,7 @@ Report layout and all recording knobs:
 - `long_press` is available; `hover` is a no-op, `right_click` degrades to a
   tap; `clear_text` is a best-effort backspace burst (there is deliberately
   no element model over raw WDA).
-- If you are coming from Airtest 1.x,
+- If you are coming from Airtest,
   `connect_device("iOS:///http://...:8100")` becomes
   `WdaClient("http://...:8100")`, and `dev.driver.app_launch(...)` becomes
   `client.app_launch(...)`.

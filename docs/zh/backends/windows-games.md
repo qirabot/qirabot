@@ -130,5 +130,5 @@ bot = Qirabot(record=True, record_window=True, record_audio=True)
 
 - 全桌面自动化(任意系统)是独立的 [pyautogui 后端](/zh/backends/desktop);
   Window 后端专为 Windows 单窗口设计。
-- 如果从 Airtest 1.x 迁移,`connect_device("Windows:///132456")` 改为
+- 如果从 Airtest 迁移,`connect_device("Windows:///132456")` 改为
   `Window(hwnd=132456)`。

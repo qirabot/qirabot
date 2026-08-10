@@ -31,6 +31,8 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`([详情](#模型与语言)) |
 | `vertex_project` | `QIRA_VERTEX_PROJECT` | 见下文 | Vertex 调用使用的 Google Cloud 项目 |
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
+| `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | 用 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) 代替 ADC,无需配置 gcloud。仅对 `gemini-vertex` 有效,固定走全局端点,并覆盖 `vertex_project`/`vertex_location`。它不是 AI Studio key;`GOOGLE_API_KEY` 被刻意不读取 |
+| `gemini_api_key` | `QIRA_GEMINI_API_KEY`、`GEMINI_API_KEY` | `""` | `gemini` provider 使用的 [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)(走 Gemini Developer API,不涉及 Google Cloud) |
 | `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
 | `language` | — | 跟随指令语言 | 响应语言:语言标签(`"zh"`、`"ja"`、`"de"` 等)或任意语言名称 |
@@ -102,7 +104,9 @@ Qirabot 不按步计费:模型调用直接从你的机器发往你自己的 Vert
 
 **关注成本:**`extract()` / `verify()` 的结果和 `ai()` 的每个
 `StepResult` 都带有 `input_tokens` / `output_tokens` 字段,一次调用的
-花费就是两者之和。见[方法参考](/zh/reference/methods#结果对象)。
+花费就是两者之和。见[方法参考](/zh/reference/methods#结果对象)。这些
+token 究竟花在哪里、本页哪些开关能真正影响它们,见
+[控制成本](/zh/advanced/cost)。
 
 ## 思考深度
 

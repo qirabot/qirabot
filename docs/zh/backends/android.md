@@ -101,7 +101,7 @@ CLI 传 `--appium-url` 即选择 Appium 引擎:
   点按。
 - 纯 adb 下 `clear_text` 是尽力而为(光标移到末尾 + 连续删除):这里
   刻意没有引入元素模型。
-- 如果从 Airtest 1.x 迁移,`connect_device("Android:///emu-5554")` 改为
+- 如果从 Airtest 迁移,`connect_device("Android:///emu-5554")` 改为
   `AdbDevice("emu-5554")`,其余 `bind()` 代码不变。
 - 每个动作的完整行为见
   [平台支持矩阵](/zh/reference/api#平台支持矩阵)。

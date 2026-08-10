@@ -67,22 +67,19 @@ bot = Qirabot().bind(native_object)
 [examples/airtest/adapter.py](https://github.com/qirabot/qirabot/blob/main/examples/airtest/adapter.py)
 是一份完整的参考实现。
 
-## 从 Airtest 迁移(qirabot 1.x)
+## 从 Airtest 迁移
 
-qirabot 2.0 移除了 airtest 集成,与现代环境冲突的 `numpy<2` /
-`opencv-contrib` 版本锁也一并去掉了。内置后端可以直接替换原来的连接
-方式,对应关系如下:
+qirabot 不依赖 airtest,因此没有与现代环境冲突的 `numpy<2` /
+`opencv-contrib` 版本锁。内置后端可以直接替换 airtest 的设备连接方式,
+对应关系如下:
 
 ```python
-# 1.x                                          # 2.0
+# airtest                                      # qirabot
 connect_device("Android:///emu-5554")          AdbDevice("emu-5554")
 connect_device("iOS:///http://...:8100")       WdaClient("http://...:8100")
 connect_device("Windows:///132456")            Window(hwnd=132456)
 ```
 
 如果想保留 airtest 脚本,把上面的参考 adapter 复制进你的项目(airtest 是
-*你的*依赖,不再是 qirabot 的),`register_adapter` 注册一次,1.x 的
-`bind(connect_device(...))` 调用原样运行。1.x 系列在
-[`1.x` 分支](https://github.com/qirabot/qirabot/tree/1.x)维护
-(只修 bug 和安全问题);`uv pip install "qirabot<2"` 始终解析到最新的
-1.9.x 补丁版。
+*你的*依赖,不是 qirabot 的),`register_adapter` 注册一次,
+`bind(connect_device(...))` 调用即可原样运行。

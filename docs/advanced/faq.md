@@ -29,6 +29,22 @@ locate. The [API reference](/reference/api) marks these "no AI". Model
 usage is billed by Google Cloud on your project; token counts are on
 every result object.
 
+## How do I bring the token bill down?
+
+The biggest fixed cost per step is the tool schemas, not the screenshot, so
+`exclude_tools` is usually the first win — followed by dropping
+`media_resolution` from `high` to `medium` and replacing known flow segments
+with deterministic steps instead of `ai()`. Note that `screenshot_quality`
+is *not* a cost lever: image tokens depend only on the resolution tier. Full
+breakdown in [Controlling Cost](/advanced/cost).
+
+## I upgraded from v2 and it won't start
+
+v3 refuses to run while a v2-era `QIRA_API_KEY` is in the environment,
+rather than silently switching billing to a Google Cloud project. Unset
+`QIRA_API_KEY` and `QIRA_BASE_URL` (including in `.env` and CI secrets). Full
+path in [Upgrading from v2](/guide/migration-v3).
+
 ## What data leaves my machine?
 
 Screenshots, your instruction text, and step metadata. They are sent
@@ -83,17 +99,9 @@ only where selectors hurt. See the integration guides for
 [Playwright](/frameworks/playwright), [Selenium](/frameworks/selenium),
 [Appium](/frameworks/appium), and [pytest](/frameworks/pytest).
 
-## I'm coming from Airtest / qirabot 1.x
+## I'm coming from Airtest
 
 The built-in device backends are drop-in replacements
 (`connect_device(...)` → `AdbDevice` / `WdaClient` / `Window`), and a
-reference adapter keeps old scripts running unchanged. See
-[Migrating from Airtest](/backends/custom-adapters#migrating-from-airtest-qirabot-1-x).
-
-## I'm coming from qirabot 2.x (cloud engine)
-
-v3 replaced the cloud decision engine with a local one. The account,
-`QIRA_API_KEY`, and `qirabot login` are gone; configure Google Cloud ADC
-and a model instead. If `QIRA_API_KEY` is set but no model is configured,
-`Qirabot()` raises a clear error with migration steps at construction. To
-keep the old cloud behavior, pin `uv pip install "qirabot<3"`.
+reference adapter keeps your airtest scripts running unchanged. See
+[Migrating from Airtest](/backends/custom-adapters#migrating-from-airtest).

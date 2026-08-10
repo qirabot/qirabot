@@ -35,17 +35,9 @@ framework you bring:
 - [desktop/](desktop/) — native apps via pyautogui
 - [airtest/](airtest/) — airtest devices (Android/iOS/Windows) via a copy-in adapter (`register_adapter`)
 
-## 4. Run desktop scripts on a dedicated machine
-
-Run desktop (pyautogui) automation on a separate, always-on machine (e.g. a
-Windows VM) so screenshots never capture your editor and the bot never steals
-your local mouse. Write/test locally, then POST the script to the remote runner.
-
-- [runner/](runner/) — tiny HTTP runner + dedicated-machine deployment guide (Windows / macOS)
-
 ## Setup
 
-The v3 decision engine runs locally against your own Vertex AI endpoint — auth
+The decision engine runs locally against your own Vertex AI endpoint — auth
 is Google Cloud ADC; no Qirabot account, no per-step billing:
 
 ```bash

@@ -25,6 +25,21 @@ JSON,或执行一次 `gcloud auth application-default login`(GCE 上自动
 `mouse_up`。[API 参考](/zh/reference/api)中标注了"无 AI"。模型用量由
 Google Cloud 在你的项目上计费;每个结果对象都带 token 计数。
 
+## 怎么把 token 账单降下来?
+
+每步最大的固定成本是工具 schema,不是截图,所以 `exclude_tools` 通常是
+第一笔立竿见影的收益;其次是把 `media_resolution` 从 `high` 降到
+`medium`,以及把流程里已知的部分改用确定性步骤而不是 `ai()`。注意
+`screenshot_quality` **不是**成本杠杆:图像 token 只取决于分辨率档位。
+完整拆解见[控制成本](/zh/advanced/cost)。
+
+## 从 v2 升级后启动不了
+
+只要环境里还有 v2 时代的 `QIRA_API_KEY`,v3 就拒绝运行——而不是悄悄把
+账单切到某个 Google Cloud 项目。取消设置 `QIRA_API_KEY` 和
+`QIRA_BASE_URL`(包括 `.env` 和 CI secrets 里的)。完整流程见
+[从 v2 升级](/zh/guide/migration-v3)。
+
 ## 哪些数据会离开我的机器?
 
 截图、指令文本和步骤元数据。它们直接从你的机器发往你配置的模型端点
@@ -73,17 +88,9 @@ ADBKeyboard 输入法完成,按需安装、用完自动切回。见
 [Selenium](/zh/frameworks/selenium)、[Appium](/zh/frameworks/appium)、
 [pytest](/zh/frameworks/pytest) 各集成指南。
 
-## 我从 Airtest / qirabot 1.x 迁移过来
+## 我从 Airtest 迁移过来
 
 内置设备后端是即插即用的替代
 (`connect_device(...)` → `AdbDevice` / `WdaClient` / `Window`),参考
-adapter 能让老脚本原样运行。见
-[从 Airtest 迁移](/zh/backends/custom-adapters#从-airtest-迁移-qirabot-1-x)。
-
-## 我从 qirabot 2.x(云端引擎)迁移过来
-
-v3 用本地决策引擎取代了云端引擎,账号、`QIRA_API_KEY` 和
-`qirabot login` 都不复存在,改为配置 Google Cloud ADC 和模型。如果设置了
-`QIRA_API_KEY` 却没有配置模型,`Qirabot()` 会在构造时抛出带迁移步骤的
-明确错误。要保留旧的云端行为,固定版本安装:
-`uv pip install "qirabot<3"`。
+adapter 能让你的 airtest 脚本原样运行。见
+[从 Airtest 迁移](/zh/backends/custom-adapters#从-airtest-迁移)。

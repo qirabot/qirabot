@@ -167,6 +167,7 @@ a consumer always sees one terminal line.
 | `--report / --no-report` | on | Write an HTML run report |
 | `--report-dir` | `./qira_runs/...` | Report output root (env `QIRA_REPORT_DIR`) |
 | `--annotate / --no-annotate` | on | Crosshair click/type coordinates on saved screenshots |
+| `--overlay / --no-overlay` | on | Always-on-top progress window, plus the hold-ESC kill switch that rides it (macOS/Windows; a silent no-op elsewhere). See [Progress Overlay & Kill Switch](/advanced/overlay) |
 | `--record` | off | Record the run to `recording.mp4` (see below) |
 | `--output-format` | `text` | `json` / `stream-json` for machine-readable stdout (see [Machine-readable output](#machine-readable-output)) |
 

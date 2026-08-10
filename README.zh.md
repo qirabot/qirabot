@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/649ea80c-63e7-4c85-9ee8-3c8fe17e5ef4
 **《梦幻西游》手游：从创号自动玩到 15 级** — iOS 真机。
 整个任务指令只有一句话：*"这是梦幻西游手游，你的任务是创建角色，然后完成新手流程，能跳过的尽可能跳过"*。
 上方为单次未剪辑运行的精华片段：[完整 5:50 视频](https://qirabot.com/docs/zh/demos.html#mhxy_zero_to_15) ·
-[脚本](examples/game/ios_appium_mmorpg.py)
+[脚本](examples/game/ios_mmorpg.py)
 
 更多真实、未剪辑的运行记录——AI 全程只看屏幕画面。点击封面观看（[全部 demo →](https://qirabot.com/docs/zh/demos.html)）：
 
@@ -57,8 +57,6 @@ uv tool install qirabot        # Android + iOS + Windows 窗口；零额外依�
 ```
 
 pip、虚拟环境、各框架 extras 与故障排查见[安装指南](https://qirabot.com/docs/zh/guide/installation.html)。安装完成后运行 `qirabot doctor`，它会报告已安装与缺失的组件（并给出对应的修复命令），以及 Google Cloud 凭据能否正常解析。
-
-从 v2 升级？v3 已移除云端后端（账号、API key），迁移对照表见 [CHANGELOG.md](CHANGELOG.md)；如需继续使用 v2 云端行为，可锁定 `pip install "qirabot<3"`。
 
 ## 快速上手
 
@@ -244,7 +242,7 @@ result = bot.ai(
 )
 ```
 
-工具在你的进程内本地执行（v3 中其余一切也是如此）——模型只能看到工具的名称、描述、参数和返回值，接触不到你的接口和凭据——返回值会作为模型下一步的观察结果。过去需要一整页胶水代码串联的跨系统流程（UI 操作、后端调用、人工介入），现在一句指令就能覆盖。更多细节（schema、错误处理、裁剪内置工具）见[AI 任务与自定义工具](https://qirabot.com/docs/zh/advanced/ai-tasks.html)；可运行示例：[custom_tool_gm.py](examples/game/custom_tool_gm.py) · [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py)。
+工具在你的进程内本地执行（qirabot 的其余一切也是如此）——模型只能看到工具的名称、描述、参数和返回值，接触不到你的接口和凭据——返回值会作为模型下一步的观察结果。过去需要一整页胶水代码串联的跨系统流程（UI 操作、后端调用、人工介入），现在一句指令就能覆盖。更多细节（schema、错误处理、裁剪内置工具）见[AI 任务与自定义工具](https://qirabot.com/docs/zh/advanced/ai-tasks.html)；可运行示例：[custom_tool_gm.py](examples/game/custom_tool_gm.py) · [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py)。
 
 这两个参数组合起来，也能复用你已经为别的 agent 维护的指令文件——agent skill（`SKILL.md`）、runbook：用 `knowledge=` 挂载文件；文件里的 CLI 步骤，注册一个带白名单的 `run_command` 自定义工具来执行（内置工具刻意只含 GUI 动作）。完整模式与参考实现见[复用已有 skill](https://qirabot.com/docs/zh/advanced/ai-tasks.html#复用已有-skill)。
 

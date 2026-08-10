@@ -163,6 +163,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 | `--report / --no-report` | 开 | 写 HTML 运行报告 |
 | `--report-dir` | `./qira_runs/...` | 报告输出根目录(环境变量 `QIRA_REPORT_DIR`) |
 | `--annotate / --no-annotate` | 开 | 在保存的截图上用十字线标注点击/输入坐标 |
+| `--overlay / --no-overlay` | 开 | 置顶的进度悬浮窗,以及搭载在它上面的长按 ESC 急停(macOS/Windows;其他平台静默空操作)。见[进度悬浮窗与急停](/zh/advanced/overlay) |
 | `--record` | 关 | 把运行录制为 `recording.mp4`(见下) |
 | `--output-format` | `text` | `json` / `stream-json` 输出机器可读的 stdout(见[机器可读输出](#机器可读输出)) |
 

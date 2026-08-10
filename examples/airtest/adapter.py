@@ -1,14 +1,14 @@
-"""Airtest adapter for qirabot 2.x — copy this file into YOUR project.
+"""Airtest adapter for qirabot — copy this file into YOUR project.
 
-qirabot 2.0 removed the airtest integration (and its numpy<2 /
-opencv-contrib pins). This reference adapter brings it back on the user
-side: airtest stays a dependency of *your* project, not of qirabot.
+qirabot has no airtest integration (and none of its numpy<2 /
+opencv-contrib pins). This reference adapter adds one on the user side:
+airtest stays a dependency of *your* project, not of qirabot.
 
     Reference implementation, not shipped inside the qirabot package.
     Tested with airtest 1.3.x. If an airtest API drifts, fix it here —
     the file is yours once copied.
 
-Usage A — register once, then 1.x-style code runs unchanged:
+Usage A — register once, then airtest-style code runs unchanged:
 
     from airtest.core.api import connect_device
     from qirabot import Qirabot, register_adapter
@@ -59,7 +59,7 @@ class AirtestAdapter(DeviceAdapter):
                 "no airtest device: call connect_device(...) first, "
                 "or pass one explicitly: AirtestAdapter(device)"
             )
-        # 1.x accepted the airtest.core.api module / G as targets; unwrap both
+        # Accept the airtest.core.api module / G as targets; unwrap both
         # down to the active device object.
         name = getattr(device, "__name__", "")
         if name == "airtest.core.api":
@@ -72,7 +72,7 @@ class AirtestAdapter(DeviceAdapter):
 
     @classmethod
     def accepts(cls, target: Any) -> bool:
-        # The three target shapes 1.x accepted: a device object, the
+        # The three target shapes accepted: a device object, the
         # airtest.core.api module, and the G global.
         if type(target).__module__.startswith("airtest."):
             return True

@@ -72,14 +72,14 @@ bot = Qirabot().bind(native_object)
 [examples/airtest/adapter.py](https://github.com/qirabot/qirabot/blob/main/examples/airtest/adapter.py)
 is a complete reference implementation.
 
-## Migrating from Airtest (qirabot 1.x)
+## Migrating from Airtest
 
-qirabot 2.0 removed the airtest integration, and with it the `numpy<2` /
-`opencv-contrib` pins that collided with modern environments. The built-in
-backends are drop-in replacements:
+qirabot has no airtest dependency, so none of the `numpy<2` /
+`opencv-contrib` pins that collide with modern environments. The built-in
+backends are drop-in replacements for airtest's device connections:
 
 ```python
-# 1.x                                          # 2.0
+# airtest                                      # qirabot
 connect_device("Android:///emu-5554")          AdbDevice("emu-5554")
 connect_device("iOS:///http://...:8100")       WdaClient("http://...:8100")
 connect_device("Windows:///132456")            Window(hwnd=132456)
@@ -87,8 +87,5 @@ connect_device("Windows:///132456")            Window(hwnd=132456)
 
 If you want to keep your airtest scripts, copy the reference adapter above
 into your project (airtest stays your dependency, not qirabot's), call
-`register_adapter` once, and your 1.x `bind(connect_device(...))` calls run
-unchanged. The 1.x series lives on the
-[`1.x` branch](https://github.com/qirabot/qirabot/tree/1.x) in
-maintenance mode (bug and security fixes only); `uv pip install "qirabot<2"`
-always resolves to the newest 1.9.x patch.
+`register_adapter` once, and your `bind(connect_device(...))` calls run
+unchanged.

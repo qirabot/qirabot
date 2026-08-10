@@ -34,6 +34,8 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}` ([details](#model-language)) |
 | `vertex_project` | `QIRA_VERTEX_PROJECT` | see below | Google Cloud project for the Vertex call |
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
+| `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) instead of ADC — no gcloud setup. `gemini-vertex` only, always the global endpoint, and it overrides `vertex_project`/`vertex_location`. Not an AI Studio key; `GOOGLE_API_KEY` is deliberately never read |
+| `gemini_api_key` | `QIRA_GEMINI_API_KEY`, `GEMINI_API_KEY` | `""` | [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key) for the `gemini` provider (Gemini Developer API, no Google Cloud involved) |
 | `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
 | `language` | — | instruction's language | Response language: a tag (`"zh"`, `"ja"`, `"de"`, …) or any language name |
@@ -109,7 +111,9 @@ model's rates.
 **Watching cost:** `extract()` / `verify()` results and each `StepResult`
 from `ai()` carry `input_tokens` / `output_tokens` fields; a call's spend
 is their sum. See the
-[Method Reference](/reference/methods#result-objects).
+[Method Reference](/reference/methods#result-objects). Where those tokens
+actually go, and which knobs on this page move them, is in
+[Controlling Cost](/advanced/cost).
 
 ## Thinking level
 

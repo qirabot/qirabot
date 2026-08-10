@@ -148,5 +148,5 @@ the mode for native apps, not games.
 - Whole-desktop automation (any OS) is the separate
   [pyautogui backend](/backends/desktop); the Window backend is
   Windows-specific and single-window by design.
-- If you are coming from Airtest 1.x, `connect_device("Windows:///132456")`
+- If you are coming from Airtest, `connect_device("Windows:///132456")`
   becomes `Window(hwnd=132456)`.

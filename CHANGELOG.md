@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.2.0 (unreleased)
+## 3.2.0 (2026-08-10)
 
 ### Breaking: the cloud-era exceptions are gone
 
@@ -15,6 +15,15 @@
   surface as `ActionError` (mid-run) or `AuthenticationError` (at
   construction); rate limits are still retried inside the provider layer
   and only surface as `ActionError` if they persist.
+
+### Fix: stale screen geometry after an iOS rotation
+
+- The WDA adapter cached the device's point size on first use, but WDA
+  reports the size of the *current* orientation. After a rotation, every
+  coordinate derived from `device_info()` — swipe gestures, annotation
+  scale — was computed against the pre-rotation screen. Rotation is now
+  detected from the screenshot frame itself, and the cached point size
+  and annotation scale are dropped when it flips.
 
 ## 3.1.3 (2026-08-10)
 

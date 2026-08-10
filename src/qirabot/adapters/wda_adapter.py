@@ -41,6 +41,7 @@ class WdaAdapter(DeviceAdapter):
         self._client: WdaClient = target
         self._size: tuple[int, int] | None = None  # logical points, cached
         self._annotation_scale: float | None = None
+        self._frame_portrait: bool | None = None  # orientation of the last frame
 
     @classmethod
     def accepts(cls, target: Any) -> bool:
@@ -55,20 +56,43 @@ class WdaAdapter(DeviceAdapter):
     def screenshot(self, config: ScreenshotConfig | None = None) -> bytes:
         cfg = config or ScreenshotConfig()
         png = self._client.screenshot()
-        # Screenshots are physical pixels, window_size is logical points; probe
-        # the ratio once (PNG header only) so report annotations can be drawn
-        # at the visual tap position. Best-effort, like the Appium adapter.
+        self._probe_frame(png)
+        return self._reencode_png(png, cfg)
+
+    def _probe_frame(self, png: bytes) -> None:
+        """Read the frame's pixel size (PNG header only) to keep the cached
+        geometry honest. Two jobs: screenshots are physical pixels while
+        window_size is logical points, so the ratio feeds ``annotation_scale``
+        and report annotations land at the visual tap position; and a frame
+        that flipped orientation means the device rotated, which makes the
+        cached point size stale — WDA reports the size of the *current*
+        orientation, so without the refresh every coordinate derived from
+        ``device_info`` would be scaled against the pre-rotation screen.
+        Best-effort, like the Appium adapter: any failure leaves the cache as
+        it was.
+        """
+        try:
+            from PIL import Image
+
+            with Image.open(io.BytesIO(png)) as probe:
+                width, height = probe.width, probe.height
+        except Exception:
+            return
+        # Compared frame-to-frame rather than against the cached point size:
+        # a device whose WDA reports orientations the screenshots don't follow
+        # then costs one refresh per rotation, not one per screenshot.
+        portrait = height >= width
+        if self._frame_portrait is not None and portrait != self._frame_portrait:
+            self._size = None
+            self._annotation_scale = None
+        self._frame_portrait = portrait
         if self._annotation_scale is None:
             try:
-                from PIL import Image
-
-                with Image.open(io.BytesIO(png)) as probe:
-                    logical_w = self._window_size()[0]
-                    if logical_w:
-                        self._annotation_scale = probe.width / logical_w
+                logical_w = self._window_size()[0]
             except Exception:
-                pass
-        return self._reencode_png(png, cfg)
+                return
+            if logical_w:
+                self._annotation_scale = width / logical_w
 
     def annotation_scale(self) -> float:
         return self._annotation_scale if self._annotation_scale else 1.0

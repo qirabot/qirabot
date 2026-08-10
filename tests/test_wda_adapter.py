@@ -36,6 +36,12 @@ class FakeClient(WdaClient):
         self.calls.append(("window_size",))
         return self._fake_size
 
+    def rotate(self, size, png):
+        """Device rotation: WDA now reports the other orientation's point
+        size and hands back frames in that orientation."""
+        self._fake_size = size
+        self._png = png
+
     def tap(self, x, y):
         self.calls.append(("tap", x, y))
 
@@ -88,6 +94,45 @@ class TestDetectionAndInfo:
         adapter = WdaAdapter(FakeClient(size=(4, 4), png=png))
         assert adapter.screenshot(ScreenshotConfig(format="png")) == png
         assert adapter.screenshot(ScreenshotConfig(format="jpeg"))[:3] == b"\xff\xd8\xff"
+
+
+class TestRotation:
+    """A rotated device reports a different point size; a cache that outlived
+    the rotation would scale every model coordinate against the old screen."""
+
+    def portrait(self):
+        client = FakeClient()  # 393x852 points, 786x1704 frame
+        adapter = WdaAdapter(client)
+        adapter.screenshot(ScreenshotConfig(format="png"))
+        return adapter, client
+
+    def test_rotation_refreshes_logical_size(self):
+        adapter, client = self.portrait()
+        assert (adapter.device_info().width, adapter.device_info().height) == (393, 852)
+
+        client.rotate((852, 393), tiny_png(1704, 786))
+        adapter.screenshot(ScreenshotConfig(format="png"))
+
+        info = adapter.device_info()
+        assert (info.width, info.height) == (852, 393)
+        assert adapter.annotation_scale() == pytest.approx(2.0)
+
+    def test_rotation_moves_geometry_derived_gestures(self):
+        adapter, client = self.portrait()
+        client.rotate((852, 393), tiny_png(1704, 786))
+        adapter.screenshot(ScreenshotConfig(format="png"))
+
+        adapter.go_back()
+        # left edge across 60% of the landscape 852pt width, at mid-height
+        assert client.calls[-1] == ("swipe", 1, 196, 511, 196, 0)
+
+    def test_same_orientation_keeps_size_cached(self):
+        adapter, client = self.portrait()
+        for _ in range(3):
+            adapter.screenshot(ScreenshotConfig(format="png"))
+            adapter.device_info()
+        # one probe at the first frame, none after: no per-step HTTP round-trip
+        assert client.calls.count(("window_size",)) == 1
 
 
 class TestActions:

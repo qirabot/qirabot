@@ -5,11 +5,9 @@ import pytest
 from qirabot.exceptions import (
     ActionError,
     AuthenticationError,
-    InsufficientBalanceError,
-    QirabotConnectionError,
+    MissingDependencyError,
     QirabotError,
     QirabotTimeoutError,
-    RateLimitError,
 )
 
 
@@ -30,27 +28,42 @@ class TestQirabotError:
 
 
 class TestExceptionHierarchy:
-    # InsufficientBalanceError / RateLimitError / QirabotConnectionError are
-    # deprecated and never raised, but they remain public API until the next
-    # major — so their hierarchy stays covered.
     @pytest.mark.parametrize("cls", [
         AuthenticationError,
-        InsufficientBalanceError,
-        RateLimitError,
         ActionError,
         QirabotTimeoutError,
-        QirabotConnectionError,
+        MissingDependencyError,
     ])
     def test_subclass_of_qirabot_error(self, cls):
         assert issubclass(cls, QirabotError)
 
     @pytest.mark.parametrize("cls", [
         AuthenticationError,
-        InsufficientBalanceError,
-        RateLimitError,
         ActionError,
         QirabotTimeoutError,
-        QirabotConnectionError,
+        MissingDependencyError,
     ])
     def test_subclass_of_exception(self, cls):
         assert issubclass(cls, Exception)
+
+    def test_missing_dependency_is_import_error(self):
+        assert issubclass(MissingDependencyError, ImportError)
+
+
+class TestRemovedExceptions:
+    """The cloud-era exceptions are gone in v3.2 — no billing, no Qirabot
+    server, no server-side task state to report."""
+
+    @pytest.mark.parametrize("name", [
+        "InsufficientBalanceError",
+        "RateLimitError",
+        "QirabotConnectionError",
+        "TaskTerminatedError",
+    ])
+    def test_not_exported(self, name):
+        import qirabot
+        import qirabot.exceptions
+
+        assert not hasattr(qirabot.exceptions, name)
+        assert not hasattr(qirabot, name)
+        assert name not in qirabot.__all__

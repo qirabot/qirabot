@@ -11,7 +11,7 @@ description: Qirabot 的异常体系、ai() 运行的四种 result.status 结果
 from qirabot import (
     Qirabot,
     QirabotError,              # 基类
-    AuthenticationError,       # 凭据 / 迁移配置问题
+    AuthenticationError,       # 凭据配置问题
     QirabotTimeoutError,       # wait_for / 自动等待超时
 )
 
@@ -34,24 +34,28 @@ except QirabotError as e:
 或缺少模型,以及缺少 Google Cloud 项目,会抛出带配置提示的
 `ValueError`;Google Cloud 凭据缺失或不可用时,错误消息会指向
 `GOOGLE_APPLICATION_CREDENTIALS` / `gcloud auth application-default
-login`。`AuthenticationError` 还有一种在构造时抛出的情况:设置了残留的
-v2 `QIRA_API_KEY` 却没有配置模型,此时消息会解释 v3 迁移方法(配置 ADC 和
-模型,或固定 `qirabot<3` 保留旧的云端行为)。
+login`。
 
 所有异常都派生自 `QirabotError`,所以单独一个
 `except QirabotError` 永远是安全的兜底:
 
 | 异常 | 时机 |
 |---|---|
-| `AuthenticationError` | 凭据配置问题,包括 v3 迁移守卫(设置了 `QIRA_API_KEY` 却没有配置模型)。不重试。 |
-| `RateLimitError` | 模型提供方限流(429)。引擎内部会退避并重试;捕获它可加自己的退避策略。 |
+| `AuthenticationError` | 凭据配置问题——凭据缺失、不可用或有歧义。环境里残留 v2 时代的 `QIRA_API_KEY` 时也会抛出(见[从 v2 升级](/zh/guide/migration-v3))。不重试。 |
 | `QirabotTimeoutError` | 客户端等待超时(`wait_for`、自动等待)。 |
 | `ActionError` | AI 动作失败,包括你的 Vertex AI 端点报告的模型调用失败(消息携带提供方的详细信息)。 |
 | `MissingDependencyError` | 某个可选后端依赖(playwright、pyautogui 等)未安装;消息里会按 qirabot 当前所处的环境给出要执行的确切安装命令。同时也是 `ImportError`。 |
 
-(`InsufficientBalanceError`、`QirabotConnectionError`、
-`TaskTerminatedError` 仍可导入,以兼容 v2 的捕获代码,但 v3 本地引擎
-不再抛出它们:已不存在 Qirabot 服务器、计费或服务端任务状态。)
+这张表就是异常体系的全部。云端时代的那几个异常
+(`RateLimitError`、`InsufficientBalanceError`、`QirabotConnectionError`、
+`TaskTerminatedError`)已在 **v3.2 移除**——已不存在 Qirabot 服务器、
+计费和服务端任务状态,它们没有对应的东西可描述了。现在导入会直接失败,
+见[从 v2 升级](/zh/guide/migration-v3)。
+
+**限流(429)不会以独立异常的形式到达你的代码。** provider 层用专门的
+退避策略在内部重试:5s、10s、20s、30s,累计跨满一个配额分钟窗——被拒的
+429 不计费,多等的成本为零。只有熬过全部重试仍然限流的情况才会暴露出来,
+形式是 `ActionError`。
 
 `verify()` 是"失败即抛异常"语义的刻意例外:断言不成立不抛异常,而是
 返回 falsy 结果(`VerifyResult`,其 `.reason` 说明原因),可直接用于

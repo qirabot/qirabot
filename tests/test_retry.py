@@ -13,10 +13,8 @@ from qirabot.adapters.base import DeviceAdapter, DeviceInfo
 from qirabot.exceptions import (
     ActionError,
     AuthenticationError,
-    InsufficientBalanceError,
     QirabotError,
     QirabotTimeoutError,
-    RateLimitError,
     _is_retryable,
 )
 
@@ -60,17 +58,14 @@ class TestIsRetryable:
     def test_429_is_retryable(self):
         assert _is_retryable(QirabotError("rate limit", status_code=429)) is True
 
-    def test_rate_limit_error_is_retryable(self):
-        assert _is_retryable(RateLimitError("slow down", status_code=429)) is True
-
     def test_408_is_retryable(self):
         assert _is_retryable(QirabotError("request timeout", status_code=408)) is True
 
     def test_auth_error_not_retryable(self):
         assert _is_retryable(AuthenticationError("bad key", status_code=401)) is False
 
-    def test_balance_error_not_retryable(self):
-        assert _is_retryable(InsufficientBalanceError("no credits", status_code=402)) is False
+    def test_402_not_retryable(self):
+        assert _is_retryable(QirabotError("payment required", status_code=402)) is False
 
     def test_400_not_retryable(self):
         assert _is_retryable(QirabotError("bad request", status_code=400)) is False
@@ -114,10 +109,10 @@ class TestRetry:
             bot.click("target", "btn")
         assert len(bot._backend.requests) == 1
 
-    def test_no_retry_on_balance_error(self, make_bot):
+    def test_no_retry_on_4xx(self, make_bot):
         bot = self._bot(make_bot)
-        bot._backend.results.append(InsufficientBalanceError("no credits", status_code=402))
-        with pytest.raises(InsufficientBalanceError):
+        bot._backend.results.append(QirabotError("bad request", status_code=400))
+        with pytest.raises(QirabotError):
             bot.click("target", "btn")
         assert len(bot._backend.requests) == 1
 

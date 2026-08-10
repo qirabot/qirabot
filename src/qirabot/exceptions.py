@@ -1,10 +1,4 @@
-"""Exceptions for Qirabot SDK.
-
-Some classes are deprecated and never raised anymore (marked in their
-docstrings). They stay exported because removing a public exception breaks
-every ``except`` written against it; removal is scheduled for the next
-major release.
-"""
+"""Exceptions for Qirabot SDK."""
 
 from __future__ import annotations
 
@@ -30,19 +24,7 @@ class QirabotError(Exception):
 
 
 class AuthenticationError(QirabotError):
-    """API key is missing or invalid (401)."""
-
-
-class InsufficientBalanceError(QirabotError):
-    """Deprecated, never raised: billing goes through your own model
-    provider, which reports quota problems its own way. Kept exported for
-    existing ``except`` clauses."""
-
-
-class RateLimitError(QirabotError):
-    """Deprecated, never raised: the engine's provider layer retries
-    model-provider rate limits internally and surfaces persistent ones as
-    :class:`ActionError`. Kept exported for existing ``except`` clauses."""
+    """Model-provider credentials are missing, unusable, or ambiguous."""
 
 
 class ActionError(QirabotError):
@@ -51,29 +33,6 @@ class ActionError(QirabotError):
 
 class QirabotTimeoutError(QirabotError):
     """Operation timed out (client-side)."""
-
-
-class QirabotConnectionError(QirabotError):
-    """Deprecated, never raised: model-provider connectivity failures
-    surface as :class:`AuthenticationError` (at construction) or
-    :class:`ActionError` (mid-run). Kept exported for existing ``except``
-    clauses."""
-
-
-class TaskTerminatedError(QirabotError):
-    """Deprecated, never raised: tasks run locally, so nothing can
-    terminate them from outside the script. Kept exported (with its
-    ``task_status`` field) for existing ``except`` clauses."""
-
-    def __init__(
-        self,
-        message: str,
-        task_status: str = "",
-        code: str | None = None,
-        status_code: int | None = None,
-    ):
-        super().__init__(message, code=code, status_code=status_code)
-        self.task_status = task_status
 
 
 class MissingDependencyError(QirabotError, ImportError):
@@ -85,9 +44,9 @@ class MissingDependencyError(QirabotError, ImportError):
     """
 
 
-# TaskTerminatedError is a control-plane verdict, not a transient failure —
-# every retry would hit the same gate.
-_NON_RETRYABLE = (AuthenticationError, InsufficientBalanceError, TaskTerminatedError)
+# A credential problem is a verdict, not a transient failure — every retry
+# would hit the same gate.
+_NON_RETRYABLE = (AuthenticationError,)
 
 
 def _is_retryable(error: QirabotError) -> bool:

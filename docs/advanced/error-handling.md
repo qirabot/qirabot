@@ -11,7 +11,7 @@ description: Qirabot's exception hierarchy, the four ai() run outcomes in result
 from qirabot import (
     Qirabot,
     QirabotError,              # base class
-    AuthenticationError,       # credential / migration setup problem
+    AuthenticationError,       # credential setup problem
     QirabotTimeoutError,       # wait_for / auto-wait timeout
 )
 
@@ -36,26 +36,28 @@ model in `model="{provider}/{model}"`, and a missing Google Cloud project,
 raise `ValueError` with a configuration hint; missing or unusable Google
 Cloud credentials raise with a message pointing at
 `GOOGLE_APPLICATION_CREDENTIALS` / `gcloud auth application-default login`.
-`AuthenticationError` is also raised at construction when a stale v2
-`QIRA_API_KEY` is set but no model is configured; the message explains the
-v3 migration (configure ADC and a model, or pin `qirabot<3` for the old
-cloud behavior).
 
 Everything in the exception hierarchy derives from `QirabotError`, so a
 single `except QirabotError` is always a safe catch-all:
 
 | Exception | When |
 |---|---|
-| `AuthenticationError` | Credential setup problem, including the v3 migration guard (`QIRA_API_KEY` set but no model configured). Not retried. |
-| `RateLimitError` | The model provider is rate limiting (429). The engine backs off and retries these internally; catch it to add your own backoff. |
+| `AuthenticationError` | Credential setup problem — missing, unusable, or ambiguous credentials. Also raised when a v2-era `QIRA_API_KEY` is still set (see [Upgrading from v2](/guide/migration-v3)). Not retried. |
 | `QirabotTimeoutError` | A client-side wait timed out (`wait_for`, auto-wait). |
 | `ActionError` | An AI action failed, including model-call failures reported by your Vertex AI endpoint (the message carries the provider's detail). |
 | `MissingDependencyError` | An optional backend dependency (playwright, pyautogui, …) isn't installed; the message includes the exact install command for the environment qirabot is running in. Also an `ImportError`. |
 
-(`InsufficientBalanceError`, `QirabotConnectionError`, and
-`TaskTerminatedError` still exist for import compatibility with v2 catch
-code, but the v3 local engine no longer raises them; there is no Qirabot
-server, billing, or server-side task state.)
+That table is the whole hierarchy. The cloud-era exceptions
+(`RateLimitError`, `InsufficientBalanceError`, `QirabotConnectionError`,
+`TaskTerminatedError`) were **removed in v3.2** — there is no Qirabot
+server, billing, or server-side task state for them to describe. Importing
+them now fails; see [Upgrading from v2](/guide/migration-v3).
+
+**Rate limits (429) never reach your code as their own exception.** The
+provider layer retries them internally with a dedicated backoff —
+5s, 10s, 20s, 30s, cumulatively spanning a full quota minute, since a
+rejected 429 costs nothing to wait out. Only a limit that survives all of
+those surfaces, as `ActionError`.
 
 `verify()` is the deliberate exception to raise-on-failure semantics: a
 failed check doesn't raise. It returns a falsy result (a `VerifyResult`

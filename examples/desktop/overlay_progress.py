@@ -15,7 +15,7 @@ Two ways to use it, shown below in one script:
    `ov.step` plugs the bot's steps in for just the AI part.
 
 Install:
-    python -m pip install "qirabot[desktop]"
+    uv pip install "qirabot[desktop]"
 
 Run:
     gcloud auth application-default login   # auth: Google Cloud ADC, once

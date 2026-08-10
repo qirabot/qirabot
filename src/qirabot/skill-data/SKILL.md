@@ -30,7 +30,7 @@ Bootstrap only when preflight reports something missing — prefer a venv:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-python -m pip install "qirabot[browser]"    # then: playwright install chromium
+uv pip install "qirabot[browser]"    # then: playwright install chromium
 #  or qirabot[appium] / qirabot[desktop]; Android/iOS/Windows-window are built in
 gcloud auth application-default login   # one-time Google Cloud auth (ADC) — or set
 #   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json

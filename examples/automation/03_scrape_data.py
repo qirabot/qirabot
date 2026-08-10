@@ -4,7 +4,7 @@ A realistic non-test use case: loop over URLs, extract a field from each with
 AI, and save the results. No selectors, no per-site parsing code.
 
 Install:
-    python -m pip install "qirabot[browser]"
+    uv pip install "qirabot[browser]"
     playwright install chromium
 
 Run:

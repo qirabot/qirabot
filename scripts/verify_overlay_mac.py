@@ -4,7 +4,7 @@ path qirabot's desktop backend uses on macOS (pyautogui -> `screencapture`).
 
 Run this ON THE MAC, inside a normal GUI login session:
 
-    pip install pyobjc-framework-Cocoa pillow   # pyautogui optional but preferred
+    uv pip install pyobjc-framework-Cocoa pillow   # pyautogui optional but preferred
     python scripts/verify_overlay_mac.py
 
 The terminal app needs Screen Recording permission (System Settings ->
@@ -31,12 +31,12 @@ try:
     import AppKit
     from AppKit import NSColor, NSDate, NSPanel, NSRunLoop
 except ImportError:
-    sys.exit("pyobjc is required: pip install pyobjc-framework-Cocoa")
+    sys.exit("pyobjc is required: uv pip install pyobjc-framework-Cocoa")
 
 try:
     from PIL import Image
 except ImportError:
-    sys.exit("Pillow is required: pip install pillow")
+    sys.exit("Pillow is required: uv pip install pillow")
 
 PANEL_W, PANEL_H, MARGIN = 260, 100, 40
 # After thumbnailing the scanned quadrant to <=600px wide, the panel covers

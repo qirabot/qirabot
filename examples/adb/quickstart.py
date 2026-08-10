@@ -4,7 +4,7 @@ The built-in adb backend needs nothing but the adb binary (Android
 platform-tools) on PATH and a device with USB debugging enabled.
 
 Install:
-    python -m pip install qirabot
+    uv pip install qirabot
 
 Run (connect a device/emulator first — check with `adb devices`):
     gcloud auth application-default login   # auth: Google Cloud ADC, once

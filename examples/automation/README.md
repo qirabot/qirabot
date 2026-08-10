@@ -12,7 +12,7 @@ augmenting a test suite. For the "bolt AI onto my existing tests" style, see the
 ## Install
 
 ```bash
-python -m pip install "qirabot[browser]"
+uv pip install "qirabot[browser]"
 playwright install chromium
 gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```

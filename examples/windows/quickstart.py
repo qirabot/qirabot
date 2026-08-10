@@ -6,10 +6,10 @@ and keys go out as DirectInput scancodes — the input level games poll, which
 virtual-key automation often can't reach.
 
 For whole-desktop automation on any OS use the pyautogui backend instead
-(`pip install "qirabot[desktop]"`, pass the pyautogui module as the target).
+(`uv pip install "qirabot[desktop]"`, pass the pyautogui module as the target).
 
 Install:
-    python -m pip install qirabot
+    uv pip install qirabot
 
 Run (Windows, with the target app open; auth is Google Cloud ADC — run
 `gcloud auth application-default login` once):

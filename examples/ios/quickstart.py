@@ -6,7 +6,7 @@ WDA itself is started from Xcode (WebDriverAgentRunner test scheme) or
 `tidevice3 runwda`. No Appium server, no facebook-wda.
 
 Install:
-    python -m pip install qirabot
+    uv pip install qirabot
 
 Run:
     gcloud auth application-default login   # auth: Google Cloud ADC, once

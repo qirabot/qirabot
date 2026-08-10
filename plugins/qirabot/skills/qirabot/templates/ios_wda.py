@@ -19,7 +19,7 @@ Prereqs (real device):
 
 Install:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
-    python -m pip install qirabot       # the WDA client is built in
+    uv pip install qirabot       # the WDA client is built in
     gcloud auth application-default login    # one-time Google Cloud auth (ADC)
     echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
 

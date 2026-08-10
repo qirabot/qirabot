@@ -7,7 +7,7 @@ at the point of use. It returns the imported module on success, or raises a
 :class:`~qirabot.exceptions.MissingDependencyError` whose message tells the user the
 exact install command to run — a ``uv tool install`` when qirabot itself lives in a
 uv tool environment (the one-line installer's default), otherwise
-``python -m pip install "qirabot[<extra>]"``.
+``uv pip install "qirabot[<extra>]"``.
 """
 
 from __future__ import annotations
@@ -39,10 +39,10 @@ _NOT_AN_EXTRA = frozenset({"selenium"})
 def _uv_tool_env() -> bool:
     """True when qirabot runs from a ``uv tool install`` environment.
 
-    That's what the one-line installers set up. In it, ``python -m pip install``
-    targets whatever Python is on PATH — never this environment — so a pip hint
-    would send the user in a circle. uv marks each tool environment with a
-    ``uv-receipt.toml`` at its root; plain venv/pip setups have none.
+    That's what the one-line installers set up. In it, ``uv pip install``
+    targets the active venv — never this environment — so the library-install
+    hint would send the user in a circle. uv marks each tool environment with a
+    ``uv-receipt.toml`` at its root; plain venv setups have none.
     """
     return (Path(sys.prefix) / "uv-receipt.toml").is_file()
 
@@ -85,7 +85,7 @@ def extra_install_hint(extra: str) -> str:
     if _uv_tool_env():
         extras = ",".join(sorted(_installed_extras() | {extra}))
         return f'uv tool install --force "qirabot[{extras}]{_version_pin()}"'
-    return f'python -m pip install "qirabot[{extra}]"'
+    return f'uv pip install "qirabot[{extra}]"'
 
 
 def package_install_hint(package: str) -> str:
@@ -94,7 +94,7 @@ def package_install_hint(package: str) -> str:
         extras = ",".join(sorted(_installed_extras()))
         base = f"qirabot[{extras}]" if extras else "qirabot"
         return f'uv tool install --force --with {package} "{base}{_version_pin()}"'
-    return f"python -m pip install {package}"
+    return f"uv pip install {package}"
 
 
 def require(module: str, extra: str | None = None) -> ModuleType:

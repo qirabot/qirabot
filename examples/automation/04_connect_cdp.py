@@ -12,7 +12,7 @@ Start Chrome with remote debugging first:
     google-chrome --remote-debugging-port=9222
 
 Install:
-    python -m pip install "qirabot[browser]"
+    uv pip install "qirabot[browser]"
 
 Run:
     gcloud auth application-default login   # auth: Google Cloud ADC, once

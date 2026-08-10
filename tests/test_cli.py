@@ -1336,9 +1336,9 @@ class TestDoctor:
         out = self._flat(result)
         assert result.exit_code == 1
         assert "no credentials were found" in out
-        assert 'python -m pip install "qirabot[browser]" && qirabot install-browser' in out
-        # Selenium is not an extra — the hint must be a plain pip install.
-        assert "python -m pip install selenium" in out
+        assert 'uv pip install "qirabot[browser]" && qirabot install-browser' in out
+        # Selenium is not an extra — the hint must be a plain package install.
+        assert "uv pip install selenium" in out
         assert "qirabot[selenium]" not in out
         assert "Not ready" in out
 

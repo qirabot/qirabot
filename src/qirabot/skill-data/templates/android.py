@@ -2,7 +2,7 @@
 
 Fill in APP and TASK, then run:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
-    python -m pip install qirabot        # zero extra dependencies for Android
+    uv pip install qirabot        # zero extra dependencies for Android
     gcloud auth application-default login    # one-time Google Cloud auth (ADC)
     echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
     adb devices            # confirm a device/emulator is connected

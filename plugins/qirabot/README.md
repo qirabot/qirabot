@@ -23,7 +23,7 @@ After install the skill is available as `/qirabot:qirabot`, and Claude invokes i
 automatically when a task involves automating, testing, or scraping a UI.
 
 Not on Claude Code? The same skill ships inside the `qirabot` Python package —
-`pip install qirabot && qirabot skill install agents` (or `codex` / `cursor` /
+`uv tool install qirabot && qirabot skill install agents` (or `codex` / `cursor` /
 `--dir <path>`) copies it into any Agent-Skills-compatible tool's skills
 directory, version-matched to the installed SDK. The
 [skills CLI](https://github.com/vercel-labs/skills) works too:

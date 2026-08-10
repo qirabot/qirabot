@@ -63,7 +63,7 @@ def check_import(module: str, extra: str, label: str = "") -> bool:
         return True
     except Exception as exc:  # noqa: BLE001
         line(NO, label or f"{module} importable",
-             f'{type(exc).__name__}: {exc}  ->  python -m pip install "qirabot[{extra}]"')
+             f'{type(exc).__name__}: {exc}  ->  uv pip install "qirabot[{extra}]"')
         return False
 
 
@@ -138,8 +138,8 @@ def main() -> int:
         extra = {"browser": "[browser]", "android": "",
                  "ios": "", "desktop": "[desktop]"}[target]
         line(NO, "qirabot importable",
-             f"python -m pip install 'qirabot{extra}'  (prefer a venv: "
-             "python -m venv .venv && source .venv/bin/activate)")
+             f"uv pip install 'qirabot{extra}'  (prefer a venv: "
+             "uv venv && source .venv/bin/activate)")
         hard_ok = False
 
     # 4. target-specific
@@ -206,7 +206,7 @@ def main() -> int:
             line(OK, "appium client importable (optional, for simulators)")
         except Exception:  # noqa: BLE001
             line(WARN, "appium client not installed (optional)",
-                 'python -m pip install "qirabot[appium]"  (simulators / auto WDA build)')
+                 'uv pip install "qirabot[appium]"  (simulators / auto WDA build)')
         if shutil.which("appium"):
             line(OK, "appium server on PATH")
         else:
@@ -231,7 +231,7 @@ def main() -> int:
             line(OK, f"desktop backend importable ({'; '.join(backends)})")
         else:
             line(NO, "desktop backend importable",
-                 'python -m pip install "qirabot[desktop]"  (whole screen)')
+                 'uv pip install "qirabot[desktop]"  (whole screen)')
             hard_ok = False
         line(WARN, "desktop runtime",
              "Ensure the target app is installed; on macOS grant Screen Recording + Accessibility.")

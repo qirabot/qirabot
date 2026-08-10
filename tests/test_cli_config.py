@@ -127,7 +127,7 @@ class TestInstallBrowser:
 
         def missing(module, extra=None):
             raise MissingDependencyError(
-                'Install it with:  python -m pip install "qirabot[browser]"'
+                'Install it with:  uv pip install "qirabot[browser]"'
             )
 
         monkeypatch.setattr(cli_main, "require", missing)

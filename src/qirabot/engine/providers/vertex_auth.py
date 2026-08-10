@@ -41,7 +41,7 @@ class VertexTokenSource:
             raise ProviderError(
                 "vertex",
                 "google-auth is required for Vertex providers "
-                "(pip install google-auth)",
+                "(uv pip install google-auth)",
                 category=ErrorCategory.AUTH,
             ) from exc
         try:

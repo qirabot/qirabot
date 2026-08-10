@@ -13,7 +13,7 @@ even the first pause, log in ahead of time with no AI task at all:
 for walls the model hits mid-task.
 
 Install:
-    python -m pip install "qirabot[browser]"
+    uv pip install "qirabot[browser]"
     playwright install chromium
 
 Run:

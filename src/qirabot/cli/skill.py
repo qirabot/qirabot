@@ -69,7 +69,7 @@ def _payload() -> Traversable:
     if not payload.is_dir():
         raise click.ClickException(
             "bundled skill payload not found — this qirabot install looks broken; "
-            "try reinstalling (pip install --force-reinstall qirabot)"
+            "try reinstalling (uv tool install --force qirabot)"
         )
     return payload
 
@@ -149,7 +149,7 @@ def skill() -> None:
 def install(agent: str | None, dir_: str | None, project: bool, force: bool) -> None:
     """Copy the qirabot skill into AGENT's skills directory (or --dir).
 
-    Reinstalling after a `pip install -U qirabot` upgrades the copy in place;
+    Reinstalling after a `uv tool upgrade qirabot` upgrades the copy in place;
     a same-version rerun is a no-op. A directory not created by this command
     is never overwritten without --force.
     """

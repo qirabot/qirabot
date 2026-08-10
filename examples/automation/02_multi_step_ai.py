@@ -5,7 +5,7 @@ next action, and repeats until the task is done or max_steps is hit. Pass an
 on_step callback to watch each decision as it happens.
 
 Install:
-    python -m pip install "qirabot[browser]"
+    uv pip install "qirabot[browser]"
     playwright install chromium
 
 Run:

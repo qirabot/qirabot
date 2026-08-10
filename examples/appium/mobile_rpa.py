@@ -7,7 +7,7 @@ there `bot.ai()` runs the full decision loop: it looks at the screen, picks the
 next action, and repeats until the task is done or max_steps is hit.
 
 Install:
-    python -m pip install qirabot Appium-Python-Client
+    uv pip install qirabot Appium-Python-Client
 
 Run (start the Appium server and a device first — see README.md):
     gcloud auth application-default login   # auth: Google Cloud ADC, once

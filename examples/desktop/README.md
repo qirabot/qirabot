@@ -5,7 +5,7 @@ Use Qirabot with pyautogui for OS-level automation — desktop apps, embedded br
 ## Install
 
 ```bash
-python -m pip install qirabot pyautogui pytest
+uv pip install qirabot pyautogui pytest
 gcloud auth application-default login   # auth: Google Cloud ADC, once
 ```
 

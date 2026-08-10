@@ -5,7 +5,7 @@ plain script you run directly — no pytest, no fixtures, no webdriver setup.
 bot.open() launches a Playwright-driven Chromium for you.
 
 Install:
-    python -m pip install "qirabot[browser]"
+    uv pip install "qirabot[browser]"
     playwright install chromium
 
 Run:

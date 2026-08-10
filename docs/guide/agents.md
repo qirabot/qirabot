@@ -47,10 +47,10 @@ instead.
 
 **Installing the skill.** The Agent Skills format is supported by Codex,
 Cursor, Gemini CLI, and many other tools. The same skill the Claude Code
-plugin ships is bundled in the `qirabot` package:
+plugin ships is bundled in the `qirabot` package, so
+[install qirabot](/guide/installation) first:
 
 ```bash
-pip install qirabot
 qirabot skill install agents            # the shared .agents/skills convention
 qirabot skill install codex             # or: claude, cursor
 qirabot skill install --dir <path>      # any other Agent-Skills-compatible tool

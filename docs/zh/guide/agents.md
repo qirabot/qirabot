@@ -39,10 +39,10 @@ marketplace 副本随仓库 `main` 分支自动更新;如需与本机 SDK 版本
 ## 任意其他 agent(Codex、Cursor、Copilot 等)
 
 **安装 skill。** Agent Skills 格式已被 Codex、Cursor、Gemini CLI 等众多
-工具支持;Claude Code 插件所含的同一份 skill 也打包在 `qirabot` 包内:
+工具支持;Claude Code 插件所含的同一份 skill 也打包在 `qirabot` 包内,先
+[安装 qirabot](/zh/guide/installation):
 
 ```bash
-pip install qirabot
 qirabot skill install agents            # 共享的 .agents/skills 约定位置
 qirabot skill install codex             # 或 claude、cursor
 qirabot skill install --dir <path>      # 其他任何兼容 Agent Skills 的工具

@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1.3 (2026-08-10)
+
+### Fix: stray Playwright teardown noise after `qirabot doctor`
+
+- `doctor` no longer occasionally trails "Task was destroyed but it is
+  pending!" / `TargetClosedError` after its last line. The Chromium
+  probe now runs Playwright in a subprocess, so the sync API's
+  quick-start/stop teardown race (seen on Windows) stays out of the
+  command's output. Diagnostics are unchanged.
+
 ## 3.1.2 (2026-08-10)
 
 ### Fix: ADC authentication in isolated installs

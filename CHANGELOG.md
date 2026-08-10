@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.1.2 (2026-08-10)
+
+### Fix: ADC authentication in isolated installs
+
+- `requests` is now a declared dependency. google-auth's token-refresh
+  transport imports it at call time but only lists it as an optional
+  extra, so isolated installs (`uv tool install`, pipx) resolved ADC
+  credentials and then failed the token refresh — `qirabot doctor` and
+  every ADC-authenticated run reported a raw ImportError as a
+  credentials failure.
+- A missing transport now surfaces as `failed to refresh Google Cloud
+  credentials: ...` with auth context instead of an unwrapped
+  ImportError.
+
 ## 3.1.1 (2026-08-06)
 
 ### Language: any language, better adherence, new default

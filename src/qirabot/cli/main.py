@@ -700,18 +700,30 @@ def _chromium_status() -> str | None:
     """
     if not _has_module("playwright.sync_api"):
         return None
-    try:
-        from playwright.sync_api import sync_playwright
+    import subprocess
 
-        with sync_playwright() as p:
-            exe = p.chromium.executable_path
-        if not os.path.exists(exe):
-            return "no-browser"
+    # A subprocess, not in-process: quick start/stop of the sync API can
+    # leave the driver connection's asyncio tasks pending (seen on Windows),
+    # spraying "Task was destroyed" + TargetClosedError onto stderr at
+    # interpreter exit. captured stderr keeps that noise out of doctor.
+    probe = (
+        "from playwright.sync_api import sync_playwright\n"
+        "with sync_playwright() as p:\n"
+        "    print(p.chromium.executable_path)\n"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
     except Exception:
         return "no-browser"
+    exe = result.stdout.strip()
+    if result.returncode != 0 or not exe or not os.path.exists(exe):
+        return "no-browser"
     if sys.platform.startswith("linux"):
-        import subprocess
-
         try:
             ldd = subprocess.run(
                 ["ldd", exe], capture_output=True, text=True, timeout=10

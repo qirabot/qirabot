@@ -68,9 +68,12 @@ class VertexTokenSource:
             assert credentials is not None
             valid = bool(getattr(credentials, "valid", False))
             if not valid:
-                import google.auth.transport.requests
-
                 try:
+                    # Inside the try: the transport needs the `requests`
+                    # package, and a missing-dependency ImportError must
+                    # surface with the same auth context as a refresh failure.
+                    import google.auth.transport.requests
+
                     credentials.refresh(  # type: ignore[attr-defined]
                         google.auth.transport.requests.Request()
                     )

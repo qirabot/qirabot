@@ -32,6 +32,10 @@ dependencies = [
     # ADC (service-account / gcloud / metadata-server) auth for the local
     # decision engine's Vertex providers.
     "google-auth>=2.30",
+    # google-auth's token-refresh transport imports `requests` at call time
+    # but only declares it as an optional extra — without this, isolated
+    # installs (uv tool) resolve ADC credentials and then fail the refresh.
+    "requests>=2.20",
     # The progress overlay window, on by default in the CLI — macOS needs
     # AppKit for it (Windows uses stdlib tkinter, other platforms no-op).
     "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",

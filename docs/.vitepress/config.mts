@@ -19,6 +19,7 @@ const enSidebar = [
       { text: 'Quick Start', link: '/guide/quickstart' },
       { text: 'CLI Reference', link: '/guide/cli' },
       { text: 'Use with AI Agents', link: '/guide/agents' },
+      { text: 'Demos', link: '/demos' },
     ],
   },
   {
@@ -70,6 +71,7 @@ const zhSidebar = [
       { text: '快速开始', link: '/zh/guide/quickstart' },
       { text: 'CLI 参考', link: '/zh/guide/cli' },
       { text: '配合 AI Agent 使用', link: '/zh/guide/agents' },
+      { text: '实战演示', link: '/zh/demos' },
     ],
   },
   {
@@ -171,7 +173,7 @@ export default defineConfig({
         nav: [
           { text: 'Guide', link: '/guide/quickstart' },
           { text: 'Platforms', link: '/backends/browser' },
-          { text: 'qirabot.com', link: 'https://qirabot.com' },
+          { text: 'Demos', link: '/demos' },
         ],
         sidebar: enSidebar,
         editLink: {
@@ -194,7 +196,7 @@ export default defineConfig({
         nav: [
           { text: '指南', link: '/zh/guide/quickstart' },
           { text: '支持平台', link: '/zh/backends/browser' },
-          { text: 'qirabot.com', link: 'https://qirabot.com' },
+          { text: '实战演示', link: '/zh/demos' },
         ],
         sidebar: zhSidebar,
         editLink: {

@@ -1,5 +1,5 @@
 """Play a mobile MMORPG on a real iPhone — the script behind the
-"zero to level 15" demo video at https://qirabot.com/#demos.
+"zero to level 15" demo video at https://qirabot.com/docs/demos.html#mhxy_zero_to_15.
 
 The whole "script" is one sentence: create a character and clear the
 new-player flow. `bot.ai()` runs the full decision loop from there — look at

@@ -17,7 +17,7 @@ iPhone, bind an Appium session. Mix deterministic steps for the known launch /
 splash flow with `bot.ai()` for open-ended play or UI audits.
 
 - [game/](game/) — Unity / Unreal / native Windows games via `Windows:///<hwnd>`,
-  plus the iOS MMORPG script behind the [demo video](https://qirabot.com/#demos)
+  plus the iOS MMORPG script behind the [demo video](https://qirabot.com/docs/demos.html#mhxy_zero_to_15)
 
 ## 3. Bolt onto a framework you already use
 

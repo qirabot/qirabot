@@ -15,6 +15,9 @@ hero:
       text: 安装
       link: /zh/guide/installation
     - theme: alt
+      text: 实战演示
+      link: /zh/demos
+    - theme: alt
       text: GitHub
       link: https://github.com/qirabot/qirabot
   image:

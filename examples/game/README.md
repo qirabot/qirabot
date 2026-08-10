@@ -10,7 +10,7 @@ open-ended play or audits).
 | Example | Platform | What it does |
 |---|---|---|
 | [windows_unity_game.py](windows_unity_game.py) | Windows — Unity (default) / Unreal / native | Launch the game, wait for splash → in-game, then audit the character & inventory menus with `bot.ai()`. |
-| [ios_appium_mmorpg.py](ios_appium_mmorpg.py) | iOS real device (Appium XCUITest) | The script behind the ["zero to level 15" demo video](https://qirabot.com/#demos): one `bot.ai()` task creates an MMORPG character and clears the whole new-player flow, recording the screen throughout. Setup/run instructions are in the script docstring. |
+| [ios_appium_mmorpg.py](ios_appium_mmorpg.py) | iOS real device (Appium XCUITest) | The script behind the ["zero to level 15" demo video](https://qirabot.com/docs/demos.html#mhxy_zero_to_15): one `bot.ai()` task creates an MMORPG character and clears the whole new-player flow, recording the screen throughout. Setup/run instructions are in the script docstring. |
 
 The rest of this README covers the Windows example; the iOS example is
 self-contained (prerequisites and run steps in its docstring).

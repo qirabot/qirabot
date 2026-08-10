@@ -16,23 +16,23 @@ https://github.com/user-attachments/assets/649ea80c-63e7-4c85-9ee8-3c8fe17e5ef4
 
 **《梦幻西游》手游：从创号自动玩到 15 级** — iOS 真机。
 整个任务指令只有一句话：*"这是梦幻西游手游，你的任务是创建角色，然后完成新手流程，能跳过的尽可能跳过"*。
-上方为单次未剪辑运行的精华片段：[完整 5:50 视频](https://qirabot.com/?lang=zh#demos) ·
+上方为单次未剪辑运行的精华片段：[完整 5:50 视频](https://qirabot.com/docs/zh/demos.html#mhxy_zero_to_15) ·
 [脚本](examples/game/ios_appium_mmorpg.py)
 
-更多真实、未剪辑的运行记录——AI 全程只看屏幕画面。点击封面观看（[全部 demo →](https://qirabot.com/?lang=zh#demos)）：
+更多真实、未剪辑的运行记录——AI 全程只看屏幕画面。点击封面观看（[全部 demo →](https://qirabot.com/docs/zh/demos.html)）：
 
 <table>
   <tr>
     <td align="center" width="33%">
-      <a href="https://qirabot.com/?lang=zh#demos"><img src="https://assets.qirabot.com/demos/afk_journey_tutorial.poster.webp" alt="《剑与远征：启程》创号通关新手教程，进入大世界"></a>
+      <a href="https://qirabot.com/docs/zh/demos.html#afk_journey_tutorial"><img src="https://assets.qirabot.com/demos/afk_journey_tutorial.poster.webp" alt="《剑与远征：启程》创号通关新手教程，进入大世界"></a>
       <br><b>《剑与远征：启程》创号通关新手教程，进入大世界</b> — iOS 真机
     </td>
     <td align="center" width="33%">
-      <a href="https://qirabot.com/?lang=zh#demos"><img src="https://assets.qirabot.com/demos/lichess_play_chess.poster.webp" alt="在 lichess.org 上对弈国际象棋"></a>
+      <a href="https://qirabot.com/docs/zh/demos.html#lichess_play_chess"><img src="https://assets.qirabot.com/demos/lichess_play_chess.poster.webp" alt="在 lichess.org 上对弈国际象棋"></a>
       <br><b>在 lichess.org 上对弈国际象棋</b> — Android 真机
     </td>
     <td align="center" width="33%">
-      <a href="https://qirabot.com/?lang=zh#demos"><img src="https://assets.qirabot.com/demos/tile_match_game.poster.webp" alt="自主通关水果连连消手游"></a>
+      <a href="https://qirabot.com/docs/zh/demos.html#tile_match_game"><img src="https://assets.qirabot.com/demos/tile_match_game.poster.webp" alt="自主通关水果连连消手游"></a>
       <br><b>自主通关水果连连消手游</b> — Android 真机
     </td>
   </tr>

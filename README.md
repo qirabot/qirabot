@@ -18,24 +18,24 @@ https://github.com/user-attachments/assets/649ea80c-63e7-4c85-9ee8-3c8fe17e5ef4
 The entire task prompt is one sentence: *"This is Fantasy Westward Journey
 mobile. Create a character, then complete the new-player flow; skip whatever
 can be skipped."* Highlights cut from a single unedited run:
-[full 5:50 video](https://qirabot.com/#demos) ·
+[full 5:50 video](https://qirabot.com/docs/demos.html#mhxy_zero_to_15) ·
 [script](examples/game/ios_appium_mmorpg.py)
 
 More real, unedited runs — the AI sees only pixels. Click a poster to watch
-([all demos →](https://qirabot.com/#demos)):
+([all demos →](https://qirabot.com/docs/demos.html)):
 
 <table>
   <tr>
     <td align="center" width="33%">
-      <a href="https://qirabot.com/#demos"><img src="https://assets.qirabot.com/demos/afk_journey_tutorial.poster.webp" alt="Clear AFK Journey's tutorial and reach the open world"></a>
+      <a href="https://qirabot.com/docs/demos.html#afk_journey_tutorial"><img src="https://assets.qirabot.com/demos/afk_journey_tutorial.poster.webp" alt="Clear AFK Journey's tutorial and reach the open world"></a>
       <br><b>Clear AFK Journey's tutorial and reach the open world</b> — iOS real device
     </td>
     <td align="center" width="33%">
-      <a href="https://qirabot.com/#demos"><img src="https://assets.qirabot.com/demos/lichess_play_chess.poster.webp" alt="Play chess on lichess.org"></a>
+      <a href="https://qirabot.com/docs/demos.html#lichess_play_chess"><img src="https://assets.qirabot.com/demos/lichess_play_chess.poster.webp" alt="Play chess on lichess.org"></a>
       <br><b>Play chess on lichess.org</b> — Android real device
     </td>
     <td align="center" width="33%">
-      <a href="https://qirabot.com/#demos"><img src="https://assets.qirabot.com/demos/tile_match_game.poster.webp" alt="Beat a fruit tile-match game on its own"></a>
+      <a href="https://qirabot.com/docs/demos.html#tile_match_game"><img src="https://assets.qirabot.com/demos/tile_match_game.poster.webp" alt="Beat a fruit tile-match game on its own"></a>
       <br><b>Beat a fruit tile-match game on its own</b> — Android real device
     </td>
   </tr>
@@ -349,7 +349,7 @@ Runnable examples live in [examples/](examples/), in three styles:
 - **Standalone automation (plain scripts)** — scraping / RPA / agents:
   [automation/](examples/automation/)
 - **Drive a game** — Windows desktop games (bind by HWND) and the iOS
-  MMORPG script behind the [demo video](https://qirabot.com/#demos):
+  MMORPG script behind the [demo video](https://qirabot.com/docs/demos.html#mhxy_zero_to_15):
   [game/](examples/game/)
 
 See [examples/README.md](examples/README.md) for which to pick.

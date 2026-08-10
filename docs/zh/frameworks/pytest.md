@@ -54,7 +54,7 @@ def test_search(bot, page):
     assert bot.verify(page, "SpaceX 词条已显示")
 ```
 
-测试进程硬崩时还有 `atexit` 兜底调用 `close()`。引擎在你的进程里本地
+测试进程硬崩时还有 `atexit` 兜底调用 `close()`。引擎在你自己的进程内
 运行,步骤之间的长时间等待是安全的,详见
 [配置](/zh/advanced/configuration)。
 

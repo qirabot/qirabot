@@ -8,7 +8,7 @@ description: 需要什么 Google Cloud 凭据、哪些调用会请求模型、�
 ## 需要什么凭据?
 
 Google Cloud Application Default Credentials(ADC),不需要 Qirabot
-账号或 API key。决策引擎在 SDK 内本地运行,直接调用你自己项目里的
+账号或 API key。决策引擎在你自己的进程内运行,直接调用你项目里的
 Google Vertex AI:把 `GOOGLE_APPLICATION_CREDENTIALS` 指向服务账号
 JSON,或执行一次 `gcloud auth application-default login`(GCE 上自动
 使用元数据服务器)。模型通过 `Qirabot(model="{provider}/{model}")` 或
@@ -37,8 +37,9 @@ Google Cloud 在你的项目上计费;每个结果对象都带 token 计数。
 
 只要环境里还有 v2 时代的 `QIRA_API_KEY`,v3 就拒绝运行——而不是悄悄把
 账单切到某个 Google Cloud 项目。取消设置 `QIRA_API_KEY` 和
-`QIRA_BASE_URL`(包括 `.env` 和 CI secrets 里的)。完整流程见
-[从 v2 升级](/zh/guide/migration-v3)。
+`QIRA_BASE_URL`(包括 `.env` 和 CI secrets 里的)。设置 `model=`
+(或 `QIRA_MODEL`)同样算作确认切换,也会解除这道拦截。凭据配置见
+[配置](/zh/advanced/configuration)。
 
 ## 哪些数据会离开我的机器?
 
@@ -71,7 +72,7 @@ headless 并给出警告。显式传 `--headless` 可以让它无条件生效。
 
 ## 脚本在步骤之间长时间等待,运行会超时吗?
 
-不会。引擎在你的进程里本地运行,没有需要保活的服务端会话,`bot.*`
+不会。引擎在你自己的进程内运行,没有需要保活的服务端会话,`bot.*`
 调用之间等多久都安全。详见
 [配置](/zh/advanced/configuration#运行生命周期)。
 

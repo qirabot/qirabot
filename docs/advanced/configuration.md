@@ -5,7 +5,7 @@ description: Every Qirabot knob - model and Vertex AI setup, Google Cloud creden
 
 # Configuration
 
-The decision engine runs locally inside the SDK and calls your own model
+The decision engine runs in your own process and calls your model
 endpoint on Google Vertex AI. Configuration is therefore two things: Google
 Cloud credentials, and which model to use.
 

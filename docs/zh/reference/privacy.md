@@ -5,8 +5,8 @@ description: Qirabot 具体向你自己的 Vertex AI 端点发送什么(截图�
 
 # 数据与隐私
 
-Qirabot 的决策引擎在 SDK 内本地运行,模型需要的输入只有屏幕内容。截图
-直接从你的机器发往你自己 Google Cloud 项目下的 Vertex AI 端点。
+Qirabot 的决策引擎在你自己的进程内运行,模型需要的输入只有屏幕内容。
+截图直接从你的机器发往你自己 Google Cloud 项目下的 Vertex AI 端点。
 `qirabot` 包不向任何 Qirabot 服务发起网络请求:不需要账号和 API key,
 也没有服务端任务存储。本页说明哪些数据会经过网络。
 

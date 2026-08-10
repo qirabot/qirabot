@@ -56,7 +56,7 @@ def test_search(bot, page):
 ```
 
 `close()` is also covered by `atexit` if a test hard-crashes. The engine
-runs locally in your process, so long waits between steps are safe; see
+runs in your own process, so long waits between steps are safe; see
 [Configuration](/advanced/configuration).
 
 ## Assertion patterns

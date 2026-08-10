@@ -5,7 +5,7 @@ description: Qirabot 的全部配置项——模型与 Vertex AI 设置、Google
 
 # 配置
 
-决策引擎在 SDK 内本地运行,直接调用你自己在 Google Vertex AI 上的模型
+决策引擎在你自己的进程内运行,直接调用你在 Google Vertex AI 上的模型
 端点。因此配置只有两件事:Google Cloud 凭据,以及用哪个模型。
 
 ```python

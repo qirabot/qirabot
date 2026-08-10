@@ -17,7 +17,6 @@ const enSidebar = [
     items: [
       { text: 'Installation', link: '/guide/installation' },
       { text: 'Quick Start', link: '/guide/quickstart' },
-      { text: 'Upgrading from v2', link: '/guide/migration-v3' },
       { text: 'CLI Reference', link: '/guide/cli' },
       { text: 'Use with AI Agents', link: '/guide/agents' },
       { text: 'Demos', link: '/demos' },
@@ -71,7 +70,6 @@ const zhSidebar = [
     items: [
       { text: '安装', link: '/zh/guide/installation' },
       { text: '快速开始', link: '/zh/guide/quickstart' },
-      { text: '从 v2 升级', link: '/zh/guide/migration-v3' },
       { text: 'CLI 参考', link: '/zh/guide/cli' },
       { text: '配合 AI Agent 使用', link: '/zh/guide/agents' },
       { text: '实战演示', link: '/zh/demos' },

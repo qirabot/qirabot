@@ -8,8 +8,8 @@ description: Google Cloud credential setup, which calls invoke the model, why re
 ## What credentials do I need?
 
 Google Cloud Application Default Credentials (ADC). There is no Qirabot
-account and no Qirabot API key. The decision engine runs locally inside
-the SDK and calls Google Vertex AI in your own project: set
+account and no Qirabot API key. The decision engine runs in your own
+process and calls Google Vertex AI in your project: set
 `GOOGLE_APPLICATION_CREDENTIALS` to a service-account JSON, or run
 `gcloud auth application-default login` once (on GCE the metadata server
 is used automatically). Pick the model with
@@ -42,8 +42,10 @@ breakdown in [Controlling Cost](/advanced/cost).
 
 v3 refuses to run while a v2-era `QIRA_API_KEY` is in the environment,
 rather than silently switching billing to a Google Cloud project. Unset
-`QIRA_API_KEY` and `QIRA_BASE_URL` (including in `.env` and CI secrets). Full
-path in [Upgrading from v2](/guide/migration-v3).
+`QIRA_API_KEY` and `QIRA_BASE_URL` (including in `.env` and CI secrets).
+Setting `model=` (or `QIRA_MODEL`) also counts as acknowledging the switch
+and disarms the guard. For credentials, see
+[Configuration](/advanced/configuration).
 
 ## What data leaves my machine?
 
@@ -82,7 +84,7 @@ a project environment otherwise. The extras are listed in
 
 ## My script sleeps between steps — will the run time out?
 
-No. The engine runs locally in your process, and there is no server
+No. The engine runs in your own process, and there is no server
 session to keep alive, so long waits between `bot.*` calls are safe. Details in
 [Configuration](/advanced/configuration#run-lifecycle).
 

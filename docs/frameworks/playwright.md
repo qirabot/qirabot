@@ -81,7 +81,7 @@ waiting.
 
 ## Under the hood
 
-The decision engine runs locally inside the SDK: screenshots go directly
+The decision engine runs in your own process: screenshots go directly
 from your machine to your configured model endpoint (Google Vertex AI) for
 reasoning and element location, and actions execute locally through your
 Playwright session. Only screenshots and instruction text are sent to the

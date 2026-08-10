@@ -1,4 +1,4 @@
-# Qirabot Python SDK
+# Qirabot
 
 English | [简体中文](README.zh.md)
 
@@ -6,7 +6,7 @@ Cross-platform GUI automation, driven by multimodal AI vision. Drive browsers, m
 
 Run it standalone (`bot.open()` launches a browser for you; Android / iOS / Windows-window backends are built in with zero extra dependencies), bolt it onto your existing Playwright / Selenium / Appium / pyautogui session, drop it into a pytest suite, or bind by HWND to drive a Unity / Unreal / native desktop game. Same API across all of them.
 
-The decision engine runs locally inside the SDK: each screenshot goes directly from your machine to a vision model you configure on Google Vertex AI, authenticated with your own Google Cloud credentials. There is no Qirabot server in the loop — no account, no API key, no per-step billing.
+The decision engine runs in your own process: each screenshot goes directly from your machine to a vision model you configure on Google Vertex AI, authenticated with your own Google Cloud credentials and billed by Google.
 
 **📖 Full documentation: [qirabot.com/docs](https://qirabot.com/docs/)** ([中文](https://qirabot.com/docs/zh/))
 
@@ -282,7 +282,7 @@ result = bot.ai(
 )
 ```
 
-The tool runs locally in your process, like everything else qirabot does — the model
+The tool runs in your own process, like everything else qirabot does — the model
 sees only the tool's name, description, parameters, and return value, never
 your endpoints or credentials — and that return value becomes the model's
 next observation. One instruction now spans systems that used to take a page of

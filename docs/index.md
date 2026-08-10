@@ -61,9 +61,9 @@ on. That means it works on surfaces traditional frameworks can't touch —
 canvas-rendered UIs, native mobile apps, desktop applications, and full 3D
 games.
 
-The decision engine runs locally inside the SDK: screenshots go directly
-from your machine to the model endpoint you configure on Google Vertex AI —
-no Qirabot account, no API key, no intermediary server.
+The decision engine runs in your own process: screenshots go directly
+from your machine to the model endpoint you configure on Google Vertex AI,
+under your own Google Cloud credentials.
 
 ```python
 from qirabot import Qirabot

@@ -5,8 +5,8 @@ description: 一条命令跑通第一个 AI 驱动的 GUI 自动化任务，再�
 
 # 快速开始
 
-决策引擎在 SDK 内本地运行，调用的是你自己 Google Cloud Vertex AI 端点上
-的视觉模型。先完成一次 Google Cloud 认证，然后把任务交给 AI：
+决策引擎在你自己的进程内运行，调用的是你在 Google Cloud Vertex AI
+端点上的视觉模型。先完成一次 Google Cloud 认证，然后把任务交给 AI：
 
 ```bash
 gcloud auth application-default login   # 一次即可

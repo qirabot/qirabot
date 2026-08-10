@@ -42,7 +42,7 @@ single `except QirabotError` is always a safe catch-all:
 
 | Exception | When |
 |---|---|
-| `AuthenticationError` | Credential setup problem — missing, unusable, or ambiguous credentials. Also raised when a v2-era `QIRA_API_KEY` is still set (see [Upgrading from v2](/guide/migration-v3)). Not retried. |
+| `AuthenticationError` | Credential setup problem — missing, unusable, or ambiguous credentials. Also raised when a v2-era `QIRA_API_KEY` is still set. Not retried. |
 | `QirabotTimeoutError` | A client-side wait timed out (`wait_for`, auto-wait). |
 | `ActionError` | An AI action failed, including model-call failures reported by your Vertex AI endpoint (the message carries the provider's detail). |
 | `MissingDependencyError` | An optional backend dependency (playwright, pyautogui, …) isn't installed; the message includes the exact install command for the environment qirabot is running in. Also an `ImportError`. |
@@ -51,7 +51,8 @@ That table is the whole hierarchy. The cloud-era exceptions
 (`RateLimitError`, `InsufficientBalanceError`, `QirabotConnectionError`,
 `TaskTerminatedError`) were **removed in v3.2** — there is no Qirabot
 server, billing, or server-side task state for them to describe. Importing
-them now fails; see [Upgrading from v2](/guide/migration-v3).
+them now fails — delete those `except` clauses, or widen them to
+`QirabotError`.
 
 **Rate limits (429) never reach your code as their own exception.** The
 provider layer retries them internally with a dedicated backoff —

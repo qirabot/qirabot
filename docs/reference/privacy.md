@@ -5,7 +5,7 @@ description: Exactly what Qirabot sends to your own Vertex AI endpoint (screensh
 
 # Data & Privacy
 
-Qirabot's decision engine runs locally inside the SDK; the only thing the
+Qirabot's decision engine runs in your own process; the only thing the
 model needs to see is the screen. Screenshots go directly from your machine
 to the Vertex AI endpoint of your own Google Cloud project. The `qirabot`
 package makes no network calls to any Qirabot service: it does not require

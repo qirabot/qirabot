@@ -123,8 +123,8 @@ stay visible.
 When the task needs something the UI can't do, pass
 `custom_tools=[your_function]` — any Python function: call a backend endpoint,
 query a database, fetch an OTP, pause for a human to pass a captcha. The model
-calls it mid-task, it runs locally, and the return value feeds back as the
-observation. `exclude_tools=["..."]`
+calls it mid-task, it runs in your own process, and the return value feeds
+back as the observation. `exclude_tools=["..."]`
 prunes built-in actions the task never needs.
 
 When the model would get stuck for lack of domain context (game rules,

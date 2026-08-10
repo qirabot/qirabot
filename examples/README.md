@@ -37,8 +37,8 @@ framework you bring:
 
 ## Setup
 
-The decision engine runs locally against your own Vertex AI endpoint — auth
-is Google Cloud ADC; no Qirabot account, no per-step billing:
+The decision engine runs in your own process against your Vertex AI
+endpoint — auth is Google Cloud ADC; no Qirabot account, no per-step billing:
 
 ```bash
 gcloud auth application-default login          # once; or set GOOGLE_APPLICATION_CREDENTIALS

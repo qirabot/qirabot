@@ -1,4 +1,4 @@
-# Qirabot Python SDK
+# Qirabot
 
 [English](README.md) | 简体中文
 
@@ -6,7 +6,7 @@
 
 既可独立运行（`bot.open()` 自动启动浏览器；Android / iOS / Windows 窗口后端内置，零额外依赖），也可接入你现有的 Playwright / Selenium / Appium / pyautogui 会话、嵌入 pytest 测试套件，或按 HWND 绑定窗口驱动 Unity / Unreal / 原生桌面游戏。所有平台共用同一套 API。
 
-决策引擎在 SDK 本地运行：每张截图直接从你的机器发往你在 Google Vertex AI 上自行配置的视觉模型，使用你自己的 Google Cloud 凭据认证。全程没有 Qirabot 服务器参与——无账号、无 API key、无按步计费。
+决策引擎在你自己的进程内运行：每张截图直接从你的机器发往你在 Google Vertex AI 上自行配置的视觉模型，使用你自己的 Google Cloud 凭据认证，费用由 Google 计收。
 
 **📖 完整文档：[qirabot.com/docs/zh](https://qirabot.com/docs/zh/)**
 
@@ -242,7 +242,7 @@ result = bot.ai(
 )
 ```
 
-工具在你的进程内本地执行（qirabot 的其余一切也是如此）——模型只能看到工具的名称、描述、参数和返回值，接触不到你的接口和凭据——返回值会作为模型下一步的观察结果。过去需要一整页胶水代码串联的跨系统流程（UI 操作、后端调用、人工介入），现在一句指令就能覆盖。更多细节（schema、错误处理、裁剪内置工具）见[AI 任务与自定义工具](https://qirabot.com/docs/zh/advanced/ai-tasks.html)；可运行示例：[custom_tool_gm.py](examples/game/custom_tool_gm.py) · [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py)。
+工具在你自己的进程内执行（qirabot 的其余一切也是如此）——模型只能看到工具的名称、描述、参数和返回值，接触不到你的接口和凭据——返回值会作为模型下一步的观察结果。过去需要一整页胶水代码串联的跨系统流程（UI 操作、后端调用、人工介入），现在一句指令就能覆盖。更多细节（schema、错误处理、裁剪内置工具）见[AI 任务与自定义工具](https://qirabot.com/docs/zh/advanced/ai-tasks.html)；可运行示例：[custom_tool_gm.py](examples/game/custom_tool_gm.py) · [06_human_in_the_loop.py](examples/automation/06_human_in_the_loop.py)。
 
 这两个参数组合起来，也能复用你已经为别的 agent 维护的指令文件——agent skill（`SKILL.md`）、runbook：用 `knowledge=` 挂载文件；文件里的 CLI 步骤，注册一个带白名单的 `run_command` 自定义工具来执行（内置工具刻意只含 GUI 动作）。完整模式与参考实现见[复用已有 skill](https://qirabot.com/docs/zh/advanced/ai-tasks.html#复用已有-skill)。
 

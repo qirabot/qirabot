@@ -5,7 +5,7 @@ description: Run your first AI-driven GUI automation in one command, then the sa
 
 # Quick Start
 
-The decision engine runs locally inside the SDK and calls a vision model on
+The decision engine runs in your own process and calls a vision model on
 your own Google Cloud Vertex AI endpoint. Authenticate to Google Cloud once,
 then hand the AI a task:
 

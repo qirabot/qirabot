@@ -223,7 +223,7 @@ one of `agents` (the shared `.agents/skills` convention used by Codex,
 Cursor, Gemini CLI, and others), `claude`, `codex`, `cursor`; any other tool
 is targeted via `--dir PATH`.
 `--project` targets the project-level directory under the current directory
-instead of the user-level one. Rerun after `pip install -U qirabot` to
+instead of the user-level one. Rerun after `uv tool upgrade qirabot` to
 upgrade; a directory the command didn't create is never overwritten without
 `--force`. For Claude Code the plugin marketplace remains the recommended
 install (it auto-updates). `skill uninstall` takes the same target options;

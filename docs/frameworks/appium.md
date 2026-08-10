@@ -34,7 +34,7 @@ driver.quit()
 Requires the extra:
 
 ```bash
-pip install "qirabot[appium]"
+uv pip install "qirabot[appium]"
 ```
 
 The same works for iOS drivers (XCUITest options): `bind()` recognizes

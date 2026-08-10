@@ -34,8 +34,10 @@ Qirabot 服务器。代码、cookie、凭据都留在本地;动作在你的机�
 
 ## 录屏为什么是黑的?
 
-- **Windows 且 `record_window=True`**:`gdigrab` 对最小化或 GPU 合成
-  (独占全屏游戏)的窗口会录出黑帧。保持窗口可见,游戏建议录全屏。
+- **Windows 且 `record_window=True`**:默认模式是抓桌面再裁剪到窗口,
+  游戏能正常录上,但最小化的窗口录不到东西——请保持窗口可见且不要移动。
+  若设了 `QIRA_RECORD_WINDOW_NATIVE=1`,旧的 `gdigrab` 模式对 GPU 合成
+  (游戏)窗口同样会录出黑帧。
 - **macOS**:给终端/IDE 授予"屏幕录制"权限。
 
 录屏是尽力而为:缺 ffmpeg 或权限被拒只警告,不会让任务失败;排查可以看运行
@@ -48,9 +50,9 @@ headless 并给出警告。显式传 `--headless` 可以让它无条件生效。
 
 ## 遇到 `MissingDependencyError` 怎么办?
 
-某个可选后端依赖未安装。错误消息里给出了要执行的确切
-`pip install "qirabot[<extra>]"` 命令;extras 清单见
-[安装](/zh/guide/installation)。
+某个可选后端依赖未安装。错误消息里会按 qirabot 当前所处的环境给出确切的
+安装命令——在 uv tool 环境里是 `uv tool install --force`,在项目环境里则是
+普通的安装命令。extras 清单见[安装](/zh/guide/installation)。
 
 ## 脚本在步骤之间长时间等待,运行会超时吗?
 
@@ -84,4 +86,4 @@ v3 用本地决策引擎取代了云端引擎,账号、`QIRA_API_KEY` 和
 `qirabot login` 都不复存在,改为配置 Google Cloud ADC 和模型。如果设置了
 `QIRA_API_KEY` 却没有配置模型,`Qirabot()` 会在构造时抛出带迁移步骤的
 明确错误。要保留旧的云端行为,固定版本安装:
-`pip install "qirabot<3"`。
+`uv pip install "qirabot<3"`。

@@ -28,7 +28,7 @@ driver.quit()
 Selenium is not a package extra, so bring your own driver:
 
 ```bash
-pip install qirabot selenium
+uv pip install qirabot selenium
 ```
 
 ## bind() is the natural fit

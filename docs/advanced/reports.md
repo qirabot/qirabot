@@ -95,9 +95,12 @@ bot.close()                         # recording.mp4 = just that window, with sou
 ```
 
 - `record_window=True` records only the window under test (Windows window
-  backend; falls back to full screen otherwise). Keep the window visible:
-  `gdigrab` produces black frames for minimized or GPU-composited (game)
-  windows. For games, record the full screen.
+  backend; falls back to full screen otherwise) by cropping a desktop grab to
+  the window's rectangle, which captures games and other GPU-composited
+  windows correctly. Keep the window visible and unmoved: whatever overlaps
+  that rectangle is recorded, and a minimized window yields nothing. See
+  [Windows & Games](/backends/windows-games#recording-the-window) for the
+  `gdigrab` alternative.
 - `record_audio=True` captures system audio via a DirectShow loopback
   device. Install
   [screen-capture-recorder](https://github.com/rdp/screen-capture-recorder-to-video-windows-free)

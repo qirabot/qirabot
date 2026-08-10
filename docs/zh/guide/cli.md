@@ -217,7 +217,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 模板),版本与本机安装的 `qirabot` 严格一致。`AGENT` 可选 `agents`(Codex、Cursor、Gemini CLI
 等工具共享的 `.agents/skills` 约定)、`claude`、`codex`、
 `cursor`;其他工具用 `--dir PATH` 指定目录。`--project` 装进当前目录下的
-项目级 skills 目录而不是用户级。`pip install -U qirabot` 之后重跑即升级;
+项目级 skills 目录而不是用户级。`uv tool upgrade qirabot` 之后重跑即升级;
 不是本命令创建的目录绝不覆盖,除非加 `--force`。Claude Code 用户仍推荐
 plugin marketplace 安装(可自动更新)。`skill uninstall` 接受同样的目标
 选项;`skill list` 查看各处安装状态。

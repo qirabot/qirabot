@@ -40,9 +40,10 @@ details in [Data & Privacy](/reference/privacy).
 
 ## Why is my recording black?
 
-- **Windows, `record_window=True`**: `gdigrab` produces black frames for
-  minimized or GPU-composited (fullscreen-exclusive game) windows. Keep the
-  window visible, or record the full screen for games.
+- **Windows, `record_window=True`**: the default mode crops a desktop grab to
+  the window, so games record fine — but a minimized window records nothing.
+  Keep it visible and unmoved. With `QIRA_RECORD_WINDOW_NATIVE=1` the older
+  `gdigrab` mode also goes black on GPU-composited (game) windows.
 - **macOS**: grant your terminal/IDE the "Screen Recording" permission.
 
 Recording is best-effort: a missing ffmpeg or denied permission logs a
@@ -58,7 +59,9 @@ it unconditional.
 ## I got `MissingDependencyError` — what now?
 
 An optional backend dependency isn't installed. The error message contains
-the exact `pip install "qirabot[<extra>]"` to run; the extras are listed in
+the exact install command for the environment qirabot is running in — a
+`uv tool install --force` inside a uv tool environment, a plain install into
+a project environment otherwise. The extras are listed in
 [Installation](/guide/installation).
 
 ## My script sleeps between steps — will the run time out?
@@ -93,4 +96,4 @@ v3 replaced the cloud decision engine with a local one. The account,
 `QIRA_API_KEY`, and `qirabot login` are gone; configure Google Cloud ADC
 and a model instead. If `QIRA_API_KEY` is set but no model is configured,
 `Qirabot()` raises a clear error with migration steps at construction. To
-keep the old cloud behavior, pin `pip install "qirabot<3"`.
+keep the old cloud behavior, pin `uv pip install "qirabot<3"`.

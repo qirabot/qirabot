@@ -7,15 +7,17 @@ description: 用 AI 视觉自动化 Android 真机和模拟器,无需 Appium 服
 
 Qirabot 内置的 Android 后端直接通过 adb 与设备通信:截图走 `screencap`,
 输入走 `input tap/swipe/keyevent`。不需要运行 Appium 服务器,也不依赖
-任何框架,设备上不用安装任何东西。凡是能出现在 `adb devices` 列表里的
-真机或模拟器都可以驱动。
+任何框架,设备上不用安装任何东西——只有一个例外:非 ASCII 输入会装一个
+输入法(见下文)。凡是能出现在 `adb devices` 列表里的真机或模拟器都可以
+驱动。
 
 元素定位是对截图做 AI 视觉识别,所以没有 UiAutomator 选择器,也不依赖
 无障碍树。原生 App、WebView、Flutter、React Native 和游戏都用同一套
 方式处理。
 
-核心包即可使用,不需要额外的 extras(见[安装](/zh/guide/installation))。
-最快的验证方式是 CLI:
+不需要任何 Python extra,但宿主机上要有 `adb`:安装 Android
+[platform-tools](https://developer.android.com/tools/releases/platform-tools)
+并加入 PATH。`qirabot doctor` 会检查这一项。最快的验证方式是 CLI:
 
 ```bash
 qirabot android "打开设置并开启飞行模式"
@@ -40,11 +42,17 @@ bot.close()
 (`bot.click("...")` 而不是 `bot.click(device, "...")`)。细节见
 [自定义 Adapter 与挂载](/zh/backends/custom-adapters)。
 
-## 非 ASCII 输入(中文、emoji)
+## 纯 ASCII 之外的输入(中文、emoji、`%`)
 
-超出 ASCII 的输入通过内置的 ADBKeyboard 输入法完成:按需安装,用完自动
-切回。有了它,`bot.type_text(...)` 可以直接输入中文或 emoji,不需要额外
-配置。
+`input text` 只能传纯可打印 ASCII,其余情况 `bot.type_text(...)` 都会切到
+内置的 ADBKeyboard 输入法:非 ASCII 文本(中文、emoji)、`\n` `\t` 等控制
+字符,以及 `%`——`input text` 会把它当成格式化序列展开。后两类意味着
+`"50% off"` 这种看着是纯 ASCII 的字符串同样会走输入法路径。
+
+输入法在首次用到时装进设备,`close()` 时切回你原来的键盘。
+APK 会一直留在设备上;没走到 `close()` 的运行(比如脚本崩溃)会让设备
+停在 ADBKeyboard 上,在系统设置里切回即可。设备被 MDM 策略禁止安装应用
+时,需要预装它,或改用 Appium 引擎(`--appium-url`)。
 
 ## 设备录屏
 

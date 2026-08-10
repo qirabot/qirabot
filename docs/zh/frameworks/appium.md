@@ -33,7 +33,7 @@ driver.quit()
 需要 extra:
 
 ```bash
-pip install "qirabot[appium]"
+uv pip install "qirabot[appium]"
 ```
 
 iOS driver(XCUITest options)同样适用:`bind()` 能同时识别 Android 和

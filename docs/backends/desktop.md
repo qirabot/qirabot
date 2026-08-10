@@ -10,7 +10,7 @@ through pyautogui, with AI vision replacing pixel-hunting and template
 images. Describe the element; the AI finds it on the screenshot and the
 click lands there.
 
-Requires the `desktop` extra: `pip install "qirabot[desktop]"`.
+Requires the `desktop` extra: `uv pip install "qirabot[desktop]"`.
 
 The quickest check is the CLI:
 
@@ -82,10 +82,12 @@ warning and never fails the task.
 | | pyautogui backend | [Window backend](/backends/windows-games) |
 |---|---|---|
 | OS | macOS / Windows / Linux | Windows only |
-| Scope | whole screen | one window (title regex / HWND) |
+| Scope | whole screen | one window (title / HWND) |
 | Input level | virtual keys | DirectInput scancodes (game-readable) |
 | Install | `qirabot[desktop]` | built in |
 
-As a rule of thumb, use the Window backend when automating a game or when
-you want window isolation on Windows, and pyautogui for everything else on
-the desktop.
+As a rule of thumb, use the Window backend on Windows when automating a game,
+or when you want coordinates and screenshots scoped to one window instead of
+the whole screen — it still brings that window to the foreground to send
+input, so it is not a way to work in the background. Use pyautogui for
+everything else on the desktop.

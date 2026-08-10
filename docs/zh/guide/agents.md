@@ -59,6 +59,8 @@ qirabot skill install --dir <path>      # 其他任何兼容 Agent Skills 的工
 npx skills add qirabot/qirabot
 ```
 
+## 不安装 skill 的情况
+
 即使不安装 skill,任意 agent 也可以靠下面两个特性直接操作 Qirabot:
 
 **CLI 本身就是 agent 工具。** 一条 shell 命令就能执行完整的自然语言任务,

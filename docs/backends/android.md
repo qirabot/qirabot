@@ -7,15 +7,18 @@ description: Automate real Android devices and emulators with AI vision, no Appi
 
 The built-in Android backend talks to the device through plain adb:
 screenshots via `screencap`, input via `input tap/swipe/keyevent`. There is
-no Appium server or framework to run, and nothing to install on the device
-for input. Any real device or emulator that appears in `adb devices` works.
+no Appium server or framework to run, and nothing to install on the device —
+with one exception: non-ASCII typing installs a keyboard (below). Any real
+device or emulator that appears in `adb devices` works.
 
 Element location is AI vision on the screenshot, so there are no UiAutomator
 selectors to write and no dependency on the accessibility tree. Native apps,
 WebViews, Flutter, React Native, and games all look the same to it.
 
-The core package is enough; no extras are needed (see
-[Installation](/guide/installation)). The quickest check is the CLI:
+No Python extras — but the host does need the `adb` binary: install Android
+[platform-tools](https://developer.android.com/tools/releases/platform-tools)
+and put it on PATH. `qirabot doctor` checks for it. The quickest check is
+the CLI:
 
 ```bash
 qirabot android "Open settings and turn on airplane mode"
@@ -40,11 +43,20 @@ bot.close()
 argument (`bot.click("...")` instead of `bot.click(device, "...")`). See
 [Custom Adapters & Bolt-On](/backends/custom-adapters) for the details.
 
-## Non-ASCII typing (Chinese, emoji)
+## Typing beyond plain ASCII (Chinese, emoji, `%`)
 
-Typing beyond ASCII works through the bundled ADBKeyboard IME, which is
-installed on demand and switched back afterwards. `bot.type_text(...)`
-accepts Chinese or emoji with no extra setup.
+`input text` only carries plain printable ASCII, so `bot.type_text(...)`
+switches to the bundled ADBKeyboard IME for everything else: non-ASCII text
+(Chinese, emoji), control characters like `\n` and `\t`, and `%`, which
+`input text` would expand as a format sequence. The last two mean an
+otherwise plain-ASCII string like `"50% off"` takes the IME path too.
+
+The IME is installed on the device the first time it is
+needed, and `close()` switches the keyboard back to your own. The APK stays
+installed, and a run that never reaches `close()` (a crash, say) leaves
+ADBKeyboard active — switch back in the system settings. Where app installs
+are blocked by MDM policy, preinstall it or use the Appium engine
+(`--appium-url`).
 
 ## Screen recording
 

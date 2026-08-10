@@ -12,7 +12,7 @@ Qirabot 的设计目标是加入你已有的技术栈,而不是替换它。每�
 | 你在用 | 传入 | 说明 |
 |---|---|---|
 | [Playwright](/zh/frameworks/playwright) | `page` | 保持显式写法:点击可能返回新标签页 |
-| [Selenium](/zh/frameworks/selenium) | `driver` | `pip install qirabot selenium` |
+| [Selenium](/zh/frameworks/selenium) | `driver` | `uv pip install qirabot selenium` |
 | [Appium](/zh/frameworks/appium) | `driver` | `qirabot[appium]`;Android 和 iOS |
 | pyautogui | `pyautogui` 模块 | `qirabot[desktop]`,见[桌面](/zh/backends/desktop) |
 | 内置设备 | `AdbDevice` / `WdaClient` / `Window` | 无需 extras |
@@ -84,5 +84,5 @@ connect_device("Windows:///132456")            Window(hwnd=132456)
 *你的*依赖,不再是 qirabot 的),`register_adapter` 注册一次,1.x 的
 `bind(connect_device(...))` 调用原样运行。1.x 系列在
 [`1.x` 分支](https://github.com/qirabot/qirabot/tree/1.x)维护
-(只修 bug 和安全问题);`pip install "qirabot<2"` 始终解析到最新的
+(只修 bug 和安全问题);`uv pip install "qirabot<2"` 始终解析到最新的
 1.9.x 补丁版。

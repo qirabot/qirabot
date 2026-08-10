@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install the Qirabot Python SDK and CLI — one-line installer, uv, or pip. Includes per-backend extras for browser, desktop, and Appium, plus troubleshooting.
+description: Install the Qirabot Python SDK and CLI with uv — one-line installer or uv tool install. Includes per-backend extras for browser, desktop, and Appium, plus troubleshooting.
 ---
 
 # Installation
@@ -35,35 +35,37 @@ package. The install is:
 uv tool install qirabot        # Android + iOS + Windows window; zero extras
 ```
 
-## pip / virtualenv
+## As a library
 
-Requires Python 3.10+. Use a virtualenv; Debian and Ubuntu block installs
-into the system Python per PEP 668:
+To import `qirabot` in your own tests, install it into your project's
+environment rather than a tool environment. Requires Python 3.10+; `uv venv`
+downloads one if the machine has none:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-python -m pip install "qirabot[browser]"
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install "qirabot[browser]"
 qirabot install-browser          # or: playwright install chromium
 ```
-
-To use qirabot as a library (importing `qirabot` in your own tests), install
-it into your project's environment instead of a tool environment:
-`uv pip install "qirabot[browser]"`, or the pip lines above.
 
 ## Extras per backend
 
 The core package attaches to the Playwright / Selenium / Appium / pyautogui
-session you already run. The frameworks themselves live in extras. Install
-the one that matches your setup, or none if it is already in your environment:
+session you already run; the frameworks themselves live in extras. Each
+platform page carries the exact command for its backend:
 
-```bash
-python -m pip install "qirabot[browser]"   # Playwright (managed browser)
-python -m pip install "qirabot[desktop]"   # pyautogui (whole-desktop, any OS)
-python -m pip install "qirabot[appium]"    # Appium (Android / iOS via a server; device clouds)
-python -m pip install "qirabot[all]"       # everything above
+| Extra | Backend |
+| --- | --- |
+| `browser` | [Playwright — managed browser](/backends/browser) |
+| `desktop` | [pyautogui — whole desktop, any OS](/backends/desktop) |
+| `appium` | [Appium — Android / iOS via a server; device clouds](/frameworks/appium) |
+| `all` | everything above |
+| none | [Android](/backends/android) (adb), [iOS](/backends/ios) (WDA), [Windows](/backends/windows-games) single-window, and [Selenium](/frameworks/selenium) (bring your own driver) |
 
-python -m pip install qirabot selenium     # Selenium is not an extra — bring your own driver
-```
+In a tool environment, name every extra you want in one command —
+`uv tool install --force "qirabot[browser,desktop]"`. uv replaces the
+environment with exactly what you asked for, so adding `[desktop]` on its own
+would drop the installer's `[browser]`. When in doubt, `qirabot doctor` prints
+the right line for the environment you are in.
 
 All extras install cleanly together in one environment; since 2.0 nothing
 pins numpy/opencv.
@@ -84,15 +86,13 @@ run the [Quick Start](/guide/quickstart)'s first command
 
 - The one-line installer is also served directly from the GitHub repo:
   `curl -LsSf https://raw.githubusercontent.com/qirabot/qirabot/main/scripts/install.sh | sh`
-- `error: externally-managed-environment` means you are installing into the
-  system Python (PEP 668). Use the uv path above, or create and activate a
-  virtualenv.
+- No uv on the machine? `pip install "qirabot[browser]"` into an activated
+  virtualenv works the same. Installing into the system Python does not:
+  Debian and Ubuntu block it per PEP 668
+  (`error: externally-managed-environment`).
 - On a fresh Linux box, run `sudo playwright install-deps chromium` once. The
   Chromium download doesn't include the system libraries it links against
   (`error while loading shared libraries: libnspr4.so ...`).
-- On a display-less box (headless server / VM, no `DISPLAY`), a visible
-  browser window can't open. `bot.open()` and the CLI detect that and
-  automatically run headless, with a warning.
 
 ## Next steps
 

@@ -12,7 +12,7 @@ as its first argument. Pass yours and mix AI steps with your existing code:
 | You run | You pass | Notes |
 |---|---|---|
 | [Playwright](/frameworks/playwright) | `page` | keep the explicit form; clicks can return a new tab |
-| [Selenium](/frameworks/selenium) | `driver` | `pip install qirabot selenium` |
+| [Selenium](/frameworks/selenium) | `driver` | `uv pip install qirabot selenium` |
 | [Appium](/frameworks/appium) | `driver` | `qirabot[appium]`; Android and iOS |
 | pyautogui | the `pyautogui` module | `qirabot[desktop]`; see [Desktop](/backends/desktop) |
 | Built-in devices | `AdbDevice` / `WdaClient` / `Window` | no extras |
@@ -90,5 +90,5 @@ into your project (airtest stays your dependency, not qirabot's), call
 `register_adapter` once, and your 1.x `bind(connect_device(...))` calls run
 unchanged. The 1.x series lives on the
 [`1.x` branch](https://github.com/qirabot/qirabot/tree/1.x) in
-maintenance mode (bug and security fixes only); `pip install "qirabot<2"`
+maintenance mode (bug and security fixes only); `uv pip install "qirabot<2"`
 always resolves to the newest 1.9.x patch.

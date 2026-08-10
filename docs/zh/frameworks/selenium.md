@@ -28,7 +28,7 @@ Qirabot 没有为 Selenium 提供 extra,你自己安装 selenium、创建 driver
 即可:
 
 ```bash
-pip install qirabot selenium
+uv pip install qirabot selenium
 ```
 
 ## bind() 是天然搭配

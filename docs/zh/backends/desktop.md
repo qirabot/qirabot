@@ -9,7 +9,7 @@ description: 在 macOS、Windows、Linux 上用 AI 视觉自动化任意桌面�
 视觉取代找坐标和模板图片的工作。你描述元素,AI 在截图上找到它,点击就
 落在正确位置。
 
-需要 `desktop` extra:`pip install "qirabot[desktop]"`。
+需要 `desktop` extra:`uv pip install "qirabot[desktop]"`。
 
 最快的验证方式是 CLI:
 
@@ -78,9 +78,10 @@ bot.mouse_up(pyautogui)                                   # 在当前光标处�
 | | pyautogui 后端 | [Window 后端](/zh/backends/windows-games) |
 |---|---|---|
 | 系统 | macOS / Windows / Linux | 仅 Windows |
-| 范围 | 全屏 | 单个窗口(标题正则 / HWND) |
+| 范围 | 全屏 | 单个窗口(标题 / HWND) |
 | 输入层级 | 虚拟键 | DirectInput 扫描码(游戏可读) |
 | 安装 | `qirabot[desktop]` | 内置 |
 
-经验法则:自动化游戏,或想在 Windows 上把操作隔离在单个窗口里,用
-Window 后端;其余桌面场景用 pyautogui。
+经验法则:在 Windows 上自动化游戏,或希望坐标和截图限定在单个窗口而不是
+整屏时,用 Window 后端——但它发送输入前仍会把该窗口提到前台,并不能让你
+在后台干活。其余桌面场景用 pyautogui。

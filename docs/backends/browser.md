@@ -15,7 +15,7 @@ Selenium session you already have.
 
 ## Managed browser
 
-Requires the `browser` extra: `pip install "qirabot[browser]"` then
+Requires the `browser` extra: `uv pip install "qirabot[browser]"` then
 `qirabot install-browser`.
 
 The quickest way to see it run is a single CLI command, with no code:
@@ -62,6 +62,13 @@ print(result.output)
 bot.close()
 ```
 
+`bot.open()` takes the same knobs as the CLI flags above:
+`headless=True`, `viewport=(1920, 1080)`, `channel="chrome"`, extra Chromium
+`args=[...]`, `cdp_url="http://localhost:9222"` to attach to a running Chrome
+instead of launching one, and `user_data_dir="~/.qira-profile"` to reuse the
+profile you logged into with `open-browser` (`~` is expanded on every
+platform).
+
 ## Bolt onto the session you already have
 
 If you already run a browser through your own framework, skip `bot.open()`
@@ -72,7 +79,7 @@ repeating it (`bind()` is covered in
 - **Playwright**: pass your `page`; mix your selectors with AI steps freely.
   Full guide: [Playwright + Qirabot](/frameworks/playwright).
 - **Selenium**: pass (or `bind()`) your `driver`. Selenium is not bundled as
-  an extra, so install it yourself (`pip install qirabot selenium`). Full
+  an extra, so install it yourself (`uv pip install qirabot selenium`). Full
   guide: [Selenium + Qirabot](/frameworks/selenium).
 - **pytest**: AI assertions and AI steps inside your existing suite, with
   fixtures and CI notes. Full guide: [pytest + Qirabot](/frameworks/pytest).

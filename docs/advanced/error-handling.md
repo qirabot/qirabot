@@ -50,7 +50,7 @@ single `except QirabotError` is always a safe catch-all:
 | `RateLimitError` | The model provider is rate limiting (429). The engine backs off and retries these internally; catch it to add your own backoff. |
 | `QirabotTimeoutError` | A client-side wait timed out (`wait_for`, auto-wait). |
 | `ActionError` | An AI action failed, including model-call failures reported by your Vertex AI endpoint (the message carries the provider's detail). |
-| `MissingDependencyError` | An optional backend dependency (playwright, pyautogui, …) isn't installed; the message includes the exact `pip install "qirabot[<extra>]"` to run. Also an `ImportError`. |
+| `MissingDependencyError` | An optional backend dependency (playwright, pyautogui, …) isn't installed; the message includes the exact install command for the environment qirabot is running in. Also an `ImportError`. |
 
 (`InsufficientBalanceError`, `QirabotConnectionError`, and
 `TaskTerminatedError` still exist for import compatibility with v2 catch

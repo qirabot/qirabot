@@ -70,8 +70,10 @@ instructions, not pinned to the installed SDK version):
 npx skills add qirabot/qirabot
 ```
 
+## Without the skill
+
 Independently of the skill, two properties make Qirabot straightforward for
-agents to operate:
+any agent to operate:
 
 **The CLI functions as an agent tool.** A single shell command executes a
 complete natural-language task; one-shot jobs require no code generation:

@@ -91,8 +91,10 @@ bot.close()                         # recording.mp4 = 只有该窗口,带声音
 ```
 
 - `record_window=True` 只录被测窗口(Windows 窗口后端;其他情况回退全
-  屏)。保持窗口可见:`gdigrab` 对最小化或 GPU 合成(游戏)窗口会录出黑
-  帧;游戏请录全屏。
+  屏),做法是抓桌面再裁剪到窗口矩形,因此游戏等 GPU 合成窗口也能正常
+  录上。请保持窗口可见且不要移动:盖在该矩形上的内容会一起录进去,
+  最小化则录不到画面。`gdigrab` 备选模式见
+  [Windows 与游戏](/zh/backends/windows-games#录制窗口)。
 - `record_audio=True` 通过 DirectShow 环回设备采集系统声音:安装
   [screen-capture-recorder](https://github.com/rdp/screen-capture-recorder-to-video-windows-free)
   或启用"立体声混音"。自动检测;可用设备名或 `QIRA_AUDIO_DEVICE` 指定;

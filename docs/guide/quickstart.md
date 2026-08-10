@@ -1,51 +1,26 @@
 ---
 title: Quick Start
-description: Run your first AI-driven GUI automation in two commands, then the same task through the Python SDK — autonomous bot.ai() tasks and deterministic AI-located steps.
+description: Run your first AI-driven GUI automation in one command, then the same task through the Python SDK — autonomous bot.ai() tasks and deterministic AI-located steps.
 ---
 
 # Quick Start
 
-This page covers two ways to use Qirabot: the CLI, which runs a
-natural-language task as a shell command without any code, and the Python
-SDK. Start with the CLI even if you came for the SDK, since it confirms your
-setup with a single command.
-
 The decision engine runs locally inside the SDK and calls a vision model on
-your own Google Cloud Vertex AI endpoint. There is no Qirabot account and no
-API key. Authenticate to Google Cloud once (Application Default
-Credentials), then hand the AI a task:
+your own Google Cloud Vertex AI endpoint. Authenticate to Google Cloud once,
+then hand the AI a task:
 
 ```bash
-gcloud auth application-default login   # once; or point GOOGLE_APPLICATION_CREDENTIALS at a service-account JSON
+gcloud auth application-default login   # once
 qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org
 ```
 
-If you don't want to set up gcloud, `gemini-vertex` models also accept a
-[Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys)
-instead of ADC: set `QIRA_VERTEX_API_KEY`. Note this must be a Google Cloud
-API key, not an AI Studio key, and it only works with Google models on the
-global endpoint. If you don't use Google Cloud at all, the `gemini` provider
-(`QIRA_MODEL=gemini/gemini-3.6-flash`) calls the
-[Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key)
-with an AI Studio key; set `QIRA_GEMINI_API_KEY` (or `GEMINI_API_KEY`).
+The browser opens, the AI does the task, and the result — plus an HTML report —
+lands in your terminal. The rest of the commands and options are in the
+[CLI Reference](/guide/cli).
 
-That's a complete run: the browser opens, the AI does the task, and the result
-(plus an HTML report) lands in your terminal. All commands and options are in
-the [CLI Reference](/guide/cli).
-
-With nothing else configured, runs use `gemini-vertex/gemini-3.6-flash`
-under your ADC credentials' own project. To pick a model or project
-explicitly, set `QIRA_MODEL` / `QIRA_VERTEX_PROJECT` (or pass `model=` /
-`vertex_project=` to `Qirabot()`, `-m` / `--vertex-project` on the CLI):
-
-```bash
-export QIRA_MODEL="gemini-vertex/gemini-3.6-pro"   # "{provider}/{model}"
-export QIRA_VERTEX_PROJECT="my-gcp-project"
-```
-
-The browser command assumes you took the one-line installer or
-`pip install "qirabot[browser]"` path. If you installed bare `qirabot` for a
-device backend, see [Installation](/guide/installation) for the extras.
+Runs default to `gemini-vertex/gemini-3.6-flash` on your credentials' own
+project. To change the model or project, or to authenticate with an API key
+instead of gcloud, see [Configuration](/advanced/configuration).
 
 ## The same task in Python
 
@@ -110,9 +85,9 @@ behavior is in the [API reference](/reference/api).
 ## How a run ends
 
 `result.success` is the pass/fail verdict; `result.status` says why:
-`"completed"`, `"goal_failed"` (login wall, captcha), `"max_steps"` (budget
-truncation; retry with more steps), or `"error"`. Details and the exception
-hierarchy are in [Error Handling](/advanced/error-handling).
+`"completed"`, `"goal_failed"` (login wall, captcha), `"max_steps"` (out of
+step budget), or `"error"`. Details and the exception hierarchy are in
+[Error Handling](/advanced/error-handling).
 
 ```python
 result = bot.ai(page, "Find the cheapest flight and hold it")
@@ -124,9 +99,9 @@ if result.status == "max_steps":
 ## Reports
 
 Every run writes a self-contained HTML report with per-step screenshots to
-`./qira_runs/<date>/<time-id>/`. This happens even on error or Ctrl+C, so you
-can see where the run stopped. Pass `record=True` (or `--record` on the CLI) to also
-capture a video of the run.
+`./qira_runs/<date>/<time-id>/`, even on error or Ctrl+C, so you can see where
+the run stopped. Pass `record=True` (`--record` on the CLI) to also capture a
+video.
 
 ## Next steps
 

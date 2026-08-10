@@ -1,6 +1,6 @@
 ---
 title: 安装
-description: 安装 Qirabot Python SDK 与 CLI——一行安装脚本、uv 或 pip。包含各后端的 extras(browser/desktop/appium)与常见问题排查。
+description: 用 uv 安装 Qirabot Python SDK 与 CLI——一行安装脚本或 uv tool install。包含各后端的 extras(browser/desktop/appium)与常见问题排查。
 ---
 
 # 安装
@@ -34,35 +34,34 @@ uv tool install "qirabot[browser]" && qirabot install-browser
 uv tool install qirabot        # Android + iOS + Windows 窗口;零额外依赖
 ```
 
-## pip / virtualenv
+## 作为库使用
 
-需要 Python 3.10+。请使用 virtualenv,因为 Debian/Ubuntu 按 PEP 668 禁止
-向系统 Python 安装:
+要在自己的测试里 `import qirabot`,应该把包装进项目环境而不是 tool 环境。
+需要 Python 3.10+;机器上没有的话 `uv venv` 会自动下载一个:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-python -m pip install "qirabot[browser]"
+uv venv --python 3.12 && source .venv/bin/activate
+uv pip install "qirabot[browser]"
 qirabot install-browser          # 或:playwright install chromium
 ```
-
-作为库使用时(在你自己的测试里 `import qirabot`),要把包安装到项目环境
-而不是 tool 环境:用 `uv pip install "qirabot[browser]"`,或上面的 pip
-命令。
 
 ## 各后端的 extras
 
 核心包可以直接挂载到你已有的 Playwright / Selenium / Appium / pyautogui
-会话上。框架依赖放在 extras 里,装你正在用的那个就行;如果环境里已经有
-对应框架,就什么都不用装:
+会话上;框架依赖放在 extras 里。各平台页都写有该后端确切的安装命令:
 
-```bash
-python -m pip install "qirabot[browser]"   # Playwright(托管浏览器)
-python -m pip install "qirabot[desktop]"   # pyautogui(全桌面,任意系统)
-python -m pip install "qirabot[appium]"    # Appium(经服务器驱动 Android/iOS;设备云)
-python -m pip install "qirabot[all]"       # 以上全部
+| Extra | 后端 |
+| --- | --- |
+| `browser` | [Playwright——托管浏览器](/zh/backends/browser) |
+| `desktop` | [pyautogui——全桌面,任意系统](/zh/backends/desktop) |
+| `appium` | [Appium——经服务器驱动 Android/iOS;设备云](/zh/frameworks/appium) |
+| `all` | 以上全部 |
+| 无 | [Android](/zh/backends/android)(adb)、[iOS](/zh/backends/ios)(WDA)、[Windows](/zh/backends/windows-games) 单窗口和 [Selenium](/zh/frameworks/selenium)(自带 driver)都不需要 extra |
 
-python -m pip install qirabot selenium     # Selenium 不是 extra——自带 driver 即可
-```
+在 tool 环境里,要装的 extras 必须一次列全——
+`uv tool install --force "qirabot[browser,desktop]"`。uv 会把环境替换成恰好
+你请求的内容,单独补装 `[desktop]` 会把安装器原本装好的 `[browser]` 卸掉。
+拿不准就跑 `qirabot doctor`,它会按你当前所处的环境打印正确的命令。
 
 所有 extras 可以干净地装进同一个环境,2.0 起不再固定 numpy/opencv 版本。
 
@@ -81,13 +80,12 @@ qirabot doctor
 
 - 一行安装脚本也可直接从 GitHub 仓库获取:
   `curl -LsSf https://raw.githubusercontent.com/qirabot/qirabot/main/scripts/install.sh | sh`
-- 遇到 `error: externally-managed-environment`,说明你在往系统 Python 安装
-  (PEP 668)。改用上面的 uv 方式,或创建/激活 virtualenv。
+- 机器上没有 uv?用 `pip install "qirabot[browser]"` 装进已激活的 virtualenv
+  效果一样。但装进系统 Python 不行:Debian/Ubuntu 按 PEP 668 会拦下来
+  (`error: externally-managed-environment`)。
 - 全新 Linux 机器要先执行一次 `sudo playwright install-deps chromium`,
   因为 Chromium 下载包不含其链接的系统库,否则会报
   `error while loading shared libraries: libnspr4.so ...`。
-- 无显示器的环境(headless 服务器 / VM,无 `DISPLAY`)打不开可见的浏览器
-  窗口。`bot.open()` 和 CLI 会自动检测并切换 headless,同时给出警告。
 
 ## 下一步
 

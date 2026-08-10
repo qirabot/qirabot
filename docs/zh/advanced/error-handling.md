@@ -47,7 +47,7 @@ v2 `QIRA_API_KEY` 却没有配置模型,此时消息会解释 v3 迁移方法(�
 | `RateLimitError` | 模型提供方限流(429)。引擎内部会退避并重试;捕获它可加自己的退避策略。 |
 | `QirabotTimeoutError` | 客户端等待超时(`wait_for`、自动等待)。 |
 | `ActionError` | AI 动作失败,包括你的 Vertex AI 端点报告的模型调用失败(消息携带提供方的详细信息)。 |
-| `MissingDependencyError` | 某个可选后端依赖(playwright、pyautogui 等)未安装;消息里给出要执行的确切 `pip install "qirabot[<extra>]"`。同时也是 `ImportError`。 |
+| `MissingDependencyError` | 某个可选后端依赖(playwright、pyautogui 等)未安装;消息里会按 qirabot 当前所处的环境给出要执行的确切安装命令。同时也是 `ImportError`。 |
 
 (`InsufficientBalanceError`、`QirabotConnectionError`、
 `TaskTerminatedError` 仍可导入,以兼容 v2 的捕获代码,但 v3 本地引擎

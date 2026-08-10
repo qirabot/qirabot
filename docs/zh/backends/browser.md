@@ -14,7 +14,7 @@ shadow DOM、频繁 A/B 测试的布局,以及改版速度快过测试套件的�
 
 ## 托管浏览器
 
-需要 `browser` extra:`pip install "qirabot[browser]"`,然后
+需要 `browser` extra:`uv pip install "qirabot[browser]"`,然后
 `qirabot install-browser`。
 
 最快的验证方式是 CLI,一条命令就能跑起来,不用写代码:
@@ -59,6 +59,12 @@ print(result.output)
 bot.close()
 ```
 
+`bot.open()` 支持的参数和上面的 CLI flag 一一对应:`headless=True`、
+`viewport=(1920, 1080)`、`channel="chrome"`、额外的 Chromium 启动参数
+`args=[...]`、用 `cdp_url="http://localhost:9222"` 接管已在运行的 Chrome
+而不是新启一个,以及 `user_data_dir="~/.qira-profile"` 复用你用
+`open-browser` 登录好的配置目录(`~` 在所有平台都会展开)。
+
 ## 挂载到你已有的会话
 
 如果你已经在自己的框架里跑着浏览器,可以跳过 `bot.open()`,把你自己的
@@ -68,7 +74,7 @@ bot.close()
 - **Playwright**:传入你的 `page`;你的选择器和 AI 步骤自由混用。
   完整指南:[Playwright + Qirabot](/zh/frameworks/playwright)。
 - **Selenium**:传入(或 `bind()`)你的 `driver`;不是 extra,自带
-  即可(`pip install qirabot selenium`)。完整指南:
+  即可(`uv pip install qirabot selenium`)。完整指南:
   [Selenium + Qirabot](/zh/frameworks/selenium)。
 - **pytest**:在现有测试套件里加 AI 断言和 AI 步骤,含 fixture 与 CI
   说明。完整指南:[pytest + Qirabot](/zh/frameworks/pytest)。

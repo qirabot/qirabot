@@ -45,3 +45,15 @@
     --vp-home-hero-image-filter: blur(68px);
   }
 }
+
+/* Demo gallery (demos.md). The clips mix a landscape capture with 322×720
+   phone recordings; at full content width a portrait one renders ~1500px tall
+   and runs well past the viewport. Cap the height and centre the narrow ones. */
+.vp-doc video.demo-video {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: min(70vh, 560px);
+  border-radius: 8px;
+  background: #000;
+}

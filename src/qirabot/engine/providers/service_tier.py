@@ -83,16 +83,25 @@ def retry_budget(
 ) -> RetryBudget:
     """How much to spend inside `tier` before giving up on it.
 
-    An escalated call skips the rate-limit schedule: the tier below already
-    waited out a full quota window, and the tiers commonly share one bucket,
-    so a second minute of sleeping stalls the run for capacity that is not
-    coming. It still gets the generic budget for transport blips.
+    ``attempts`` governs the generic schedule only — a rate limit follows
+    RATE_LIMIT_DELAYS regardless, unless ``wait_out_quota`` turns that off.
+    The split is deliberate, because the two failures argue opposite ways:
 
-    Flex with somewhere to go gets exactly one attempt: a queue deep enough
-    to shed or to blow the widened budget will not have drained a second
-    later, and each retry costs a full flex-sized timeout. Handing off beats
-    fighting. Without escalation the normal budget applies — there is nowhere
-    else to go, so the retries are all the caller has.
+    - A 429 is a rolling quota window. Waiting it out is free and usually
+      works, while escalating costs money, so every tier waits first —
+      including flex, where the cheap capacity is the whole point.
+    - A 503 or a blown budget is a capacity signal. A queue deep enough to
+      shed a request will not have drained a second later, and on flex each
+      retry costs a full widened timeout, so flex hands off after one try
+      rather than fighting.
+
+    An escalated call skips the rate-limit schedule entirely: the tier below
+    already waited out a full window, and the tiers commonly share one
+    bucket, so a second minute of sleeping stalls the run for capacity that
+    is not coming. It keeps the generic budget for transport blips.
+
+    Without escalation the normal budget applies everywhere — there is
+    nowhere else to go, so the retries are all the caller has.
     """
     if escalated:
         return RetryBudget(default, wait_out_quota=False)

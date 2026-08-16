@@ -69,7 +69,9 @@ def with_retry(
 ) -> T:
     """Execute fn, retrying retryable failures. Generic schedule: linear
     1s→2s→3s (capped) backoff over `attempts` tries; rate limits follow
-    RATE_LIMIT_DELAYS instead (see module docstring). Each delay passes
+    RATE_LIMIT_DELAYS instead (see module docstring) and are **not** capped
+    by `attempts` — waiting out a quota window is free, so callers who
+    shorten the generic budget still get the full window. Each delay passes
     through `jitter` — tests inject the identity to assert the schedule.
 
     `wait_out_quota=False` puts rate limits on the generic schedule too, for

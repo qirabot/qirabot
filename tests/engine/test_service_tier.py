@@ -455,6 +455,24 @@ class TestRetryBudget:
     def test_everyone_else_keeps_the_normal_budget(self, tier: str, escalation: bool) -> None:
         assert st.retry_budget(tier, escalation, False, 3) == st.RetryBudget(3, True)
 
+    def test_a_rate_limit_waits_before_escalating_even_on_flex(self) -> None:
+        # attempts=1 caps the generic schedule only. A 429 is a rolling quota
+        # window: waiting is free and usually works, escalating costs money —
+        # so even flex, whose whole point is the cheap capacity, waits first.
+        client, seen = _client([httpx.Response(429, json={"error": "quota"})])
+        with pytest.raises(ProviderError):
+            _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
+        tiers = [r.headers.get(st.VERTEX_TIER_HEADER, "standard") for r in seen]
+        assert tiers == ["flex"] * 5 + ["standard"] * 3
+
+    def test_a_refusal_hands_off_at_once_on_flex(self) -> None:
+        # The opposite case: capacity, not quota. Waiting does not help.
+        client, seen = _client([httpx.Response(503, json={"error": "at capacity"})])
+        with pytest.raises(ProviderError):
+            _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
+        tiers = [r.headers.get(st.VERTEX_TIER_HEADER, "standard") for r in seen]
+        assert tiers == ["flex"] + ["standard"] * 3
+
     def test_an_escalated_call_skips_the_quota_window(self) -> None:
         # The tier below already waited one out, and the tiers commonly share
         # the bucket, so a second minute stalls the run for nothing.

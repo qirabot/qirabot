@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.3.0 (2026-08-16)
 
 ### Consumption tiers: flex and priority
 

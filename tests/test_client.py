@@ -1279,6 +1279,93 @@ class TestRenderStepImages:
         assert thumb.startswith("data:image/jpeg;base64,")
 
 
+class TestReusedFrame:
+    """A step decided on an earlier step's frame (nothing moved the device
+    since) still shows that frame in the report — a blank screenshot cell
+    reads as a lost capture, not as "the screen didn't change"."""
+
+    def _png_bytes(self, w: int = 200, h: int = 150) -> bytes:
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (w, h), (10, 20, 30)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    def _timeline(self, tmp_path):
+        from qirabot._timeline import RunTimeline
+
+        return RunTimeline(True, tmp_path, ScreenshotConfig())
+
+    def _shots(self, tmp_path):
+        return sorted(p.name for p in (tmp_path / "screenshots").iterdir())
+
+    def test_reuse_points_at_previous_frame_without_writing_a_copy(self, tmp_path):
+        tl = self._timeline(tmp_path)
+        data = self._png_bytes()
+        first = tl.record_step(data, "save_note", {"content": "x"})
+        second = tl.record_step(data, "scroll", {"direction": "down"}, reused_frame=True)
+
+        assert second["screenshot"] == first["screenshot"]
+        assert second["thumb"] == first["thumb"]
+        assert second["reused_frame"] is True
+        # Same picture, so no byte-identical second file on disk.
+        assert self._shots(tmp_path) == ["001_save_note.jpg"]
+
+    def test_fresh_step_is_not_flagged(self, tmp_path):
+        tl = self._timeline(tmp_path)
+        entry = tl.record_step(self._png_bytes(), "click", {"locate": "OK"}, (10, 20))
+        assert "reused_frame" not in entry
+
+    def test_reuse_with_coords_gets_its_own_annotated_copy(self, tmp_path):
+        # The picture repeats but the marker is this step's — drawing it on a
+        # shared file would put the wrong coordinates on the earlier step.
+        tl = self._timeline(tmp_path)
+        data = self._png_bytes()
+        first = tl.record_step(data, "save_note", {"content": "x"})
+        second = tl.record_step(
+            data, "click", {"locate": "OK"}, (10, 20), reused_frame=True
+        )
+
+        assert second["screenshot"] != first["screenshot"]
+        assert second["reused_frame"] is True
+        assert self._shots(tmp_path) == ["001_save_note.jpg", "002_click.jpg"]
+
+    def test_ai_loop_flags_the_step_after_save_note(self, make_bot, tmp_path):
+        # save_note doesn't move the device, so the next step reuses its frame.
+        png = self._png_bytes()
+
+        class _Adapter(_SettleFakeAdapter):
+            def screenshot(self, config=None):
+                return png
+
+        bot = make_bot(report=True)
+        bot._get_adapter = lambda target: _Adapter()
+        bot._execute_action = lambda *a, **k: None
+        note = {"success": True, "actionType": "save_note",
+                "params": {"content": "found it"}, "finished": False}
+        bot._backend.results.extend([
+            dict(note),
+            {"success": True, "actionType": "scroll",
+             "params": {"direction": "down", "amount": 500}, "finished": False},
+            dict(note),
+        ])
+        # ... then the fixture's default terminal done step.
+        bot.ai(object(), "do thing", max_steps=5)
+
+        note1, scroll, note2, done = bot._timeline.entries
+        # A note is decided on a freshly captured frame; the step after it —
+        # here the scroll, and the run-ending done — is not.
+        assert "reused_frame" not in note1
+        assert "reused_frame" not in note2
+        assert scroll["reused_frame"] is True and scroll["thumb"] == note1["thumb"]
+        assert done["reused_frame"] is True and done["thumb"] == note2["thumb"]
+        # Every step has an image; only the freshly captured ones wrote a file.
+        assert all(e["screenshot"] for e in bot._timeline.entries)
+        assert len(list((Path(bot.report_dir) / "screenshots").iterdir())) == 2
+
+
 class TestOpenHeadlessFallback:
     """open(headless=False) on display-less Linux must fall back to headless —
     a headed launch there can only fail (Missing X server or $DISPLAY)."""

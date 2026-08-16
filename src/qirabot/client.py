@@ -1311,10 +1311,11 @@ class Qirabot:
             decision = outcome.decision
 
             coords = _extract_coords(action_params)
-            # save_note continuations reuse the previous frame; record the
-            # step without a screenshot rather than duplicating the image.
+            # save_note continuations decided on the previous step's frame;
+            # flag that so the report reuses the image instead of showing the
+            # step with no screenshot at all.
             entry = self._record_step(
-                screenshot_bytes if fresh else b"",
+                screenshot_bytes,
                 action_type or "ai",
                 action_params,
                 coords,
@@ -1323,6 +1324,7 @@ class Qirabot:
                 finished=finished,
                 decision=decision,
                 coord_scale=adapter.annotation_scale(),
+                reused_frame=not fresh,
             )
 
             if logger.isEnabledFor(logging.INFO):
@@ -1617,6 +1619,7 @@ class Qirabot:
         warn: bool = False,
         decision: str = "",
         coord_scale: float = 1.0,
+        reused_frame: bool = False,
     ) -> dict[str, Any] | None:
         """Append one step to the run timeline (see RunTimeline.record_step).
 
@@ -1635,6 +1638,7 @@ class Qirabot:
             warn=warn,
             decision=decision,
             coord_scale=coord_scale,
+            reused_frame=reused_frame,
         )
 
     def _record_local_step(

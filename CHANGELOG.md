@@ -55,6 +55,20 @@
   now also shows how much of the step time was spent waiting on the model,
   a figure the timeline had always collected but never rendered.
 
+### Fix: no step is left without a screenshot in the report
+
+- A step that follows `save_note` is decided on the previous step's frame:
+  the note doesn't touch the device, so nothing is re-captured. That
+  optimisation was also deciding whether the report got a picture, so those
+  steps rendered an empty screenshot cell — indistinguishable from a lost
+  capture, and on the common `save_note` → `done` ending it meant the report
+  had no final frame at all. A six-step extraction run showed four images.
+- Such a step now shows the frame it was decided on, labelled *frame from an
+  earlier step* so a reused image can't be read as a fresh capture. No
+  duplicate file is written: the entry points at the frame already on disk,
+  unless the step marks coordinates, where the annotation is new information
+  and gets its own copy.
+
 ### Fix: a slow model call is no longer retried like a transport blip
 
 - A read timeout means the request reached the model and the answer did not

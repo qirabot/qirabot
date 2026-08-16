@@ -208,6 +208,32 @@ class TestWarnRow:
         assert "✗" in html
 
 
+class TestReusedFrameLabel:
+    """Two steps sharing one image must say so — otherwise the repeat reads as
+    a fresh capture of an unchanged screen."""
+
+    def test_reused_entry_is_labelled(self, tmp_path):
+        log = [
+            _entry("a", thumb="data:image/jpeg;base64,x", screenshot="screenshots/1.jpg"),
+            _entry(
+                "a",
+                action_type="scroll",
+                thumb="data:image/jpeg;base64,x",
+                screenshot="screenshots/1.jpg",
+                reused_frame=True,
+            ),
+        ]
+        out = write_html(log, tmp_path / "report.html")
+        html = out.read_text(encoding="utf-8")
+        # Once in the step cell, once in the lightbox label for that shot.
+        assert html.count("frame from an earlier step") == 2
+
+    def test_fresh_entries_carry_no_label(self, tmp_path):
+        log = [_entry("a", thumb="data:image/jpeg;base64,x")]
+        out = write_html(log, tmp_path / "report.html")
+        assert "frame from an earlier step" not in out.read_text(encoding="utf-8")
+
+
 class TestStepTimestamps:
     def test_offsets_relative_to_first_step_without_recording(self, tmp_path):
         log = [_entry("a", ts=1000.0), _entry("a", ts=1092.0)]

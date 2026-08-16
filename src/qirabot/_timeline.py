@@ -64,6 +64,12 @@ class RunTimeline:
             "llm_decision_duration_ms": 0,
         }
         self._screenshot_counter = 0
+        # Last frame written by record_step (report-relative path + thumbnail),
+        # so a step that reuses the previous frame can point at it instead of
+        # rendering a blank cell. Manual screenshot() frames are deliberately
+        # not tracked here — they are not part of any step.
+        self._last_shot = ""
+        self._last_thumb = ""
 
     def begin_section(self, instruction: str) -> str:
         """Open the section for one ai() run and make it current.
@@ -136,6 +142,7 @@ class RunTimeline:
         warn: bool = False,
         decision: str = "",
         coord_scale: float = 1.0,
+        reused_frame: bool = False,
     ) -> dict[str, Any] | None:
         """Save the screenshot (if reporting) and append a step to the timeline.
 
@@ -146,27 +153,42 @@ class RunTimeline:
         ``assert`` actions (verify / wait_for polls) are recorded like any
         other step: the poll frames are the key evidence when a ``wait_for``
         times out.
+
+        ``reused_frame`` marks a step the caller decided on a frame captured
+        for an earlier step (nothing moved the device in between). Such a step
+        has no new picture of its own, so it reuses the previous frame's image
+        rather than leaving a blank cell in the report — and is flagged so the
+        report can say the frame predates the step.
         """
         # Reporting off → zero overhead.
         if not self.enabled:
             return None
-        # Annotation + thumbnailing share a single PIL decode; never let a
-        # malformed/unexpected screenshot break the actual action — degrade to
-        # the raw bytes / no thumbnail instead.
-        annotated = data
-        thumb = ""
-        if data:
-            try:
-                annotated, thumb = render_step_images(
-                    data,
-                    coords,
-                    self.screenshot_config,
-                    end_coords=end_coords,
-                    coord_scale=coord_scale,
-                )
-            except Exception:
-                logger.debug("render step images failed", exc_info=True)
-        frame = self.save_frame(annotated, action_type or "action") if data else None
+        # A reused frame that marks no coordinates has nothing new to draw:
+        # point at the file already on disk instead of writing a byte-identical
+        # copy. With coordinates the annotation IS the new information, so it
+        # gets its own rendered copy of the same picture.
+        if reused_frame and not coords and not end_coords:
+            shot, thumb = self._last_shot, self._last_thumb
+        else:
+            # Annotation + thumbnailing share a single PIL decode; never let a
+            # malformed/unexpected screenshot break the actual action — degrade
+            # to the raw bytes / no thumbnail instead.
+            annotated = data
+            thumb = ""
+            if data:
+                try:
+                    annotated, thumb = render_step_images(
+                        data,
+                        coords,
+                        self.screenshot_config,
+                        end_coords=end_coords,
+                        coord_scale=coord_scale,
+                    )
+                except Exception:
+                    logger.debug("render step images failed", exc_info=True)
+            frame = self.save_frame(annotated, action_type or "action") if data else None
+            shot = f"screenshots/{frame.name}" if frame else ""
+            self._last_shot, self._last_thumb = shot, thumb
         entry: dict[str, Any] = {
             "section": self.current_section,
             "ts": time.time(),
@@ -178,7 +200,7 @@ class RunTimeline:
             "success": bool(success),
             "coords": list(coords) if coords else None,
             # relative to report_dir so the html can link it directly
-            "screenshot": f"screenshots/{frame.name}" if frame else "",
+            "screenshot": shot,
             "thumb": thumb,
         }
         # warn marks a truncation (max steps), not a failure — the report
@@ -186,5 +208,8 @@ class RunTimeline:
         # lean and older entries unchanged.
         if warn:
             entry["warn"] = True
+        # Only set when true, same reason as warn.
+        if reused_frame:
+            entry["reused_frame"] = True
         self.entries.append(entry)
         return entry

@@ -84,6 +84,8 @@ section > h2 { font-size: 15px; margin: 0; padding: 12px 16px; background: #fafb
             transition: transform .08s ease; }
 .shot a { display: block; cursor: zoom-in; }
 .shot a:hover img { transform: scale(1.02); }
+.shot .reused { display: block; margin-top: 4px; color: #999; font-size: 10px;
+                font-style: italic; }
 video { max-width: 100%; max-height: 70vh; display: block; border-radius: 8px;
         margin-bottom: 18px; }
 /* Lightbox */
@@ -134,6 +136,7 @@ video { max-width: 100%; max-height: 70vh; display: block; border-radius: 8px;
   .runinfo dt { color: #6f757c; }
   .when a { color: #a9c7ff; }
   .detail .decision { color: #9aa0a6; }
+  .shot .reused { color: #7f858c; }
   .notice { background: #3a2f12; color: #f0d493; }
   .notice.error { background: #3a1d1d; color: #f3a6a6; }
 }
@@ -645,17 +648,25 @@ def write_html(
             shot = ""
             thumb = e.get("thumb") or ""
             full = e.get("screenshot") or ""
+            # The step decided on a frame captured for an earlier step (the
+            # device hadn't moved since). Same picture, but it predates the
+            # step — say so rather than let it read as freshly captured.
+            reused = bool(e.get("reused_frame"))
             if thumb:
                 idx = len(shots)
                 shots.append({
                     "src": full or thumb,
                     "action": action,
                     "detail": detail,
-                    "label": f"{display_name(sec)} · #{i}" + (f" · {clock}" if clock else ""),
+                    "label": f"{display_name(sec)} · #{i}"
+                    + (f" · {clock}" if clock else "")
+                    + (" · frame from an earlier step" if reused else ""),
                 })
                 img = f"<img src='{thumb}' loading='lazy'>"
                 href = html.escape(full or "#")
                 shot = f"<a href='{href}' onclick='return openLb({idx})'>{img}</a>"
+                if reused:
+                    shot += "<span class='reused'>frame from an earlier step</span>"
             num_div = f"<div class='{row_cls.strip()}'>{i}</div>" if row_cls else f"<div>{i}</div>"
             parts.append(
                 num_div

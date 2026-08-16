@@ -133,7 +133,7 @@ bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
 
 `ai()` 每步一次调用,所以这个惩罚是成倍的。flex 适合一次性的、无人
 值守的、答案晚点到也无所谓的任务,不适合交互式自动化。Gemini
-Developer API 的 flex 档行为不同,在同一组测试里代价小得多。
+Developer API 的 flex 档行为不同:同一组测试里实测为每次调用 +0.1 秒。
 :::
 
 **计费按实际服务的档位算,而不是按你请求的档位算。** 端点无法安排的

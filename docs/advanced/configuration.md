@@ -142,7 +142,7 @@ time on standard took 50s on flex.
 An `ai()` run makes one call per step, so the penalty multiplies. Reach for
 flex on one-shot, unattended work where a slower answer is free — not on
 interactive automation. The Gemini Developer API's flex tier behaves
-differently and was far cheaper in the same test.
+differently: the same test measured it at +0.1s per call.
 :::
 
 **You are billed for what is served, not what you ask for.** A tier the

@@ -13,11 +13,16 @@ entirely inside a closed window — a long ai() run would die on its first
 quota brush, losing all accumulated progress. A rejected 429 request is not
 billed, so waiting out the window costs nothing but wall-clock;
 RATE_LIMIT_DELAYS spans a full minute cumulatively.
+
+Every delay is jittered: both schedules are fixed, so concurrent qirabot
+processes that brush the same quota (a CI matrix, a multi-device run) would
+otherwise retry in lockstep and keep colliding.
 """
 
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections.abc import Callable
 from typing import TypeVar
@@ -30,8 +35,14 @@ logger = logging.getLogger("qirabot.engine")
 
 DEFAULT_ATTEMPTS = 3
 RATE_LIMIT_DELAYS = (5.0, 10.0, 20.0, 30.0)
+JITTER_FRACTION = 0.2
 
 T = TypeVar("T")
+
+
+def jitter(delay: float) -> float:
+    """Spread a scheduled delay by ±JITTER_FRACTION to desynchronize callers."""
+    return delay * (1.0 + random.uniform(-JITTER_FRACTION, JITTER_FRACTION))
 
 
 def is_retryable(exc: Exception) -> bool:
@@ -49,10 +60,12 @@ def with_retry(
     fn: Callable[[], T],
     attempts: int = DEFAULT_ATTEMPTS,
     sleep: Callable[[float], None] = time.sleep,
+    jitter: Callable[[float], float] = jitter,
 ) -> T:
     """Execute fn, retrying retryable failures. Generic schedule: linear
     1s→2s→3s (capped) backoff over `attempts` tries; rate limits follow
-    RATE_LIMIT_DELAYS instead (see module docstring)."""
+    RATE_LIMIT_DELAYS instead (see module docstring). Each delay passes
+    through `jitter` — tests inject the identity to assert the schedule."""
     delay = 1.0
     attempt = 0
     while True:
@@ -73,6 +86,7 @@ def with_retry(
                 wait = delay
                 delay = min(delay + 1.0, 3.0)
                 budget = attempts
+            wait = jitter(wait)
             logger.warning(
                 "retryable provider error (attempt %d/%d, next try in %.0fs): %s",
                 attempt,

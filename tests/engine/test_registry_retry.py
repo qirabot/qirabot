@@ -15,8 +15,12 @@ from qirabot.engine.providers.registry import (
     resolve_vertex_location,
     resolve_vertex_project,
 )
-from qirabot.engine.providers.retry import with_retry
+from qirabot.engine.providers.retry import JITTER_FRACTION, RATE_LIMIT_DELAYS, jitter, with_retry
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
+
+
+def _no_jitter(delay: float) -> float:
+    return delay
 
 
 class FakeTokens:
@@ -158,6 +162,9 @@ class TestClassify:
 
 
 class TestRetry:
+    """The schedule is asserted with jitter stubbed out to the identity;
+    TestJitter covers the randomization itself."""
+
     def test_retries_retryable_then_succeeds(self) -> None:
         sleeps: list[float] = []
         calls = {"n": 0}
@@ -168,7 +175,7 @@ class TestRetry:
                 raise ProviderError("p", "down", category=ErrorCategory.UNAVAILABLE, status_code=503)
             return "ok"
 
-        assert with_retry(fn, sleep=sleeps.append) == "ok"
+        assert with_retry(fn, sleep=sleeps.append, jitter=_no_jitter) == "ok"
         assert calls["n"] == 3
         # Linear backoff 1s → 2s (3rd attempt succeeds, no third sleep).
         assert sleeps == [1.0, 2.0]
@@ -193,7 +200,7 @@ class TestRetry:
                 raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
             return "ok"
 
-        assert with_retry(fn, sleep=sleeps.append) == "ok"
+        assert with_retry(fn, sleep=sleeps.append, jitter=_no_jitter) == "ok"
         assert calls["n"] == 4
         assert sleeps == [5.0, 10.0, 20.0]
 
@@ -206,7 +213,7 @@ class TestRetry:
             raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
 
         with pytest.raises(ProviderError):
-            with_retry(fn, sleep=sleeps.append)
+            with_retry(fn, sleep=sleeps.append, jitter=_no_jitter)
         # One initial try plus one per scheduled delay; cumulative wait
         # crosses a one-minute window boundary.
         assert calls["n"] == 5
@@ -246,3 +253,36 @@ class TestRetry:
         with pytest.raises(RuntimeError):
             with_retry(fn, sleep=lambda _: None)
         assert calls["n"] == 1
+
+
+class TestJitter:
+    """Fixed schedules make concurrent runs collide in lockstep; every delay
+    is spread by ±JITTER_FRACTION."""
+
+    def test_stays_within_the_band(self) -> None:
+        for base in RATE_LIMIT_DELAYS:
+            for _ in range(50):
+                assert (
+                    base * (1 - JITTER_FRACTION)
+                    <= jitter(base)
+                    <= base * (1 + JITTER_FRACTION)
+                )
+
+    def test_actually_varies(self) -> None:
+        assert len({jitter(10.0) for _ in range(20)}) > 1
+
+    def test_applied_by_default(self) -> None:
+        sleeps: list[float] = []
+        calls = {"n": 0}
+
+        def fn() -> str:
+            calls["n"] += 1
+            if calls["n"] < 2:
+                raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+            return "ok"
+
+        assert with_retry(fn, sleep=sleeps.append) == "ok"
+        # First rate-limit delay is 5s; jittered, never exactly 5s-scheduled
+        # but always inside the band.
+        assert len(sleeps) == 1
+        assert 4.0 <= sleeps[0] <= 6.0

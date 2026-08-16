@@ -132,17 +132,21 @@ capacity. It moves price and latency in opposite directions:
 bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
 ```
 
-::: warning Flex is a poor fit for multi-step runs on Vertex
-Flex's cost there is a near-constant queueing delay per request, not slower
-generation — measured at **+12–14s per call** on `gemini-3.5-flash`
-(2026-08). Because it does not scale with response length, a short
-decide/locate call pays it in full. A 3-step task that takes 8s of model
-time on standard took 50s on flex.
+::: warning Check what flex costs you before relying on it
+Flex capacity is queued, and on Vertex the wait behaves like a fixed cost per
+request rather than one proportional to response length. That matters here:
+a decide or locate call produces a short response, so it pays the full delay
+with nothing to amortize it against — and an `ai()` run makes one call per
+step, so the cost multiplies by step count. On the Gemini Developer API the
+same requests were scheduled far more cheaply.
 
-An `ai()` run makes one call per step, so the penalty multiplies. Reach for
-flex on one-shot, unattended work where a slower answer is free — not on
-interactive automation. The Gemini Developer API's flex tier behaves
-differently: the same test measured it at +0.1s per call.
+How big the delay actually is varies by model, endpoint load and time of day,
+so measure it on your own traffic rather than trusting a number from
+elsewhere. The per-step timings in the [run report](/advanced/reports) make
+the comparison a two-run experiment.
+
+The rule of thumb: flex suits one-shot, unattended work where a late answer
+costs nothing. Interactive automation is where a queued tier hurts most.
 :::
 
 **You are billed for what is served, not what you ask for.** A tier the

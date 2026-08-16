@@ -49,12 +49,13 @@ _TIERS_BY_TRAFFIC_TYPE = {v: k for k, v in _VERTEX_TRAFFIC_TYPES.items()}
 GEMINI_SERVED_TIER_HEADER = "x-gemini-service-tier"
 
 # Flex trades latency for price and the engine's per-call budgets assume
-# standard-tier timing. The Vertex penalty measured at ~+12-14s per request
-# (gemini-3.5-flash, 2026-08) is near-constant queueing rather than slower
-# generation, so what a budget needs is absolute headroom, not a proportional
-# one: 1.5x leaves 60s on a decide and 30s on a locate. Deliberately not the
-# documented worst-case SLO, which is in minutes and would turn a stalled
-# step into a hang.
+# standard-tier timing. The delay varies with model and endpoint load, but
+# its shape does not: one Vertex sample (gemini-3.5-flash, 2026-08) put it in
+# the low tens of seconds per request and flat across response sizes, i.e.
+# queueing rather than slower generation. So a budget needs absolute
+# headroom, not a proportional bump — 1.5x leaves 60s spare on a decide and
+# 30s on a locate. Deliberately not the documented worst-case SLO, which is
+# in minutes and would turn a stalled step into a hang.
 FLEX_TIMEOUT_SCALE = 1.5
 
 T = TypeVar("T")

@@ -217,24 +217,49 @@ class TierLadder:
             return call(self._tier, True)
 
 
+def tier_label(configured: str, served: tuple[str, ...]) -> str:
+    """Run-summary fragment naming the tier that was billed.
+
+    Empty for an unconfigured run: standard is the default, and saying so on
+    every report is noise. When a configured tier was not what actually ran —
+    a downgrade, or escalation moving the run — both are shown, because the
+    bill follows the served side.
+    """
+    if not configured:
+        return ""
+    if not served or set(served) == {configured}:
+        return configured
+    return f"{configured} (served: {', '.join(served)})"
+
+
 class TierCheck:
-    """One-shot warning when the endpoint serves a tier other than the one
-    requested.
+    """Watches what the endpoint actually served.
+
+    Two jobs: warn once when it is not what was asked for, and remember the
+    tiers seen so the run report can name what was billed.
 
     The endpoints report no reason for a downgrade — a downgraded request is
     an ordinary 200 whose only tell is the served-tier field — so the warning
     names the config it can see instead, letting the reader rule out the two
     documented preconditions and land on the third cause: entitlement.
 
-    Sticky by design: whatever caused one downgrade downgrades every request,
-    and the engine makes one call per step.
+    The warning is sticky by design: whatever caused one downgrade downgrades
+    every request, and the engine makes one call per step.
     """
 
     def __init__(self, provider: str) -> None:
         self._provider = provider
         self._warned = False
+        self._served: dict[str, None] = {}
+
+    @property
+    def served(self) -> tuple[str, ...]:
+        """Distinct served tiers, in the order first seen."""
+        return tuple(self._served)
 
     def observe(self, requested: str, served: str, model: str, where: str) -> None:
+        if served:
+            self._served[served] = None
         if self._warned or not requested or not served or served == requested:
             return
         self._warned = True

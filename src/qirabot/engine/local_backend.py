@@ -24,6 +24,7 @@ import httpx
 from . import actions
 from .engine import LocalEngine
 from .providers.base import Provider, ProviderError
+from .providers.service_tier import tier_label
 from .providers.registry import (
     PROVIDER_GEMINI,
     ModelSpec,
@@ -267,11 +268,22 @@ class LocalBackend:
                     location,
                     _tier_suffix(tier, escalate),
                 )
+        self._provider = provider
+        self._tier = tier
         self._engine = LocalEngine(provider, self._spec.model)
 
     @property
     def model_label(self) -> str:
         return f"{self._spec.provider}/{self._spec.model}"
+
+    @property
+    def tier_label(self) -> str:
+        """Which consumption tier the run was billed at, for the report.
+
+        Empty unless a tier was configured. An injected provider need not
+        report what it served, so the served side is optional."""
+        served = getattr(self._provider, "served_tiers", ())
+        return tier_label(self._tier, tuple(served))
 
     def close(self) -> None:
         if self._http is not None:

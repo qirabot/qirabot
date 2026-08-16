@@ -47,6 +47,12 @@ class GeminiApiProvider:
     def _url(self, model: str) -> str:
         return f"{_BASE_URL}/models/{model}:generateContent"
 
+    @property
+    def served_tiers(self) -> tuple[str, ...]:
+        """Distinct consumption tiers this provider was actually served
+        on, for the run report."""
+        return self._tier_check.served
+
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
         return self._ladder.run(
             lambda tier, escalated: self._chat_once(request, timeout, tier, escalated)

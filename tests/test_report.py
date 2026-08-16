@@ -309,6 +309,27 @@ class TestStatsLine:
         html = out.read_text(encoding="utf-8")
         assert "2 steps (0 AI)" in html
 
+    def test_tier_sits_next_to_the_tokens_it_reprices(self, tmp_path):
+        out = write_html(
+            [_entry("a")],
+            tmp_path / "report.html",
+            stats={"total_steps": 1, "ai_steps": 1, "input_tokens": 100,
+                   "output_tokens": 50},
+            model="gemini-vertex/gemini-3.6-flash",
+            tier="priority (served: standard)",
+        )
+        html = out.read_text(encoding="utf-8")
+        assert "tier priority (served: standard)" in html
+
+    def test_an_unconfigured_tier_adds_nothing(self, tmp_path):
+        out = write_html(
+            [_entry("a")],
+            tmp_path / "report.html",
+            stats={"total_steps": 1, "ai_steps": 1},
+            model="gemini-vertex/gemini-3.6-flash",
+        )
+        assert "tier " not in out.read_text(encoding="utf-8")
+
     def test_legacy_stats_without_total_steps_fall_back_to_log_length(self, tmp_path):
         out = write_html(
             [_entry("a")],

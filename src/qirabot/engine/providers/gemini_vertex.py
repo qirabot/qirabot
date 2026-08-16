@@ -80,6 +80,12 @@ class GeminiVertexProvider:
             headers[VERTEX_TIER_HEADER] = tier
         return headers
 
+    @property
+    def served_tiers(self) -> tuple[str, ...]:
+        """Distinct consumption tiers this provider was actually served
+        on, for the run report."""
+        return self._tier_check.served
+
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
         return self._ladder.run(
             lambda tier, escalated: self._chat_once(request, timeout, tier, escalated)

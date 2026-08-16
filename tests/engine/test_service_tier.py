@@ -369,6 +369,39 @@ class TestEscalate:
         assert st.VERTEX_TIER_HEADER not in seen[-1].headers
 
 
+class TestTierLabel:
+    """What the run report says was billed."""
+
+    def test_an_unconfigured_run_says_nothing(self) -> None:
+        # Standard is the default; naming it on every report is noise.
+        assert st.tier_label("", ()) == ""
+        assert st.tier_label("", ("standard",)) == ""
+
+    def test_an_honoured_tier_is_named_plainly(self) -> None:
+        assert st.tier_label("flex", ("flex",)) == "flex"
+
+    def test_a_downgrade_shows_both_sides(self) -> None:
+        # The bill follows the served side, so it cannot be left out.
+        assert st.tier_label("priority", ("standard",)) == "priority (served: standard)"
+
+    def test_a_run_that_moved_lists_what_it_ran_on(self) -> None:
+        assert st.tier_label("flex", ("flex", "standard")) == "flex (served: flex, standard)"
+
+    def test_no_signal_falls_back_to_the_configured_tier(self) -> None:
+        assert st.tier_label("flex", ()) == "flex"
+
+    def test_the_provider_records_distinct_tiers_in_order(self) -> None:
+        client, _ = _client([
+            httpx.Response(200, json=_ok("ON_DEMAND_FLEX")),
+            httpx.Response(200, json=_ok("ON_DEMAND")),
+            httpx.Response(200, json=_ok("ON_DEMAND")),
+        ])
+        provider = _vertex(client, service_tier="flex")
+        for _ in range(3):
+            provider.chat(_request(), 30.0)
+        assert provider.served_tiers == ("flex", "standard")
+
+
 class TestStickiness:
     """Escalation parks: a congested tier is discovered once per provider,
     not re-discovered on every step of an ai() run."""

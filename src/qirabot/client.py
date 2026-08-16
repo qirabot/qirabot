@@ -2033,6 +2033,7 @@ class Qirabot:
                 # count is exactly the steps that ran.
                 stats={**timeline.stats, "total_steps": len(timeline.entries)},
                 model=self._backend.model_label,
+                tier=self._backend.tier_label,
             )
             logger.info("report written: %s", out)
             return out

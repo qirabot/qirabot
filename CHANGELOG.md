@@ -38,6 +38,11 @@
   standard healthy, a 20-step run goes from completing nothing to
   completing everything after a single probe.
 
+- The run report names the tier next to the token counts it reprices, and
+  shows the served side when it differs from the one requested. Which tier
+  ran decides the per-token rate, so a report that omitted it could not be
+  reconciled against a bill.
+
 ### Fix: a slow model call is no longer retried like a transport blip
 
 - A read timeout means the request reached the model and the answer did not

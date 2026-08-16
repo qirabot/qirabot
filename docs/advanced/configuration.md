@@ -117,6 +117,57 @@ is their sum. See the
 actually go, and which knobs on this page move them, is in
 [Controlling Cost](/advanced/cost).
 
+## When a call fails
+
+Two different layers retry, and they are easy to confuse because they use
+the same words. The `retry=` and `timeout=` options in the
+[Method Reference](/reference/methods) are **yours**: `timeout=` polls the
+screen until an element looks present, `retry=` repeats a whole action.
+Underneath, the engine's own model calls have fixed budgets you do not
+configure. This section is that lower layer.
+
+### Per-call budgets
+
+| Call | Budget |
+|---|---|
+| `ai()` step decision, `extract()`, `verify()` | 120s |
+| `locate()` | 60s |
+| Connecting to the endpoint | 5s |
+
+`locate()` is half of a decision because the engine retries a locate once —
+two locate shots should cost about what one decision does. Connecting is
+separate because reaching the endpoint has nothing to do with how long the
+model thinks; an unreachable host reports itself in seconds rather than
+holding the whole budget.
+
+### What gets retried
+
+| Failure | Behaviour |
+|---|---|
+| Rate limit (429) | Backs off 5s → 10s → 20s → 30s, five attempts, about a minute |
+| Refusal (503), connect or pool failure | Backs off 1s → 2s, three attempts |
+| The model answered too slowly (read timeout, 504) | **Fails immediately** |
+| Bad request, auth, not found (400/401/403/404) | Fails immediately |
+| Empty or unparseable reply | Re-asked once with corrective feedback |
+
+Every backoff delay carries ±20% jitter, so concurrent runs sharing a quota
+do not retry in lockstep and collide again.
+
+The two timing rules are worth knowing because they explain most of what you
+will see in a log. **Rate limits get a long wait** because quotas are rolling
+per-minute windows: waiting one out is free and usually works, and a run that
+died on its first quota brush would throw away all its progress. **A slow
+answer is never retried**, because the request did reach the model — asking
+the same question again costs another full budget to be told the same thing.
+That is the difference between a read timeout and a connect timeout, which
+look alike but mean opposite things.
+
+### How long a run can take
+
+Nothing caps an `ai()` run in wall clock. `max_steps` (default 20) is the
+bound, so budget with it: a step costs at most two model calls — the
+decision, plus one re-ask if the reply comes back unusable.
+
 ## Service tier
 
 `service_tier` picks how your requests are scheduled against Google's
@@ -182,6 +233,11 @@ used so you can rule out the first two at a glance:
    priority behind its higher paid tiers. This is invisible to the API —
    check your quotas in the Cloud Console, or ask whoever owns the account.
 
+The run report's summary line names the tier alongside the token counts it
+reprices — `tier priority (served: standard)` when the two differ, just
+`tier flex` when the tier was honoured, and nothing at all for an
+unconfigured run.
+
 A downgrade is **not** a failure and does not trigger `tier_escalation`: the
 call succeeded, at standard price. Escalation reacts to capacity *failures*
 — a rate limit, a refusal, or a flex request still queued when its budget
@@ -198,21 +254,23 @@ bot = Qirabot(service_tier="standard", tier_escalation=True)
 ```
 
 Out of capacity means a rate limit (429), a refusal (503), or — on flex only
-— a request whose budget expires while still queued. How soon the handoff
-happens depends on which:
+— a request whose budget expires while still queued. Escalation happens after
+the ordinary retries for that failure ([When a call fails](#when-a-call-fails))
+are exhausted, so how soon the handoff comes depends on which failure it was:
 
 | Failure | Handoff |
 |---|---|
-| Rate limit | After the full backoff schedule, roughly a minute |
-| Refusal | Almost immediately |
+| Rate limit | After the full quota window, roughly a minute |
+| Refusal | A few seconds |
 | Flex still queued | As soon as the call's timeout expires |
 
-A rate limit waits because waiting is free: quotas are rolling per-minute
-windows, so the next attempt often just succeeds. Escalation is the last move
-before a long `ai()` run dies and loses its accumulated progress, not the
-first response to a 429. The escalated call does not wait out a second
-window — the tiers commonly draw on the same quota, so another minute of
-sleeping would stall the run for capacity that is not coming.
+Escalating is always the last move before a long `ai()` run dies and loses
+its accumulated progress, never the first response to a failure — the free
+remedies come first. That is why a rate limit waits: the window is rolling
+and costs nothing to sit through, while escalating raises the rate. The
+escalated call does not wait out a second window, though — the tiers commonly
+draw on the same quota, so another minute of sleeping would stall the run for
+capacity that is not coming.
 
 Moving is permanent for the life of the bot because the alternative is
 paying to rediscover the same congestion on every step. A new `Qirabot`

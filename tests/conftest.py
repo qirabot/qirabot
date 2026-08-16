@@ -95,6 +95,7 @@ class FakeBackend:
     """
 
     model_label = "fake/fake-model"
+    tier_label = ""
 
     def __init__(self, *args, **kwargs):
         self.init_args = args

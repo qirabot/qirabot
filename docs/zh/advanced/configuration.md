@@ -33,6 +33,8 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
 | `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | 用 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) 代替 ADC,无需配置 gcloud。仅对 `gemini-vertex` 有效,固定走全局端点,并覆盖 `vertex_project`/`vertex_location`。它不是 AI Studio key;`GOOGLE_API_KEY` 被刻意不读取 |
 | `gemini_api_key` | `QIRA_GEMINI_API_KEY`、`GEMINI_API_KEY` | `""` | `gemini` provider 使用的 [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)(走 Gemini Developer API,不涉及 Google Cloud) |
+| `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | 计费档位:`standard` / `flex` / `priority`([详见](#计费档位)) |
+| `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | 档位容量耗尽时向上升一档重试([详见](#计费档位)) |
 | `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
 | `language` | — | 跟随指令语言 | 响应语言:语言标签(`"zh"`、`"ja"`、`"de"` 等)或任意语言名称 |
@@ -107,6 +109,51 @@ Qirabot 不按步计费:模型调用直接从你的机器发往你自己的 Vert
 花费就是两者之和。见[方法参考](/zh/reference/methods#结果对象)。这些
 token 究竟花在哪里、本页哪些开关能真正影响它们,见
 [控制成本](/zh/advanced/cost)。
+
+## 计费档位
+
+`service_tier` 决定你的请求在 Google 的容量里如何被调度,价格与延迟
+朝相反方向移动:
+
+| 档位 | 价格 | 延迟 | 可用性 |
+|---|---|---|---|
+| `flex` | 约为标准价的 50% | 更慢,请求可能排队 | 可被丢弃 —— 负载高时会被拒绝 |
+| `standard`(默认) | 基准价 | 秒级 | 尽力而为 |
+| `priority` | 比标准价高约 75%~100% | 秒级,排在标准流量之前 | 超出容量时降级为标准档 |
+
+```python
+bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
+```
+
+**计费按实际服务的档位算,而不是按你请求的档位算。** 端点无法安排的
+档位会以标准档提供服务,并按标准价计费。Qirabot 会把每次响应和你请求
+的档位对照(Vertex 返回 `usageMetadata.trafficType`,Gemini Developer
+API 返回 `x-gemini-service-tier` 响应头),不一致时每个会话打印一次
+warning。
+
+两个非标准档位都要求:
+
+- **global 端点** —— 指定了区域性 `vertex_location` 会在构造时直接
+  报错,因为 Vertex 会接受请求然后静默忽略档位设置;
+- **支持该档位的模型** —— 不支持的模型会静默降级,这正是那条不一致
+  warning 的用途。
+
+### 容量耗尽时升档
+
+设置 `tier_escalation=True` 后,容量耗尽的档位会向上升一档重试一次
+—— `flex` → `standard` → `priority` —— 而不是让整次运行失败:
+
+```python
+bot = Qirabot(service_tier="standard", tier_escalation=True)
+```
+
+它只在正常的限流退避跑完之后才触发,所以免费的手段(等过滚动的每分钟
+配额窗口)总是先用尽。这是一次长 `ai()` 运行在丢掉全部已积累进度之前
+的最后一招。
+
+默认关闭,因为升档可能抬高每 token 单价 —— 但下行风险被上面那条计费
+规则限死了:升到 `priority` 只有在真的由 priority 容量提供服务时才会
+多花钱。
 
 ## 思考深度
 

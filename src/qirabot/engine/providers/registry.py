@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from . import service_tier
 from .base import Provider
 from .gemini_api import GeminiApiProvider
 from .gemini_vertex import GeminiVertexProvider
@@ -125,6 +126,30 @@ def resolve_gemini_api_key(explicit: str) -> str:
     return ""
 
 
+def resolve_service_tier(explicit: str) -> str:
+    """Consumption tier resolution: explicit param > QIRA_SERVICE_TIER.
+    Returns "" for the endpoint default (standard); raises ValueError on an
+    unknown value rather than silently billing at the default tier."""
+    for candidate in (explicit, os.environ.get("QIRA_SERVICE_TIER", "")):
+        if candidate.strip():
+            return service_tier.normalize(candidate)
+    return ""
+
+
+def resolve_tier_escalation(explicit: bool | None) -> bool:
+    """Escalate-on-exhaustion resolution: explicit param >
+    QIRA_TIER_ESCALATION. Off by default — moving up the ladder can raise the
+    per-token rate, which is the user's call to make."""
+    if explicit is not None:
+        return explicit
+    return os.environ.get("QIRA_TIER_ESCALATION", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def resolve_vertex_location(explicit: str) -> str:
     """Location resolution: explicit param > QIRA_VERTEX_LOCATION >
     GOOGLE_CLOUD_LOCATION > "global" (same default as production)."""
@@ -145,10 +170,18 @@ def create_provider(
     token_source: VertexTokenSource | None,
     http_client: httpx.Client,
     api_key: str = "",
+    tier: str = "",
+    tier_escalation: bool = False,
 ) -> Provider:
     if spec.provider == PROVIDER_GEMINI_VERTEX:
         return GeminiVertexProvider(
-            project, location, token_source, http_client, api_key=api_key
+            project,
+            location,
+            token_source,
+            http_client,
+            api_key=api_key,
+            service_tier=tier,
+            tier_escalation=tier_escalation,
         )
     if spec.provider == PROVIDER_GEMINI:
         if not api_key:
@@ -157,5 +190,21 @@ def create_provider(
                 "requires an API key; pass gemini_api_key= or set "
                 "QIRA_GEMINI_API_KEY / GEMINI_API_KEY"
             )
-        return GeminiApiProvider(api_key, http_client)
+        return GeminiApiProvider(
+            api_key, http_client, service_tier=tier, tier_escalation=tier_escalation
+        )
     raise ValueError(_format_hint(f'unknown provider "{spec.provider}"'))
+
+
+def check_tier_location(tier: str, location: str) -> None:
+    """Vertex serves flex/priority on the global endpoint only, and a
+    regional endpoint accepts the header and ignores it. Fail at construction
+    instead of billing a whole run at standard rates while the user believes
+    otherwise."""
+    if tier and location and location != "global":
+        raise ValueError(
+            f'service_tier "{tier}" requires the global Vertex endpoint, but '
+            f'location is "{location}"; unset vertex_location / '
+            "QIRA_VERTEX_LOCATION / GOOGLE_CLOUD_LOCATION, or set it to "
+            '"global"'
+        )

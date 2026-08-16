@@ -27,9 +27,12 @@ from .providers.base import Provider, ProviderError
 from .providers.registry import (
     PROVIDER_GEMINI,
     ModelSpec,
+    check_tier_location,
     create_provider,
     parse_model,
     resolve_gemini_api_key,
+    resolve_service_tier,
+    resolve_tier_escalation,
     resolve_vertex_api_key,
     resolve_vertex_location,
     resolve_vertex_project,
@@ -86,6 +89,14 @@ class ConditionOutcome:
     reasoning: str = ""
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     llm_ms: int = 0
+
+
+def _tier_suffix(tier: str, escalate: bool) -> str:
+    """Startup-log fragment naming a non-default consumption tier — the whole
+    run is billed differently, so it belongs next to the model and project."""
+    if not tier:
+        return " tier=standard+escalate" if escalate else ""
+    return f" tier={tier}{'+escalate' if escalate else ''}"
 
 
 def _normalize_platform(platform: str) -> str:
@@ -162,6 +173,8 @@ class LocalBackend:
         media_resolution: str = "",
         locate_format: str = "",
         annotate_for_model: bool = False,
+        service_tier: str = "",
+        tier_escalation: bool | None = None,
         provider: Provider | None = None,
     ) -> None:
         self._spec: ModelSpec = parse_model(model)
@@ -171,6 +184,8 @@ class LocalBackend:
         self._annotate_for_model = annotate_for_model
         self._http: httpx.Client | None = None
         self._trace: _Tracer | _NullTracer = _Tracer.from_env() or _NullTracer()
+        tier = resolve_service_tier(service_tier)
+        escalate = resolve_tier_escalation(tier_escalation)
 
         if provider is None and self._spec.provider == PROVIDER_GEMINI:
             # Gemini Developer API (AI Studio keys): no ADC, no
@@ -186,15 +201,19 @@ class LocalBackend:
                     None,
                     self._http,
                     api_key=resolve_gemini_api_key(gemini_api_key),
+                    tier=tier,
+                    tier_escalation=escalate,
                 )
             except ValueError:
                 self._http.close()
                 self._http = None
                 raise
             logger.info(
-                "local engine: model=%s/%s auth=api-key endpoint=generativelanguage",
+                "local engine: model=%s/%s auth=api-key endpoint=generativelanguage"
+                "%s",
                 self._spec.provider,
                 self._spec.model,
+                _tier_suffix(tier, escalate),
             )
         elif provider is None:
             # gemini-vertex: a configured API key (param > QIRA_VERTEX_API_KEY)
@@ -210,27 +229,43 @@ class LocalBackend:
                     )
                 self._http = httpx.Client()
                 provider = create_provider(
-                    self._spec, "", "", None, self._http, api_key=api_key
+                    self._spec,
+                    "",
+                    "",
+                    None,
+                    self._http,
+                    api_key=api_key,
+                    tier=tier,
+                    tier_escalation=escalate,
                 )
                 logger.info(
-                    "local engine: model=%s/%s auth=api-key endpoint=global",
+                    "local engine: model=%s/%s auth=api-key endpoint=global%s",
                     self._spec.provider,
                     self._spec.model,
+                    _tier_suffix(tier, escalate),
                 )
             else:
                 tokens = VertexTokenSource()
                 location = resolve_vertex_location(vertex_location)
+                check_tier_location(tier, location)
                 project = resolve_vertex_project(vertex_project, tokens)
                 self._http = httpx.Client()
                 provider = create_provider(
-                    self._spec, project, location, tokens, self._http
+                    self._spec,
+                    project,
+                    location,
+                    tokens,
+                    self._http,
+                    tier=tier,
+                    tier_escalation=escalate,
                 )
                 logger.info(
-                    "local engine: model=%s/%s project=%s location=%s",
+                    "local engine: model=%s/%s project=%s location=%s%s",
                     self._spec.provider,
                     self._spec.model,
                     project,
                     location,
+                    _tier_suffix(tier, escalate),
                 )
         self._engine = LocalEngine(provider, self._spec.model)
 

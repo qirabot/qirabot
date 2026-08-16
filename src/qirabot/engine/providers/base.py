@@ -151,6 +151,9 @@ class ChatResponse:
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     finish_reason: str = ""
     model_used: str = ""
+    # Consumption tier the endpoint actually served, in its own vocabulary
+    # (Vertex: usageMetadata.trafficType). Empty when not reported.
+    traffic_type: str = ""
 
 
 class Provider(Protocol):

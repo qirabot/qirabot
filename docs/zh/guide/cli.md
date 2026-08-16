@@ -88,6 +88,12 @@ key,不是 AI Studio 的 key;仅支持 `gemini-vertex` 系列模型,固定走全
 provider 直接调用 Gemini Developer API 而非 Vertex,完全不涉及 Google
 Cloud(`-m gemini/gemini-3.6-flash`)。
 
+`--service-tier`(或 `QIRA_SERVICE_TIER`)选择计费档位 —— `flex` 用
+约半价换更慢、可被丢弃的容量,`priority` 加价换排在标准流量之前的
+容量。加上 `--tier-escalation` 可以在档位容量耗尽时向上升一档重试,
+而不是让整次运行失败。两者都要求 global 端点和支持该档位的模型,详见
+[配置](/zh/advanced/configuration#计费档位)。
+
 模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
 `QIRA_MODEL` 环境变量 > 内置默认值
 `gemini-vertex/gemini-3.6-flash`。只写 provider 名会选用该

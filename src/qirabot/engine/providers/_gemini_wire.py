@@ -60,12 +60,14 @@ def post_json(
     headers: dict[str, str] | Callable[[], dict[str, str]],
     provider: str,
     timeout: float,
+    on_headers: Callable[[httpx.Headers], None] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """A ``post(body) -> response dict`` callable for :func:`run_chat`.
 
     POSTs JSON and classifies transport failures under ``provider``'s name.
     ``headers`` may be a dict or a zero-arg callable — Vertex bearer tokens
-    refresh per request, API keys are static.
+    refresh per request, API keys are static. ``on_headers`` sees the response
+    headers of every successful call, for metadata the body does not carry.
     """
 
     def post(body: dict[str, Any]) -> dict[str, Any]:
@@ -78,6 +80,8 @@ def post_json(
             ) from exc
         if resp.status_code != 200:
             raise http_error(provider, resp.status_code, resp.text)
+        if on_headers is not None:
+            on_headers(resp.headers)
         data = resp.json()
         if not isinstance(data, dict):
             raise ProviderError(provider, "non-object response body")
@@ -90,6 +94,7 @@ def run_chat(
     request: ChatRequest,
     post: Any,
     part_media_resolution: bool,
+    service_tier: str = "",
 ) -> tuple[dict[str, Any], bool]:
     """Build the body and POST it (post: callable(body) -> response dict),
     falling back once when the endpoint rejects per-part mediaResolution
@@ -97,7 +102,11 @@ def run_chat(
     request re-sent. Returns (response, whether per-part mediaResolution is
     still believed supported) — callers keep that flag per provider instance
     so at most one request is ever wasted on the probe."""
-    body = build_request_body(request, part_media_resolution=part_media_resolution)
+    body = build_request_body(
+        request,
+        part_media_resolution=part_media_resolution,
+        service_tier=service_tier,
+    )
     try:
         return with_retry(lambda: post(body)), part_media_resolution
     except ProviderError as exc:
@@ -145,7 +154,9 @@ def strip_part_media_resolution(body: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def build_request_body(
-    request: ChatRequest, part_media_resolution: bool = True
+    request: ChatRequest,
+    part_media_resolution: bool = True,
+    service_tier: str = "",
 ) -> dict[str, Any]:
     generation_config: dict[str, Any] = {
         "temperature": request.param_float("temperature", 0.0),
@@ -178,6 +189,12 @@ def build_request_body(
         "generationConfig": generation_config,
         "safetySettings": _SAFETY_OFF,
     }
+
+    # Gemini Developer API tier selector: a top-level sibling of contents,
+    # snake_case even though the rest of the body is camelCase. Vertex takes
+    # the equivalent as a request header instead, and passes "" here.
+    if service_tier:
+        body["service_tier"] = service_tier
 
     full_system = request.cacheable_system_prompt + request.system_prompt
     if full_system:
@@ -301,10 +318,12 @@ def parse_response(data: dict[str, Any], model: str) -> ChatResponse:
     if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict):
         finish_reason = str(candidates[0].get("finishReason") or "")
 
+    meta = data.get("usageMetadata")
     resp = ChatResponse(
         token_usage=_usage(data),
         finish_reason=map_finish_reason(finish_reason),
         model_used=model,
+        traffic_type=str(meta.get("trafficType") or "") if isinstance(meta, dict) else "",
     )
 
     feedback = data.get("promptFeedback")

@@ -1,0 +1,343 @@
+"""Consumption tier selection: wire encoding per transport, the served-tier
+self-check, escalation on exhaustion, and config resolution.
+
+The two transports encode the same user-facing value differently — Vertex as
+a request header, the Gemini Developer API as a body field — and report what
+was actually served differently too, so both paths are covered end to end.
+"""
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+
+from qirabot.engine.providers import retry, service_tier as st
+from qirabot.engine.providers.base import ChatRequest, ErrorCategory, ProviderError
+from qirabot.engine.providers.gemini_api import GeminiApiProvider
+from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
+from qirabot.engine.providers.registry import (
+    ModelSpec,
+    check_tier_location,
+    create_provider,
+    resolve_service_tier,
+    resolve_tier_escalation,
+)
+from qirabot.engine.types import Message
+
+@pytest.fixture(autouse=True)
+def _no_backoff_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 429/503 paths here walk the full rate-limit schedule (>60s of real
+    waiting); only the sequence of requests matters.
+
+    Patched at the wire module's import site rather than on time.sleep:
+    with_retry binds its sleep default at definition time.
+    """
+    real = retry.with_retry
+    monkeypatch.setattr(
+        "qirabot.engine.providers._gemini_wire.with_retry",
+        lambda fn, **kw: real(fn, sleep=lambda _: None, **kw),
+    )
+
+
+OK_BODY: dict[str, Any] = {
+    "candidates": [{"content": {"parts": [{"text": "hi"}]}, "finishReason": "STOP"}],
+    "usageMetadata": {"promptTokenCount": 5, "candidatesTokenCount": 2},
+}
+
+
+def _ok(traffic_type: str = "") -> dict[str, Any]:
+    body = json.loads(json.dumps(OK_BODY))
+    if traffic_type:
+        body["usageMetadata"]["trafficType"] = traffic_type
+    return body
+
+
+def _request() -> ChatRequest:
+    return ChatRequest(model="gemini-3.6-flash", messages=[Message(role="user", content="hi")])
+
+
+class _Tokens:
+    def token(self) -> str:
+        return "tok"
+
+    def adc_project(self) -> str:
+        return "proj"
+
+
+def _client(
+    responses: list[httpx.Response],
+) -> tuple[httpx.Client, list[httpx.Request]]:
+    """A transport replaying `responses` in order; the last one repeats."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return responses[min(len(seen) - 1, len(responses) - 1)]
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), seen
+
+
+def _vertex(client: httpx.Client, **kw: Any) -> GeminiVertexProvider:
+    return GeminiVertexProvider("proj", "global", _Tokens(), client, **kw)  # type: ignore[arg-type]
+
+
+# -- wire encoding -----------------------------------------------------
+
+
+class TestVertexHeaders:
+    @pytest.mark.parametrize("tier", ["flex", "priority"])
+    def test_tier_sets_the_shared_request_type_header(self, tier: str) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        _vertex(client, service_tier=tier).chat(_request(), 30.0)
+        assert seen[0].headers[st.VERTEX_TIER_HEADER] == tier
+
+    def test_provisioned_throughput_is_left_first_in_line(self) -> None:
+        # Only the shared-request-type header goes out: adding
+        # X-Vertex-AI-LLM-Request-Type: shared would bypass PT capacity the
+        # user has already paid for.
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        _vertex(client, service_tier="priority").chat(_request(), 30.0)
+        assert "X-Vertex-AI-LLM-Request-Type" not in seen[0].headers
+
+    def test_standard_sends_no_tier_header(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        _vertex(client).chat(_request(), 30.0)
+        assert st.VERTEX_TIER_HEADER not in seen[0].headers
+
+    def test_tier_is_not_in_the_body(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        _vertex(client, service_tier="flex").chat(_request(), 30.0)
+        assert "service_tier" not in json.loads(seen[0].content)
+
+    def test_bearer_token_still_refreshes_per_request(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        provider = _vertex(client, service_tier="flex")
+        provider.chat(_request(), 30.0)
+        provider.chat(_request(), 30.0)
+        assert all(r.headers["Authorization"] == "Bearer tok" for r in seen)
+
+
+class TestGeminiApiBody:
+    @pytest.mark.parametrize("tier", ["flex", "priority"])
+    def test_tier_is_a_top_level_body_field(self, tier: str) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        GeminiApiProvider("k", client, service_tier=tier).chat(_request(), 30.0)
+        body = json.loads(seen[0].content)
+        # snake_case, sibling of contents — not inside generationConfig.
+        assert body["service_tier"] == tier
+        assert "service_tier" not in body["generationConfig"]
+
+    def test_standard_sends_no_tier_field(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        GeminiApiProvider("k", client).chat(_request(), 30.0)
+        assert "service_tier" not in json.loads(seen[0].content)
+
+    def test_flex_bounds_the_server_side_queue_wait(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        GeminiApiProvider("k", client, service_tier="flex").chat(_request(), 100.0)
+        # Client budget 100 * 1.5 = 150s; the server is told to give up first
+        # so the failure is a classifiable 503 rather than a dead connection.
+        assert seen[0].headers["X-Server-Timeout"] == "145"
+
+    def test_standard_does_not_bound_the_server(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        GeminiApiProvider("k", client, service_tier="priority").chat(_request(), 100.0)
+        assert "X-Server-Timeout" not in seen[0].headers
+
+
+class TestFlexTimeout:
+    def test_flex_widens_the_client_budget(self) -> None:
+        seen: list[float | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.extensions.get("timeout", {}).get("read"))
+            return httpx.Response(200, json=_ok())
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        _vertex(client, service_tier="flex").chat(_request(), 60.0)
+        _vertex(client, service_tier="priority").chat(_request(), 60.0)
+        assert seen == [60.0 * st.FLEX_TIMEOUT_SCALE, 60.0]
+
+
+# -- served-tier self-check --------------------------------------------
+
+
+class TestServedTierCheck:
+    def test_vertex_traffic_type_reaches_the_response(self) -> None:
+        client, _ = _client([httpx.Response(200, json=_ok("ON_DEMAND_PRIORITY"))])
+        resp = _vertex(client, service_tier="priority").chat(_request(), 30.0)
+        assert resp.traffic_type == "ON_DEMAND_PRIORITY"
+
+    def test_vertex_downgrade_warns_once(self, caplog: pytest.LogCaptureFixture) -> None:
+        # Over capacity, Priority is served as Standard with a 200 and no
+        # error; the only signal is trafficType.
+        client, _ = _client([httpx.Response(200, json=_ok("ON_DEMAND"))])
+        provider = _vertex(client, service_tier="priority")
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            provider.chat(_request(), 30.0)
+            provider.chat(_request(), 30.0)
+        warnings = [r for r in caplog.records if "served as standard" in r.getMessage()]
+        assert len(warnings) == 1
+
+    def test_vertex_honored_tier_is_silent(self, caplog: pytest.LogCaptureFixture) -> None:
+        client, _ = _client([httpx.Response(200, json=_ok("ON_DEMAND_FLEX"))])
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            _vertex(client, service_tier="flex").chat(_request(), 30.0)
+        assert not caplog.records
+
+    def test_standard_never_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        client, _ = _client([httpx.Response(200, json=_ok("ON_DEMAND"))])
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            _vertex(client).chat(_request(), 30.0)
+        assert not caplog.records
+
+    def test_gemini_api_reads_the_response_header(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client, _ = _client([
+            httpx.Response(200, json=_ok(), headers={st.GEMINI_SERVED_TIER_HEADER: "standard"})
+        ])
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            GeminiApiProvider("k", client, service_tier="priority").chat(_request(), 30.0)
+        assert any("served as standard" in r.getMessage() for r in caplog.records)
+
+    def test_missing_signal_is_not_a_downgrade(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # An endpoint that reports nothing must not be read as a downgrade.
+        client, _ = _client([httpx.Response(200, json=_ok())])
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            GeminiApiProvider("k", client, service_tier="flex").chat(_request(), 30.0)
+        assert not caplog.records
+
+
+# -- escalation --------------------------------------------------------
+
+
+class TestEscalate:
+    @pytest.mark.parametrize(
+        ("tier", "want"),
+        [("flex", "standard"), ("standard", "priority"), ("", "priority"), ("priority", "")],
+    )
+    def test_ladder(self, tier: str, want: str) -> None:
+        exc = ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+        assert st.escalate(tier, exc) == want
+
+    @pytest.mark.parametrize(
+        "category",
+        [ErrorCategory.AUTH, ErrorCategory.INVALID_REQUEST, ErrorCategory.CONTENT_BLOCKED],
+    )
+    def test_deterministic_failures_do_not_escalate(self, category: ErrorCategory) -> None:
+        # A different tier would fail these identically.
+        assert st.escalate("standard", ProviderError("p", "no", category=category)) == ""
+
+    def test_disabled_by_default(self) -> None:
+        client, seen = _client([httpx.Response(429, json={"error": "quota"})])
+        with pytest.raises(ProviderError):
+            _vertex(client).chat(_request(), 30.0)
+        # 1 initial + 4 rate-limit retries, and no priority attempt.
+        assert all(st.VERTEX_TIER_HEADER not in r.headers for r in seen)
+
+    def test_retries_one_rung_up_after_backoff(self) -> None:
+        client, seen = _client([
+            httpx.Response(429, json={"error": "quota"}),
+            httpx.Response(429, json={"error": "quota"}),
+            httpx.Response(429, json={"error": "quota"}),
+            httpx.Response(429, json={"error": "quota"}),
+            httpx.Response(429, json={"error": "quota"}),
+            httpx.Response(200, json=_ok("ON_DEMAND_PRIORITY")),
+        ])
+        resp = _vertex(client, tier_escalation=True).chat(_request(), 30.0)
+        assert resp.traffic_type == "ON_DEMAND_PRIORITY"
+        # The free remedy runs to exhaustion first: escalation is the last
+        # move before losing the run, not the first response to a 429.
+        assert [st.VERTEX_TIER_HEADER in r.headers for r in seen] == [
+            False, False, False, False, False, True
+        ]
+        assert seen[-1].headers[st.VERTEX_TIER_HEADER] == "priority"
+
+    def test_escalates_only_once(self) -> None:
+        client, seen = _client([httpx.Response(429, json={"error": "quota"})])
+        with pytest.raises(ProviderError):
+            _vertex(client, tier_escalation=True).chat(_request(), 30.0)
+        # Two full backoff cycles (standard, then priority), then give up.
+        assert len(seen) == 10
+
+    def test_flex_escalates_on_capacity_shedding(self) -> None:
+        # Flex is sheddable and answers 503 when it cannot be placed.
+        client, seen = _client([
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(200, json=_ok()),
+        ])
+        GeminiApiProvider("k", client, service_tier="flex", tier_escalation=True).chat(
+            _request(), 30.0
+        )
+        assert json.loads(seen[0].content)["service_tier"] == "flex"
+        # Standard is the absence of a selector, never a literal value.
+        assert "service_tier" not in json.loads(seen[-1].content)
+
+    def test_escalating_to_standard_sends_no_vertex_header(self) -> None:
+        client, seen = _client([
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(200, json=_ok()),
+        ])
+        _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
+        assert seen[0].headers[st.VERTEX_TIER_HEADER] == "flex"
+        assert st.VERTEX_TIER_HEADER not in seen[-1].headers
+
+
+# -- config resolution -------------------------------------------------
+
+
+class TestResolution:
+    def test_normalize_treats_standard_as_the_default(self) -> None:
+        assert st.normalize("") == ""
+        assert st.normalize("standard") == ""
+        assert st.normalize(" Flex ") == "flex"
+
+    def test_unknown_tier_fails_fast(self) -> None:
+        with pytest.raises(ValueError, match="unknown service_tier"):
+            st.normalize("cheap")
+
+    def test_explicit_beats_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_SERVICE_TIER", "flex")
+        assert resolve_service_tier("priority") == "priority"
+        assert resolve_service_tier("") == "flex"
+        monkeypatch.delenv("QIRA_SERVICE_TIER")
+        assert resolve_service_tier("") == ""
+
+    def test_bad_env_value_fails_fast(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_SERVICE_TIER", "turbo")
+        with pytest.raises(ValueError, match="unknown service_tier"):
+            resolve_service_tier("")
+
+    def test_escalation_is_tri_state(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_TIER_ESCALATION", "1")
+        # An explicit False must beat an env var left on elsewhere.
+        assert resolve_tier_escalation(False) is False
+        assert resolve_tier_escalation(None) is True
+        monkeypatch.setenv("QIRA_TIER_ESCALATION", "no")
+        assert resolve_tier_escalation(None) is False
+        monkeypatch.delenv("QIRA_TIER_ESCALATION")
+        assert resolve_tier_escalation(None) is False
+
+    def test_regional_endpoint_is_rejected(self) -> None:
+        # The header is accepted and ignored off the global endpoint, so the
+        # whole run would bill at standard rates while looking configured.
+        with pytest.raises(ValueError, match="global Vertex endpoint"):
+            check_tier_location("priority", "us-central1")
+        check_tier_location("", "us-central1")
+        check_tier_location("priority", "global")
+
+    def test_create_provider_threads_the_tier(self) -> None:
+        client, seen = _client([httpx.Response(200, json=_ok())])
+        provider = create_provider(
+            ModelSpec("gemini", "m"), "", "", None, client, api_key="k", tier="flex"
+        )
+        provider.chat(_request(), 30.0)
+        assert json.loads(seen[0].content)["service_tier"] == "flex"

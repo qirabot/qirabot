@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+### Consumption tiers: flex and priority
+
+- New `service_tier=` (`QIRA_SERVICE_TIER`, `--service-tier`) selects
+  `standard` (default), `flex` — roughly half price for slower, sheddable
+  capacity — or `priority`, a premium for capacity scheduled ahead of
+  standard traffic. Works on both providers: Vertex takes it as the
+  `X-Vertex-AI-LLM-Shared-Request-Type` header, the Gemini Developer API as
+  a top-level `service_tier` body field.
+- The tier you ask for is not always the tier you get, and billing follows
+  what was served. Every response is checked against the request —
+  `usageMetadata.trafficType` on Vertex, the `x-gemini-service-tier`
+  response header on the Gemini Developer API — and a mismatch logs one
+  warning per session. A regional `vertex_location` is rejected at
+  construction, since Vertex accepts the header off the global endpoint and
+  silently ignores it.
+- Flex widens the per-call timeout by 1.5x, and on the Gemini Developer API
+  bounds the queue wait server-side (`X-Server-Timeout`) so an interactive
+  step fails fast instead of hanging.
+- New `tier_escalation=` (`QIRA_TIER_ESCALATION`, `--tier-escalation`), off
+  by default: when a tier runs out of capacity, retry once one rung up
+  (`flex` → `standard` → `priority`) rather than losing an in-progress
+  `ai()` run. It fires only after the rate-limit backoff is exhausted — the
+  free remedy first.
+
+### Fix: retry backoff is jittered
+
+- Both retry schedules were fixed constants, so concurrent qirabot
+  processes brushing the same per-minute quota — a CI matrix, a
+  multi-device run — retried in lockstep and kept colliding. Every delay is
+  now spread by ±20%.
+
 ## 3.2.0 (2026-08-10)
 
 ### Breaking: the cloud-era exceptions are gone

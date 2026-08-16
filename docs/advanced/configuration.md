@@ -36,6 +36,8 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
 | `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) instead of ADC — no gcloud setup. `gemini-vertex` only, always the global endpoint, and it overrides `vertex_project`/`vertex_location`. Not an AI Studio key; `GOOGLE_API_KEY` is deliberately never read |
 | `gemini_api_key` | `QIRA_GEMINI_API_KEY`, `GEMINI_API_KEY` | `""` | [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key) for the `gemini` provider (Gemini Developer API, no Google Cloud involved) |
+| `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | Consumption tier: `standard` / `flex` / `priority` ([details](#service-tier)) |
+| `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | Retry one rung up the tier ladder when a tier runs out of capacity ([details](#service-tier)) |
 | `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
 | `language` | — | instruction's language | Response language: a tag (`"zh"`, `"ja"`, `"de"`, …) or any language name |
@@ -114,6 +116,55 @@ is their sum. See the
 [Method Reference](/reference/methods#result-objects). Where those tokens
 actually go, and which knobs on this page move them, is in
 [Controlling Cost](/advanced/cost).
+
+## Service tier
+
+`service_tier` picks how your requests are scheduled against Google's
+capacity. It moves price and latency in opposite directions:
+
+| Tier | Price | Latency | Availability |
+|---|---|---|---|
+| `flex` | ~50% of standard | Slower; the endpoint may queue the request | Sheddable — can be refused under load |
+| `standard` (default) | Baseline | Seconds | Best-effort |
+| `priority` | ~75–100% above standard | Seconds, scheduled ahead of standard traffic | Downgraded to standard when over capacity |
+
+```python
+bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
+```
+
+**You are billed for what is served, not what you ask for.** A tier the
+endpoint cannot place is served — and charged — at standard rates. Qirabot
+checks every response against the tier you requested (Vertex reports
+`usageMetadata.trafficType`, the Gemini Developer API an
+`x-gemini-service-tier` response header) and logs one warning per session on
+a mismatch.
+
+Both non-standard tiers need:
+
+- **the global endpoint** — a regional `vertex_location` is rejected at
+  construction, because Vertex accepts the request and silently ignores the
+  tier;
+- **a model that supports them** — an unsupported model downgrades silently,
+  which is what the mismatch warning is for.
+
+### Escalating on exhaustion
+
+With `tier_escalation=True`, a tier that runs out of capacity is retried once
+one rung up — `flex` → `standard` → `priority` — instead of failing the run:
+
+```python
+bot = Qirabot(service_tier="standard", tier_escalation=True)
+```
+
+It fires only after the normal rate-limit backoff is exhausted, so the free
+remedy (waiting out a rolling per-minute quota window) is always tried first.
+This is the last move before a long `ai()` run dies and loses its accumulated
+progress.
+
+It is off by default because escalating can raise your per-token rate — but
+the downside is bounded by the same billing rule above: escalating to
+`priority` costs more only if priority capacity is actually what serves the
+request.
 
 ## Thinking level
 

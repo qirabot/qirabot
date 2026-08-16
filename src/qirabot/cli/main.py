@@ -47,6 +47,8 @@ def _make_bot(
             vertex_location=ctx.obj.get("vertex_location", ""),
             vertex_api_key=ctx.obj.get("vertex_api_key", ""),
             gemini_api_key=ctx.obj.get("gemini_api_key", ""),
+            service_tier=ctx.obj.get("service_tier", ""),
+            tier_escalation=ctx.obj.get("tier_escalation"),
             thinking_level=thinking_level,
             media_resolution=media_resolution,
             language=language,
@@ -447,6 +449,22 @@ def _debug_options(record: bool = True) -> Callable[[_FC], _FC]:
     help="Gemini Developer API (AI Studio) key for the gemini provider "
     "(also read from GEMINI_API_KEY)",
 )
+@click.option(
+    "--service-tier",
+    envvar="QIRA_SERVICE_TIER",
+    type=click.Choice(["standard", "flex", "priority"]),
+    default=None,
+    help="Consumption tier: flex is half price but slower and sheddable, "
+    "priority costs more for capacity served ahead of standard traffic "
+    "(global endpoint and supported models only)",
+)
+@click.option(
+    "--tier-escalation/--no-tier-escalation",
+    envvar="QIRA_TIER_ESCALATION",
+    default=None,
+    help="On a tier running out of capacity, retry once one rung up "
+    "(flex -> standard -> priority) instead of failing the run",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -454,6 +472,8 @@ def cli(
     vertex_location: str,
     vertex_api_key: str,
     gemini_api_key: str,
+    service_tier: str | None,
+    tier_escalation: bool | None,
 ) -> None:
     """Qirabot CLI — AI automation tool.
 
@@ -466,7 +486,7 @@ def cli(
     QIRA_GEMINI_API_KEY or GEMINI_API_KEY).
 
     Global options (--vertex-project/--vertex-location/--vertex-api-key/
-    --gemini-api-key) go before the subcommand, e.g.
+    --gemini-api-key/--service-tier) go before the subcommand, e.g.
     `qirabot --vertex-project my-proj browser "..."`.
     """
     ctx.ensure_object(dict)
@@ -474,6 +494,8 @@ def cli(
     ctx.obj["vertex_location"] = vertex_location
     ctx.obj["vertex_api_key"] = vertex_api_key
     ctx.obj["gemini_api_key"] = gemini_api_key
+    ctx.obj["service_tier"] = service_tier or ""
+    ctx.obj["tier_escalation"] = tier_escalation
 
 
 @cli.command()

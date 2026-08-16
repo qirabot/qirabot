@@ -90,6 +90,14 @@ global endpoint, and overrides `--vertex-project`/`--vertex-location`.
 `gemini` provider, which calls the Gemini Developer API instead of Vertex;
 no Google Cloud is involved (`-m gemini/gemini-3.6-flash`).
 
+`--service-tier` (or `QIRA_SERVICE_TIER`) picks the consumption tier —
+`flex` for roughly half price on slower, sheddable capacity, `priority` for a
+premium on capacity served ahead of standard traffic. Add
+`--tier-escalation` to retry one rung up when a tier runs out of capacity
+instead of failing the run. Both need the global endpoint and a model that
+supports them; see
+[Configuration](/advanced/configuration#service-tier).
+
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default
 `gemini-vertex/gemini-3.6-flash`. A bare provider name selects that

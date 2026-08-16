@@ -300,6 +300,15 @@ class Qirabot:
     calls the Gemini Developer API instead of Vertex and takes an AI Studio
     key (``gemini_api_key=`` / ``QIRA_GEMINI_API_KEY`` / ``GEMINI_API_KEY``).
 
+    ``service_tier=`` (or ``QIRA_SERVICE_TIER``) picks a consumption tier:
+    ``"flex"`` halves the per-token price for slower, sheddable capacity,
+    ``"priority"`` pays a premium for capacity that is served ahead of
+    standard traffic. Both need the global endpoint and a model that supports
+    them; a request the endpoint cannot place at the chosen tier is served —
+    and billed — at the standard rate, and logs a warning. With
+    ``tier_escalation=True`` a tier that runs out of capacity is retried once
+    one rung up (flex → standard → priority) instead of failing the run.
+
     Usage::
 
         bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
@@ -316,6 +325,8 @@ class Qirabot:
         vertex_location: str = "",
         vertex_api_key: str = "",
         gemini_api_key: str = "",
+        service_tier: str = "",
+        tier_escalation: bool | None = None,
         thinking_level: str = "",
         media_resolution: str = "",
         language: str = "",
@@ -362,6 +373,8 @@ class Qirabot:
                 vertex_location=vertex_location,
                 vertex_api_key=vertex_api_key,
                 gemini_api_key=gemini_api_key,
+                service_tier=service_tier,
+                tier_escalation=tier_escalation,
                 thinking_level=thinking_level,
                 media_resolution=media_resolution
                 or os.environ.get("QIRA_MEDIA_RESOLUTION", ""),

@@ -61,6 +61,18 @@ FLEX_TIMEOUT_SCALE = 1.5
 T = TypeVar("T")
 
 
+def in_tier_attempts(tier: str, escalation: bool, default: int) -> int:
+    """Retry budget to spend inside `tier` before giving up on it.
+
+    Flex with somewhere to go gets exactly one: a queue deep enough to shed
+    or to blow the widened budget will not have drained a second later, and
+    each retry costs a full flex-sized timeout. Handing off beats fighting.
+    Without escalation the normal budget applies — there is nowhere else to
+    go, so the retries are all the caller has.
+    """
+    return 1 if tier == FLEX and escalation else default
+
+
 def normalize(value: str) -> str:
     """Validate a user-supplied tier, returning "" for the default.
 
@@ -96,13 +108,22 @@ def tier_from_traffic_type(traffic_type: str) -> str:
     return _TIERS_BY_TRAFFIC_TYPE.get(traffic_type.strip().upper(), "")
 
 
+_CAPACITY_FAILURES = (ErrorCategory.RATE_LIMITED, ErrorCategory.UNAVAILABLE)
+
+
 def escalate(tier: str, exc: ProviderError) -> str:
     """The next rung up the ladder, or "" when no other tier could help.
 
-    Only rate limits and capacity errors qualify — everything else is
-    deterministic and would fail the same way on any tier.
+    Only capacity failures qualify — everything else is deterministic and
+    would fail the same way on any tier. For flex that set includes
+    timeouts: its characteristic failure is a queue that never reaches the
+    request, which expires the client budget instead of being refused, and
+    a queue is exactly the thing another tier fixes. On the tiers that are
+    served promptly a timeout means something else — a slow generation —
+    so it stays non-escalating there.
     """
-    if exc.category not in (ErrorCategory.RATE_LIMITED, ErrorCategory.UNAVAILABLE):
+    capacity = _CAPACITY_FAILURES + ((ErrorCategory.TIMEOUT,) if tier == FLEX else ())
+    if exc.category not in capacity:
         return ""
     index = _LADDER.index(tier or STANDARD)
     if index + 1 >= len(_LADDER):

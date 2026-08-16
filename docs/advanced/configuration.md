@@ -173,10 +173,25 @@ one rung up — `flex` → `standard` → `priority` — instead of failing the 
 bot = Qirabot(service_tier="standard", tier_escalation=True)
 ```
 
-It fires only after the normal rate-limit backoff is exhausted, so the free
-remedy (waiting out a rolling per-minute quota window) is always tried first.
-This is the last move before a long `ai()` run dies and loses its accumulated
-progress.
+Out of capacity means a rate limit (429), a refusal (503), or — on flex only
+— a request whose budget expires while still queued. How soon the handoff
+happens depends on which:
+
+| Failure | Handoff |
+|---|---|
+| Rate limit | After the full backoff schedule, roughly a minute |
+| Refusal | Almost immediately |
+| Flex still queued | As soon as the call's timeout expires |
+
+A rate limit waits because waiting is free: quotas are rolling per-minute
+windows, so the next attempt often just succeeds. Escalation is the last move
+before a long `ai()` run dies and loses its accumulated progress, not the
+first response to a 429.
+
+Flex never retries in place while escalation is on — a queue that just shed
+or stalled a request will not have drained a moment later, and each flex
+retry costs a full widened timeout. With escalation off it keeps the normal
+retry budget, since there is nowhere else to go.
 
 It is off by default because escalating can raise your per-token rate — but
 the downside is bounded by the same billing rule above: escalating to

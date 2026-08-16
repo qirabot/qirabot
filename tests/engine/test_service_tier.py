@@ -232,6 +232,20 @@ class TestEscalate:
         # A different tier would fail these identically.
         assert st.escalate("standard", ProviderError("p", "no", category=category)) == ""
 
+    def test_flex_treats_a_timeout_as_a_capacity_failure(self) -> None:
+        # Flex's characteristic failure is a queue that never reaches the
+        # request: the budget expires instead of the endpoint refusing. That
+        # is the case escalation exists for, so it must not be missed.
+        exc = ProviderError("p", "slow", category=ErrorCategory.TIMEOUT)
+        assert st.escalate("flex", exc) == "standard"
+
+    @pytest.mark.parametrize("tier", ["standard", "", "priority"])
+    def test_promptly_served_tiers_do_not_escalate_on_timeout(self, tier: str) -> None:
+        # There a timeout means a slow generation, which another tier will
+        # not fix.
+        exc = ProviderError("p", "slow", category=ErrorCategory.TIMEOUT)
+        assert st.escalate(tier, exc) == ""
+
     def test_disabled_by_default(self) -> None:
         client, seen = _client([httpx.Response(429, json={"error": "quota"})])
         with pytest.raises(ProviderError):
@@ -289,6 +303,53 @@ class TestEscalate:
         _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
         assert seen[0].headers[st.VERTEX_TIER_HEADER] == "flex"
         assert st.VERTEX_TIER_HEADER not in seen[-1].headers
+
+
+class TestInTierAttempts:
+    """How much to spend fighting inside a tier before handing off."""
+
+    def test_flex_with_somewhere_to_go_tries_once(self) -> None:
+        assert st.in_tier_attempts("flex", True, 3) == 1
+
+    @pytest.mark.parametrize(
+        ("tier", "escalation"),
+        [("flex", False), ("priority", True), ("", True), ("standard", False)],
+    )
+    def test_everyone_else_keeps_the_normal_budget(self, tier: str, escalation: bool) -> None:
+        assert st.in_tier_attempts(tier, escalation, 3) == 3
+
+    def test_flex_hands_off_after_a_single_shed(self) -> None:
+        # A queue deep enough to shed will not have drained a second later,
+        # and each flex retry costs a full widened timeout.
+        client, seen = _client([
+            httpx.Response(503, json={"error": "at capacity"}),
+            httpx.Response(200, json=_ok()),
+        ])
+        _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
+        assert len(seen) == 2
+        assert seen[0].headers[st.VERTEX_TIER_HEADER] == "flex"
+
+    def test_flex_without_escalation_keeps_retrying(self) -> None:
+        # Nowhere to hand off to, so the retries are all the caller has.
+        client, seen = _client([httpx.Response(503, json={"error": "at capacity"})])
+        with pytest.raises(ProviderError):
+            _vertex(client, service_tier="flex").chat(_request(), 30.0)
+        assert len(seen) == 3
+
+    def test_a_timed_out_flex_call_escalates_instead_of_retrying(self) -> None:
+        attempts: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            tier = request.headers.get(st.VERTEX_TIER_HEADER, "standard")
+            attempts.append(tier)
+            if tier == "flex":
+                raise httpx.ReadTimeout("queue never reached us")
+            return httpx.Response(200, json=_ok())
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
+        # One flex attempt, not three: each would burn the whole budget.
+        assert attempts == ["flex", "standard"]
 
 
 # -- config resolution -------------------------------------------------

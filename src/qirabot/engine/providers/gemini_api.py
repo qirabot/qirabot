@@ -12,11 +12,13 @@ import httpx
 
 from ._gemini_wire import parse_response, post_json, run_chat
 from .base import ChatRequest, ChatResponse
+from .retry import DEFAULT_ATTEMPTS
 from .service_tier import (
     FLEX,
     FLEX_TIMEOUT_SCALE,
     GEMINI_SERVED_TIER_HEADER,
     TierCheck,
+    in_tier_attempts,
     with_escalation,
 )
 
@@ -78,7 +80,11 @@ class GeminiApiProvider:
             on_headers=lambda h: served.append(h.get(GEMINI_SERVED_TIER_HEADER, "")),
         )
         data, self._part_media_resolution = run_chat(
-            request, post, self._part_media_resolution, service_tier=tier
+            request,
+            post,
+            self._part_media_resolution,
+            service_tier=tier,
+            attempts=in_tier_attempts(tier, self._tier_escalation, DEFAULT_ATTEMPTS),
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(tier, served[-1].strip().lower() if served else "")

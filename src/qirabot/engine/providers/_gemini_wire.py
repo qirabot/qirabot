@@ -33,7 +33,7 @@ from .base import (
     http_error,
     map_finish_reason,
 )
-from .retry import with_retry
+from .retry import DEFAULT_ATTEMPTS, with_retry
 
 logger = logging.getLogger("qirabot.engine")
 
@@ -95,20 +95,24 @@ def run_chat(
     post: Any,
     part_media_resolution: bool,
     service_tier: str = "",
+    attempts: int = DEFAULT_ATTEMPTS,
 ) -> tuple[dict[str, Any], bool]:
     """Build the body and POST it (post: callable(body) -> response dict),
     falling back once when the endpoint rejects per-part mediaResolution
     (older models/endpoints): the offending part fields are stripped and the
     request re-sent. Returns (response, whether per-part mediaResolution is
     still believed supported) — callers keep that flag per provider instance
-    so at most one request is ever wasted on the probe."""
+    so at most one request is ever wasted on the probe.
+
+    ``attempts`` caps the generic retry budget; rate limits keep their own
+    longer schedule regardless."""
     body = build_request_body(
         request,
         part_media_resolution=part_media_resolution,
         service_tier=service_tier,
     )
     try:
-        return with_retry(lambda: post(body)), part_media_resolution
+        return with_retry(lambda: post(body), attempts=attempts), part_media_resolution
     except ProviderError as exc:
         fallback = (
             strip_part_media_resolution(body)
@@ -122,7 +126,7 @@ def run_chat(
             "and disabling it for this provider (model=%s)",
             request.model,
         )
-        return with_retry(lambda: post(fallback)), False
+        return with_retry(lambda: post(fallback), attempts=attempts), False
 
 
 def rejects_part_media_resolution(exc: Exception) -> bool:

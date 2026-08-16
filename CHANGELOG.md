@@ -23,8 +23,12 @@
 - New `tier_escalation=` (`QIRA_TIER_ESCALATION`, `--tier-escalation`), off
   by default: when a tier runs out of capacity, retry once one rung up
   (`flex` → `standard` → `priority`) rather than losing an in-progress
-  `ai()` run. It fires only after the rate-limit backoff is exhausted — the
-  free remedy first.
+  `ai()` run. A rate limit hands off only after the backoff schedule is
+  exhausted — waiting out a rolling quota window is free, escalating is
+  not. A refusal hands off at once, and so does a flex request still queued
+  when its budget expires: on flex a timeout *is* the capacity signal, and
+  retrying a queue that just stalled costs a full widened timeout for
+  nothing.
 
 ### Fix: retry backoff is jittered
 

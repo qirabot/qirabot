@@ -13,11 +13,13 @@ import httpx
 
 from ._gemini_wire import parse_response, post_json, run_chat
 from .base import ChatRequest, ChatResponse
+from .retry import DEFAULT_ATTEMPTS
 from .service_tier import (
     FLEX,
     FLEX_TIMEOUT_SCALE,
     VERTEX_TIER_HEADER,
     TierCheck,
+    in_tier_attempts,
     tier_from_traffic_type,
     with_escalation,
 )
@@ -99,7 +101,10 @@ class GeminiVertexProvider:
             timeout,
         )
         data, self._part_media_resolution = run_chat(
-            request, post, self._part_media_resolution
+            request,
+            post,
+            self._part_media_resolution,
+            attempts=in_tier_attempts(tier, self._tier_escalation, DEFAULT_ATTEMPTS),
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(tier, tier_from_traffic_type(resp.traffic_type))

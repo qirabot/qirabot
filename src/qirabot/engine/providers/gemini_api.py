@@ -15,11 +15,9 @@ from .base import ChatRequest, ChatResponse
 from .retry import DEFAULT_ATTEMPTS
 from .service_tier import (
     FLEX,
-    FLEX_TIMEOUT_SCALE,
     GEMINI_SERVED_TIER_HEADER,
     TierCheck,
-    retry_budget,
-    with_escalation,
+    TierLadder,
 )
 
 _PROVIDER = "gemini"
@@ -42,8 +40,7 @@ class GeminiApiProvider:
     ) -> None:
         self._api_key = api_key
         self._http = http_client
-        self._service_tier = service_tier
-        self._tier_escalation = tier_escalation
+        self._ladder = TierLadder(service_tier, tier_escalation, _PROVIDER)
         self._tier_check = TierCheck(_PROVIDER)
         # Sticky capability flag, see run_chat.
         self._part_media_resolution = True
@@ -52,20 +49,17 @@ class GeminiApiProvider:
         return f"{_BASE_URL}/models/{model}:generateContent"
 
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
-        return with_escalation(
-            self._service_tier,
-            self._tier_escalation,
-            _PROVIDER,
-            lambda tier, escalated: self._chat_once(request, timeout, tier, escalated),
+        return self._ladder.run(
+            lambda tier, escalated: self._chat_once(request, timeout, tier, escalated)
         )
 
     def _chat_once(
         self, request: ChatRequest, timeout: float, tier: str, escalated: bool
     ) -> ChatResponse:
-        budget = retry_budget(tier, self._tier_escalation, escalated, DEFAULT_ATTEMPTS)
+        budget = self._ladder.budget(escalated, DEFAULT_ATTEMPTS)
+        timeout = self._ladder.timeout_for(tier, timeout)
         headers = {"x-goog-api-key": self._api_key}
         if tier == FLEX:
-            timeout *= FLEX_TIMEOUT_SCALE
             # Flex requests queue. Bound the wait server-side rather than
             # letting an interactive step hang for the endpoint's default
             # ten minutes; over capacity we would rather fail and escalate.

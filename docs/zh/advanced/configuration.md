@@ -155,8 +155,9 @@ warning。
 
 ### 容量耗尽时升档
 
-设置 `tier_escalation=True` 后,容量耗尽的档位会向上升一档重试一次
-—— `flex` → `standard` → `priority` —— 而不是让整次运行失败:
+设置 `tier_escalation=True` 后,容量耗尽的档位会向上升一档重试
+—— `flex` → `standard` → `priority` —— 并**在本次会话剩余时间里
+留在新档位**,而不是让整次运行失败:
 
 ```python
 bot = Qirabot(service_tier="standard", tier_escalation=True)
@@ -177,9 +178,21 @@ bot = Qirabot(service_tier="standard", tier_escalation=True)
 —— 各档位常常共用同一份配额,再睡一分钟只是为等不来的容量拖住整个
 运行。
 
-开启升档时 flex 不会原地重试 —— 刚刚丢弃或卡住一个请求的队列,不会
-过一会儿就空了,而每次 flex 重试都要付一整个放宽后的超时。关闭升档时
-它保留正常的重试次数,因为没有别处可去。
+换档位对整个 bot 生命周期生效,因为另一种做法是每一步都花钱重新发现
+同一处拥塞。新建一个 `Qirabot` 会重新探测。
+
+这也改变了一次 flex 尝试值得等多久。开启升档时它只是一次**可以随时
+放弃的探测**,所以拿到的是很短的期限而不是放宽后的预算,而且不会原地
+重试 —— 刚刚丢弃或卡住一个请求的队列,不会过一会儿就空了。关闭升档时
+flex 保留放宽的预算和正常重试次数,因为等待是仅剩的选择。
+
+对拥塞档位的效果才是重点。一个 20 步任务,flex 端点在排队、standard
+正常:
+
+| | 墙钟 | 完成步数 |
+|---|---|---|
+| `tier_escalation=False` | 每步一整个超时 | 0 |
+| `tier_escalation=True` | 一次探测,之后标准档速度 | 全部 |
 
 默认关闭,因为升档可能抬高每 token 单价 —— 但下行风险被上面那条计费
 规则限死了:升到 `priority` 只有在真的由 priority 容量提供服务时才会

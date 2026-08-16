@@ -15,13 +15,10 @@ from ._gemini_wire import parse_response, post_json, run_chat
 from .base import ChatRequest, ChatResponse
 from .retry import DEFAULT_ATTEMPTS
 from .service_tier import (
-    FLEX,
-    FLEX_TIMEOUT_SCALE,
     VERTEX_TIER_HEADER,
     TierCheck,
-    retry_budget,
+    TierLadder,
     tier_from_traffic_type,
-    with_escalation,
 )
 from .vertex_auth import VertexTokenSource, vertex_base_url
 
@@ -50,8 +47,7 @@ class GeminiVertexProvider:
         self._tokens = token_source
         self._http = http_client
         self._api_key = api_key
-        self._service_tier = service_tier
-        self._tier_escalation = tier_escalation
+        self._ladder = TierLadder(service_tier, tier_escalation, _PROVIDER)
         self._tier_check = TierCheck(_PROVIDER)
         # Sticky capability flag: flips off on the first endpoint rejection
         # of per-part mediaResolution, so only one request is ever wasted.
@@ -81,19 +77,15 @@ class GeminiVertexProvider:
         return headers
 
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
-        return with_escalation(
-            self._service_tier,
-            self._tier_escalation,
-            _PROVIDER,
-            lambda tier, escalated: self._chat_once(request, timeout, tier, escalated),
+        return self._ladder.run(
+            lambda tier, escalated: self._chat_once(request, timeout, tier, escalated)
         )
 
     def _chat_once(
         self, request: ChatRequest, timeout: float, tier: str, escalated: bool
     ) -> ChatResponse:
-        budget = retry_budget(tier, self._tier_escalation, escalated, DEFAULT_ATTEMPTS)
-        if tier == FLEX:
-            timeout *= FLEX_TIMEOUT_SCALE
+        budget = self._ladder.budget(escalated, DEFAULT_ATTEMPTS)
+        timeout = self._ladder.timeout_for(tier, timeout)
         # The header factory is passed as a callable: ADC bearer tokens
         # refresh per request, unlike a static API key.
         post = post_json(

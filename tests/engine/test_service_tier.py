@@ -355,6 +355,79 @@ class TestEscalate:
         assert st.VERTEX_TIER_HEADER not in seen[-1].headers
 
 
+class TestStickiness:
+    """Escalation parks: a congested tier is discovered once per provider,
+    not re-discovered on every step of an ai() run."""
+
+    def _congested_then_ok(self) -> tuple[httpx.Client, list[str]]:
+        tiers: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            tier = request.headers.get(st.VERTEX_TIER_HEADER, "standard")
+            tiers.append(tier)
+            if tier == "flex":
+                return httpx.Response(503, json={"error": "at capacity"})
+            return httpx.Response(200, json=_ok())
+
+        return httpx.Client(transport=httpx.MockTransport(handler)), tiers
+
+    def test_later_calls_skip_the_congested_tier(self) -> None:
+        client, tiers = self._congested_then_ok()
+        provider = _vertex(client, service_tier="flex", tier_escalation=True)
+        for _ in range(4):
+            provider.chat(_request(), 30.0)
+        # One probe, then straight to standard for the rest of the session.
+        assert tiers == ["flex", "standard", "standard", "standard", "standard"]
+
+    def test_it_warns_once_and_names_the_new_home(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client, _ = self._congested_then_ok()
+        provider = _vertex(client, service_tier="flex", tier_escalation=True)
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            provider.chat(_request(), 30.0)
+            provider.chat(_request(), 30.0)
+        moves = [r for r in caplog.records if "rest of this session" in r.getMessage()]
+        assert len(moves) == 1
+
+    def test_without_escalation_it_keeps_trying_the_tier(self) -> None:
+        client, tiers = self._congested_then_ok()
+        provider = _vertex(client, service_tier="flex")
+        for _ in range(2):
+            with pytest.raises(ProviderError):
+                provider.chat(_request(), 30.0)
+        # Nowhere to park, so every call still asks for flex.
+        assert set(tiers) == {"flex"}
+
+
+class TestFlexProbeBudget:
+    def _read_timeout(self, provider: Any, budget: float) -> float:
+        seen: list[float] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.extensions["timeout"]["read"])
+            return httpx.Response(200, json=_ok())
+
+        provider._http = httpx.Client(transport=httpx.MockTransport(handler))
+        provider.chat(_request(), budget)
+        return seen[0]
+
+    def test_a_probe_gets_a_short_leash(self) -> None:
+        # With standard one escalation away, waiting out a queue is pure
+        # stall: cap the attempt well below the call's own budget.
+        provider = _vertex(_client([])[0], service_tier="flex", tier_escalation=True)
+        assert self._read_timeout(provider, 120.0) == st.FLEX_PROBE_TIMEOUT
+
+    def test_a_probe_never_exceeds_the_callers_budget(self) -> None:
+        provider = _vertex(_client([])[0], service_tier="flex", tier_escalation=True)
+        assert self._read_timeout(provider, 10.0) == 10.0
+
+    def test_without_escalation_flex_keeps_the_widened_budget(self) -> None:
+        # Nowhere to hand off to, so waiting is the only option.
+        provider = _vertex(_client([])[0], service_tier="flex")
+        assert self._read_timeout(provider, 120.0) == 120.0 * st.FLEX_TIMEOUT_SCALE
+
+
 class TestRetryBudget:
     """How much to spend fighting inside a tier before handing off."""
 

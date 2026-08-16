@@ -45,8 +45,10 @@ _SAFETY_OFF = [
 ]
 
 # Establishing the TCP/TLS connection is unrelated to how long the model
-# thinks, so it gets its own short budget.
-CONNECT_TIMEOUT = 10.0
+# thinks, so it gets its own short budget. Generous for a healthy path to a
+# cloud endpoint (sub-second) while keeping the retried worst case in the
+# low tens of seconds rather than the low minutes.
+CONNECT_TIMEOUT = 5.0
 
 _SCHEMA_TYPES = {
     "string": "STRING",

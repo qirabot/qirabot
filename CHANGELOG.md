@@ -30,6 +30,13 @@
   retrying a queue that just stalled costs a full widened timeout for
   nothing. The escalated call itself skips the quota window: the tier below
   already waited one out and the tiers commonly share the bucket.
+- Escalation is sticky. It applies to the whole session, not one call —
+  otherwise a congested tier charges every step of an `ai()` run the full
+  cost of rediscovering the same congestion. A flex attempt is also given a
+  short leash rather than the widened budget while escalation is on, since
+  it is a probe worth abandoning. Against a queued flex endpoint with
+  standard healthy, a 20-step run goes from completing nothing to
+  completing everything after a single probe.
 
 ### Fix: a slow model call is no longer retried like a transport blip
 
@@ -42,8 +49,9 @@
 - Failures that never reached the model — connect, write and pool timeouts —
   are classified `UNAVAILABLE` instead of `TIMEOUT` and stay retryable, which
   is what the old blanket rule was actually for.
-- Connect gets its own 10s budget rather than inheriting the call's. An
-  unreachable endpoint used to take the full timeout to report itself.
+- Connect gets its own 5s budget rather than inheriting the call's. An
+  unreachable endpoint used to take the full timeout to report itself;
+  including retries it now surfaces in under 20s.
 
 ### Fix: retry backoff is jittered
 

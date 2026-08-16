@@ -56,8 +56,18 @@ GEMINI_SERVED_TIER_HEADER = "x-gemini-service-tier"
 # queueing rather than slower generation. So a budget needs absolute
 # headroom, not a proportional bump — 1.5x leaves 60s spare on a decide and
 # 30s on a locate. Deliberately not the documented worst-case SLO, which is
-# in minutes and would turn a stalled step into a hang.
+# in minutes and would turn a stalled step into a hang. Applies only with
+# escalation off; see FLEX_PROBE_TIMEOUT for the other case.
 FLEX_TIMEOUT_SCALE = 1.5
+
+# With escalation on, a flex attempt is a probe we are happy to abandon, so
+# it gets a short leash instead of the widened one: standard is right there,
+# and every second spent waiting on a queue is a second the run is stalled.
+# Sized off the observed served-flex latency (low tens of seconds) with room
+# to spare — a flex call that blows this is queued, not merely slow. Callers
+# who would rather wait than pay standard rates turn escalation off, which
+# restores the widened budget.
+FLEX_PROBE_TIMEOUT = 30.0
 
 T = TypeVar("T")
 
@@ -149,37 +159,77 @@ def escalate(tier: str, exc: ProviderError) -> str:
     return _LADDER[index + 1]
 
 
-def with_escalation(
-    tier: str,
-    enabled: bool,
-    provider: str,
-    call: Callable[[str, bool], T],
-) -> T:
-    """Run ``call(tier)``, retrying once one rung up when the tier is out of
-    capacity.
+class TierLadder:
+    """Per-provider tier state: where requests go, and whether escalation has
+    parked them somewhere other than the configured tier.
 
-    Placed *outside* the transport's own backoff on purpose: waiting out a
-    rolling per-minute quota window is free, escalating is not, so the free
-    remedy is exhausted first and this is the last move before giving up and
-    losing an in-progress run.
+    Escalation is sticky. Without that it repeats per call, and the probe is
+    exactly the expensive failure it exists to avoid — a congested tier would
+    charge every step of an `ai()` run the full cost of discovering it is
+    still congested. One probe per provider decides it; a fresh bot probes
+    again.
     """
-    try:
-        return call(tier, False)
-    except ProviderError as exc:
-        target = escalate(tier, exc) if enabled else ""
-        if not target:
-            raise
-        logger.warning(
-            "%s: %s tier is out of capacity (%s); retrying once on %s — "
-            "billed at the %s rate only if %s is actually served",
-            provider,
-            tier or STANDARD,
-            exc.category.value,
-            target,
-            target,
-            target,
-        )
-        return call(wire_tier(target), True)
+
+    def __init__(self, tier: str, escalation: bool, provider: str) -> None:
+        self._escalation = escalation
+        self._provider = provider
+        self._tier = tier
+        self._parked = False
+
+    @property
+    def parked(self) -> bool:
+        return self._parked
+
+    def _may_escalate(self) -> bool:
+        return self._escalation and not self._parked
+
+    def budget(self, escalated: bool, default: int) -> RetryBudget:
+        return retry_budget(self._tier, self._may_escalate(), escalated, default)
+
+    def timeout_for(self, tier: str, budget: float) -> float:
+        """The client budget for one attempt at `tier`.
+
+        A flex attempt we are willing to abandon gets a short leash; one we
+        have to live with gets the widened budget instead."""
+        if tier != FLEX:
+            return budget
+        if self._may_escalate():
+            return min(budget, FLEX_PROBE_TIMEOUT)
+        return budget * FLEX_TIMEOUT_SCALE
+
+    def run(self, call: Callable[[str, bool], T]) -> T:
+        """Run ``call(tier, escalated)``, retrying once one rung up when the
+        tier is out of capacity, then staying there.
+
+        Placed *outside* the transport's own backoff on purpose: waiting out
+        a rolling per-minute quota window is free, escalating is not, so the
+        free remedy is exhausted first and this is the last move before
+        giving up and losing an in-progress run.
+        """
+        tier = self._tier
+        try:
+            return call(tier, False)
+        except ProviderError as exc:
+            target = escalate(tier, exc) if self._may_escalate() else ""
+            if not target:
+                raise
+            # Park before the retry, not after it: what we learned is that
+            # the tier below is congested, and that is true whether or not
+            # this particular call goes on to succeed.
+            self._tier = wire_tier(target)
+            self._parked = True
+            logger.warning(
+                "%s: %s tier is out of capacity (%s); moving to %s for the "
+                "rest of this session — billed at the %s rate only when %s "
+                "is actually served",
+                self._provider,
+                tier or STANDARD,
+                exc.category.value,
+                target,
+                target,
+                target,
+            )
+            return call(self._tier, True)
 
 
 class TierCheck:

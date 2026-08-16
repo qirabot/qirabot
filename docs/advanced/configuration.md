@@ -166,8 +166,9 @@ Both non-standard tiers need:
 
 ### Escalating on exhaustion
 
-With `tier_escalation=True`, a tier that runs out of capacity is retried once
-one rung up — `flex` → `standard` → `priority` — instead of failing the run:
+With `tier_escalation=True`, a tier that runs out of capacity is retried one
+rung up — `flex` → `standard` → `priority` — and **stays there for the rest
+of the session**, instead of failing the run:
 
 ```python
 bot = Qirabot(service_tier="standard", tier_escalation=True)
@@ -190,10 +191,24 @@ first response to a 429. The escalated call does not wait out a second
 window — the tiers commonly draw on the same quota, so another minute of
 sleeping would stall the run for capacity that is not coming.
 
-Flex never retries in place while escalation is on — a queue that just shed
-or stalled a request will not have drained a moment later, and each flex
-retry costs a full widened timeout. With escalation off it keeps the normal
-retry budget, since there is nowhere else to go.
+Moving is permanent for the life of the bot because the alternative is
+paying to rediscover the same congestion on every step. A new `Qirabot`
+probes again.
+
+That also changes what a flex attempt is worth waiting for. With escalation
+on it is a probe you are happy to abandon, so it gets a short leash rather
+than the widened budget, and it is never retried in place — a queue that
+just shed or stalled a request will not have drained a moment later. With
+escalation off, flex keeps the widened budget and the normal retries, since
+waiting is the only option left.
+
+The effect on a congested tier is the whole point. A 20-step run against a
+queued flex endpoint, standard healthy:
+
+| | Wall clock | Steps completed |
+|---|---|---|
+| `tier_escalation=False` | one full timeout per step | none |
+| `tier_escalation=True` | one probe, then standard speed | all |
 
 It is off by default because escalating can raise your per-token rate — but
 the downside is bounded by the same billing rule above: escalating to

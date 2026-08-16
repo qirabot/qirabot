@@ -212,9 +212,30 @@ Config seen: model=gemini-3.6-flash location=global. …
 2. **模型不支持该档位。** 各档位的覆盖范围不同,而且会变,查 Google
    的列表:[Vertex](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo)
    或 [Gemini Developer API](https://ai.google.dev/gemini-api/docs/pricing)。
+   两个档位在这里的失败方式不同:flex 遇到不支持的模型会直接返回 `400`
+   并点名(`Flex API is not supported for model: …`),priority 则只是
+   降级。所以只要 flex 有结果返回,就说明模型是支持的。
 3. **权限或容量。** Vertex Priority PayGo 有组织级的 ramp limit,
-   Gemini Developer API 则把 priority 限制在更高的付费层级。**这一层
-   API 侧看不到** —— 去 Cloud Console 查配额,或者问账号的负责人。
+   Gemini Developer API 则把 priority 限制在更高的付费层级。响应里没有
+   任何字段会说明这一层 —— 去 Cloud Console 查配额,或者问账号负责人。
+
+要把"账号没权限"和"自己配置有问题"分开,最快的办法是把 Qirabot 摘出去,
+直接问端点:
+
+```bash
+curl -sS -X POST \
+  "https://aiplatform.googleapis.com/v1/projects/PROJECT/locations/global\
+/publishers/google/models/gemini-3.6-flash:generateContent" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" \
+  -H "X-Vertex-AI-LLM-Shared-Request-Type: priority" \
+  -d '{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}' \
+  | grep trafficType
+```
+
+返回 `ON_DEMAND_PRIORITY` 说明档位可用,问题出在 SDK 这边的配置;返回
+`ON_DEMAND` 说明账号拿不到,改客户端没有任何用。把 header 换成 `flex`
+就能同样验证 flex。
 
 运行报告的头部会给档位单独一行,紧挨模型。两者不一致时会直接写清楚 ——
 `priority — served as standard, and billed at that rate` —— 没配置档位则

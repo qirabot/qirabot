@@ -228,10 +228,32 @@ used so you can rule out the first two at a glance:
    changes over time; check Google's list for
    [Vertex](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo)
    or the [Gemini Developer API](https://ai.google.dev/gemini-api/docs/pricing).
+   The two tiers fail differently here: flex on an unsupported model is a
+   hard `400` naming it (`Flex API is not supported for model: …`), while
+   priority just downgrades. So if you asked for flex and got a result at
+   all, the model supports it.
 3. **Entitlement or capacity.** Vertex Priority PayGo carries
    organization-level ramp limits, and the Gemini Developer API gates
-   priority behind its higher paid tiers. This is invisible to the API —
-   check your quotas in the Cloud Console, or ask whoever owns the account.
+   priority behind its higher paid tiers. No response field reports this, so
+   check your quotas in the Cloud Console or ask whoever owns the account.
+
+To separate an entitlement problem from anything in your own setup, take
+Qirabot out of the loop and ask the endpoint directly:
+
+```bash
+curl -sS -X POST \
+  "https://aiplatform.googleapis.com/v1/projects/PROJECT/locations/global\
+/publishers/google/models/gemini-3.6-flash:generateContent" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "Content-Type: application/json" \
+  -H "X-Vertex-AI-LLM-Shared-Request-Type: priority" \
+  -d '{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}' \
+  | grep trafficType
+```
+
+`ON_DEMAND_PRIORITY` means the tier works and something in the SDK config is
+at fault; plain `ON_DEMAND` means the account cannot get it, and no client
+change will help. Swap the header for `flex` to check that tier.
 
 The run report gives the tier its own header row next to the model. When
 the two differ it says so in words — `priority — served as standard, and

@@ -25,9 +25,14 @@ _CSS = """
 body { font: 14px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
        margin: 0; padding: 24px; background: #f6f7f9; color: #1a1a1a; }
 h1 { font-size: 20px; margin: 0 0 4px; }
-.meta { color: #666; font-size: 12px; margin-bottom: 16px; }
-.stats { color: #555; font-size: 12px; margin: -10px 0 16px;
-         font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Run facts as label/value pairs. Each value used to be a bare fragment in
+   one long dot-separated line, which asked the reader to know what every
+   string was; the label column answers that and lets values grow. */
+.runinfo { display: grid; grid-template-columns: max-content minmax(0, 1fr);
+           gap: 4px 16px; font-size: 12px; color: #555; margin-bottom: 18px; }
+.runinfo dt { color: #888; }
+.runinfo dd { margin: 0; }
+.runinfo .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tally { margin-bottom: 10px; }
 .tally .badge { font-size: 14px; padding: 5px 14px; }
 /* One judged task per grid row: status badge, then name. The status column
@@ -125,7 +130,8 @@ video { max-width: 100%; max-height: 70vh; display: block; border-radius: 8px;
   .warn { background: #3a2f12; color: #f0d493; }
   .steps > div.warn-row { background: #332a14; }
   .steps > .act.warn-row { color: #e8c877; }
-  .stats { color: #9aa0a6; }
+  .runinfo { color: #9aa0a6; }
+  .runinfo dt { color: #6f757c; }
   .when a { color: #a9c7ff; }
   .detail .decision { color: #9aa0a6; }
   .notice { background: #3a2f12; color: #f0d493; }
@@ -279,21 +285,67 @@ def fmt_ms(ms: int) -> str:
     return f"{mins // 60}h{mins % 60:02d}m"
 
 
-def _render_stats(stats: dict[str, int]) -> str:
-    """What the run did: steps · tokens · timing.
+def _render_run_info(
+    stats: dict[str, int], when: str, task_id: str, model: str, tier: str
+) -> str:
+    """The run's facts as labelled rows.
 
-    Model and tier are configuration, not outcome, and live on the meta line
-    with the timestamp — keeping both lines short enough to read at a glance
-    instead of one that wraps mid-item.
-
-    The headline count is ``total_steps`` — every timeline entry — with the
-    AI-decision subset in parentheses.
-    Returns an empty string only when nothing ran at all: a purely local run
-    (0 AI steps) still gets its step count.
+    Everything here used to be two dot-separated lines of bare fragments, which
+    left the reader to work out what each string was — an opaque id, a model
+    name, "in/out/think", a duration of something unstated. A label column
+    answers all of that, and rows appear only when they have something to say.
     """
+    rows: list[tuple[str, str]] = [("Run", when)]
+    if model:
+        rows.append(("Model", model))
+    if tier:
+        rows.append(("Tier", tier))
+
     total_steps = stats.get("total_steps", 0)
-    if not total_steps:
-        return ""
+    if total_steps:
+        ai = stats.get("ai_steps", 0)
+        # Naming the AI subset only matters when some steps were not: an
+        # all-AI run reads as noise otherwise.
+        detail = "all AI-decided" if ai == total_steps else f"{ai} AI-decided"
+        rows.append(("Steps", f"{total_steps} ({detail})"))
+
+    tokens = _token_summary(stats)
+    if tokens:
+        rows.append(("Tokens", tokens))
+
+    step_ms = stats.get("step_duration_ms", 0)
+    if step_ms:
+        rows.append(("Time", _time_summary(step_ms, stats.get("llm_decision_duration_ms", 0))))
+
+    if task_id:
+        rows.append(("Run ID", task_id))
+
+    cells = []
+    for label, value in rows:
+        css = " class='id'" if label == "Run ID" else ""
+        cells.append(f"<dt>{html.escape(label)}</dt>"
+                     f"<dd{css}>{html.escape(value)}</dd>")
+    return f"<dl class='runinfo'>{''.join(cells)}</dl>"
+
+
+def _time_summary(step_ms: int, llm_ms: int) -> str:
+    """Time in steps, and how much of it was the model.
+
+    A step is more than its model call — a screenshot, the action, the settle
+    pause — so the split says where a slow run actually went. Printing both
+    numbers when they are the same reads like a bug, so near-total model time
+    is stated in words instead.
+    """
+    total = fmt_ms(step_ms)
+    if not llm_ms:
+        return f"{total} in steps"
+    if llm_ms >= step_ms * 0.95:
+        return f"{total} in steps — almost all of it waiting on the model"
+    return f"{total} in steps · {fmt_ms(llm_ms)} waiting on the model"
+
+
+def _token_summary(stats: dict[str, int]) -> str:
+    """Token spend in words rather than API field names."""
     inp = stats.get("input_tokens", 0)
     out = stats.get("output_tokens", 0)
     think = stats.get("thinking_tokens", 0)
@@ -303,20 +355,17 @@ def _render_stats(stats: dict[str, int]) -> str:
     # already counted within output tokens (Anthropic semantics; the Gemini
     # provider normalizes to match) — do not add it again.
     total = inp + cache + out
-    bits = [f"{total_steps} steps ({stats.get('ai_steps', 0)} AI)"]
-    if total:
-        detail = [f"in {fmt_tokens(inp)}"]
-        if cache:
-            detail.append(f"cache {fmt_tokens(cache)}")
-        detail.append(f"out {fmt_tokens(out)}")
-        if think:
-            # Anthropic reports no separate thinking count (it stays 0 there)
-            # — show the split only when a provider actually supplies it.
-            detail.append(f"think {fmt_tokens(think)}")
-        bits.append(f"{fmt_tokens(total)} tokens ({' / '.join(detail)})")
-    if stats.get("step_duration_ms"):
-        bits.append(fmt_ms(stats["step_duration_ms"]))
-    return f"<div class='stats'>{html.escape(' · '.join(bits))}</div>"
+    if not total:
+        return ""
+    detail = [f"{fmt_tokens(inp)} prompt"]
+    if cache:
+        detail.append(f"{fmt_tokens(cache)} cached")
+    detail.append(f"{fmt_tokens(out)} response")
+    if think:
+        # Anthropic reports no separate thinking count (it stays 0 there) —
+        # show the split only when a provider actually supplies it.
+        detail.append(f"{fmt_tokens(think)} thinking")
+    return f"{fmt_tokens(total)} total — {', '.join(detail)}"
 
 
 _LIGHTBOX_JS = """
@@ -466,20 +515,11 @@ def write_html(
     # from an old log still shows when the run happened. Falls back to "now"
     # for logs predating the "ts" field.
     first_ts = next((e["ts"] for e in log if e.get("ts")), 0.0)
-    meta = time.strftime(
+    when = time.strftime(
         "%Y-%m-%d %H:%M:%S",
         time.localtime(first_ts) if first_ts else time.localtime(),
     )
-    if task_id:
-        meta += f" · task {html.escape(task_id)}"
-    if model:
-        meta += f" · {html.escape(model)}"
-    if tier:
-        # Which tier was served sets the per-token rate, so a report has to
-        # name it to be reconcilable against a bill.
-        meta += f" · tier {html.escape(tier)}"
-    parts.append(f"<div class='meta'>{meta}</div>")
-    parts.append(_render_stats(stats))
+    parts.append(_render_run_info(stats or {}, when, task_id, model, tier))
 
     # Overall tally, on its own line: the report's headline answer ("how many
     # tasks ran, how many passed"), kept clear of the per-task badges below.

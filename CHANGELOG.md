@@ -38,12 +38,22 @@
   standard healthy, a 20-step run goes from completing nothing to
   completing everything after a single probe.
 
-- The run report names the tier in its header alongside the model, showing
-  the served side when it differs from the one requested. Which tier ran
-  decides the per-token rate, so a report that omitted it could not be
-  reconciled against a bill. Model and tier moved up to the timestamp line
-  in the process: they are configuration, and leaving them among the step
-  and token counts made a single line long enough to wrap mid-item.
+- The run report gives the tier its own header row, spelling out the served
+  side when it differs from the one requested. Which tier ran decides the
+  per-token rate, so a report that omitted it could not be reconciled
+  against a bill.
+
+### The run report header is labelled
+
+- The header was two dot-separated lines of bare fragments — an opaque id, a
+  model name, `in/out/think`, a duration of something unstated — which left
+  the reader to work out what each string was. It is now a label/value grid:
+  Run, Model, Tier, Steps, Tokens, Time, Run ID, each row present only when
+  it has something to say.
+- Token counts are named rather than abbreviated (`15.5k total — 15.1k
+  prompt, 410 response`), and the duration says what it measures. The report
+  now also shows how much of the step time was spent waiting on the model,
+  a figure the timeline had always collected but never rendered.
 
 ### Fix: a slow model call is no longer retried like a transport blip
 

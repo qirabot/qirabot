@@ -218,18 +218,22 @@ class TierLadder:
 
 
 def tier_label(configured: str, served: tuple[str, ...]) -> str:
-    """Run-summary fragment naming the tier that was billed.
+    """Run-report text naming the tier that was billed.
 
     Empty for an unconfigured run: standard is the default, and saying so on
-    every report is noise. When a configured tier was not what actually ran —
-    a downgrade, or escalation moving the run — both are shown, because the
-    bill follows the served side.
+    every report is noise. When the tier asked for is not the one that ran,
+    the served side is spelled out rather than abbreviated — it is the side
+    that set the rate, and a reader should not have to decode it.
     """
     if not configured:
         return ""
-    if not served or set(served) == {configured}:
+    others = [t for t in dict.fromkeys(served) if t != configured]
+    if not others:
         return configured
-    return f"{configured} (served: {', '.join(served)})"
+    names = ", ".join(others)
+    if configured in served:
+        return f"{configured} — some calls served as {names}, and billed at that rate"
+    return f"{configured} — served as {names}, and billed at that rate"
 
 
 class TierCheck:

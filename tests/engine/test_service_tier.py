@@ -380,12 +380,16 @@ class TestTierLabel:
     def test_an_honoured_tier_is_named_plainly(self) -> None:
         assert st.tier_label("flex", ("flex",)) == "flex"
 
-    def test_a_downgrade_shows_both_sides(self) -> None:
-        # The bill follows the served side, so it cannot be left out.
-        assert st.tier_label("priority", ("standard",)) == "priority (served: standard)"
+    def test_a_downgrade_spells_out_what_ran(self) -> None:
+        # The bill follows the served side, so it cannot be left to decoding.
+        assert st.tier_label("priority", ("standard",)) == (
+            "priority — served as standard, and billed at that rate"
+        )
 
-    def test_a_run_that_moved_lists_what_it_ran_on(self) -> None:
-        assert st.tier_label("flex", ("flex", "standard")) == "flex (served: flex, standard)"
+    def test_a_partly_served_run_says_so(self) -> None:
+        assert st.tier_label("flex", ("flex", "standard")) == (
+            "flex — some calls served as standard, and billed at that rate"
+        )
 
     def test_no_signal_falls_back_to_the_configured_tier(self) -> None:
         assert st.tier_label("flex", ()) == "flex"

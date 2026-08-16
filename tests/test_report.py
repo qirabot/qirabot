@@ -286,7 +286,7 @@ class TestSectionErrorBanners:
         assert '<span class="badge fail">ERROR</span><span class="tname" title="b">' in html
 
 
-class TestStatsLine:
+class TestRunInfo:
     def test_total_steps_headline_with_ai_subset(self, tmp_path):
         out = write_html(
             [_entry("a"), _entry("a"), _entry("a")],
@@ -296,7 +296,7 @@ class TestStatsLine:
                    "step_duration_ms": 1200},
         )
         html = out.read_text(encoding="utf-8")
-        assert "3 steps (2 AI)" in html
+        assert "<dt>Steps</dt><dd>3 (2 AI-decided)</dd>" in html
 
     def test_pure_local_run_still_renders_stats(self, tmp_path):
         # 0 AI steps used to suppress the stats line entirely; a purely local
@@ -307,9 +307,9 @@ class TestStatsLine:
             stats={"total_steps": 2, "ai_steps": 0},
         )
         html = out.read_text(encoding="utf-8")
-        assert "2 steps (0 AI)" in html
+        assert "<dt>Steps</dt><dd>2 (0 AI-decided)</dd>" in html
 
-    def test_tier_and_model_sit_on_the_meta_line(self, tmp_path):
+    def test_every_value_carries_a_label(self, tmp_path):
         out = write_html(
             [_entry("a")],
             tmp_path / "report.html",
@@ -319,22 +319,41 @@ class TestStatsLine:
             tier="priority (served: standard)",
         )
         html = out.read_text(encoding="utf-8")
-        # Configuration belongs with the timestamp, not among the outcome
-        # counts — one line each, neither long enough to wrap mid-item.
-        meta = html.split("class='meta'>")[1].split("</div>")[0]
-        stats = html.split("class='stats'>")[1].split("</div>")[0]
-        assert "tier priority (served: standard)" in meta
-        assert "gemini-vertex/gemini-3.6-flash" in meta
-        assert "tier" not in stats and "gemini" not in stats
+        # A reader should never have to work out what a bare string is.
+        assert "<dt>Model</dt><dd>gemini-vertex/gemini-3.6-flash</dd>" in html
+        assert "<dt>Tier</dt><dd>priority (served: standard)</dd>" in html
+        assert "<dt>Tokens</dt><dd>150 total — 100 prompt, 50 response</dd>" in html
 
-    def test_an_unconfigured_tier_adds_nothing(self, tmp_path):
+    def test_time_names_where_it_went(self, tmp_path):
+        out = write_html(
+            [_entry("a")],
+            tmp_path / "report.html",
+            stats={"total_steps": 1, "ai_steps": 1,
+                   "step_duration_ms": 10_000, "llm_decision_duration_ms": 4_000},
+        )
+        html = out.read_text(encoding="utf-8")
+        assert "<dt>Time</dt><dd>10.0s in steps · 4.0s waiting on the model</dd>" in html
+
+    def test_an_all_model_run_says_so_in_words(self, tmp_path):
+        # Printing the same number twice reads like a bug.
+        out = write_html(
+            [_entry("a")],
+            tmp_path / "report.html",
+            stats={"total_steps": 1, "ai_steps": 1,
+                   "step_duration_ms": 10_000, "llm_decision_duration_ms": 9_900},
+        )
+        html = out.read_text(encoding="utf-8")
+        assert "almost all of it waiting on the model" in html
+        assert "9.9s" not in html
+
+    def test_an_unconfigured_tier_gets_no_row(self, tmp_path):
         out = write_html(
             [_entry("a")],
             tmp_path / "report.html",
             stats={"total_steps": 1, "ai_steps": 1},
             model="gemini-vertex/gemini-3.6-flash",
         )
-        assert "tier " not in out.read_text(encoding="utf-8")
+        assert "<dt>Tier</dt>" not in out.read_text(encoding="utf-8")
 
     def test_legacy_stats_without_total_steps_fall_back_to_log_length(self, tmp_path):
         out = write_html(
@@ -343,4 +362,4 @@ class TestStatsLine:
             stats={"ai_steps": 1},
         )
         html = out.read_text(encoding="utf-8")
-        assert "1 steps (1 AI)" in html
+        assert "<dt>Steps</dt><dd>1 (all AI-decided)</dd>" in html

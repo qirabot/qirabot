@@ -124,13 +124,26 @@ capacity. It moves price and latency in opposite directions:
 
 | Tier | Price | Latency | Availability |
 |---|---|---|---|
-| `flex` | ~50% of standard | Slower; the endpoint may queue the request | Sheddable — can be refused under load |
+| `flex` | ~50% of standard | Queued — see the warning below | Sheddable — can be refused under load |
 | `standard` (default) | Baseline | Seconds | Best-effort |
 | `priority` | ~75–100% above standard | Seconds, scheduled ahead of standard traffic | Downgraded to standard when over capacity |
 
 ```python
 bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
 ```
+
+::: warning Flex is a poor fit for multi-step runs on Vertex
+Flex's cost there is a near-constant queueing delay per request, not slower
+generation — measured at **+12–14s per call** on `gemini-3.5-flash`
+(2026-08). Because it does not scale with response length, a short
+decide/locate call pays it in full. A 3-step task that takes 8s of model
+time on standard took 50s on flex.
+
+An `ai()` run makes one call per step, so the penalty multiplies. Reach for
+flex on one-shot, unattended work where a slower answer is free — not on
+interactive automation. The Gemini Developer API's flex tier behaves
+differently and was far cheaper in the same test.
+:::
 
 **You are billed for what is served, not what you ask for.** A tier the
 endpoint cannot place is served — and charged — at standard rates. Qirabot

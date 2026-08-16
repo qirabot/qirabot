@@ -85,5 +85,10 @@ class GeminiApiProvider:
             wait_out_quota=budget.wait_out_quota,
         )
         resp = parse_response(data, request.model)
-        self._tier_check.observe(tier, served[-1].strip().lower() if served else "")
+        self._tier_check.observe(
+            tier,
+            served[-1].strip().lower() if served else "",
+            request.model,
+            "endpoint=generativelanguage",
+        )
         return resp

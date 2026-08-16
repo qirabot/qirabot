@@ -236,26 +236,38 @@ class TierCheck:
     """One-shot warning when the endpoint serves a tier other than the one
     requested.
 
-    Sticky by design: a non-global Vertex location, a model without tier
-    support, or an account lacking Priority entitlement all downgrade every
-    single request, and the engine makes one call per step.
+    The endpoints report no reason for a downgrade — a downgraded request is
+    an ordinary 200 whose only tell is the served-tier field — so the warning
+    names the config it can see instead, letting the reader rule out the two
+    documented preconditions and land on the third cause: entitlement.
+
+    Sticky by design: whatever caused one downgrade downgrades every request,
+    and the engine makes one call per step.
     """
 
     def __init__(self, provider: str) -> None:
         self._provider = provider
         self._warned = False
 
-    def observe(self, requested: str, served: str) -> None:
+    def observe(self, requested: str, served: str, model: str, where: str) -> None:
         if self._warned or not requested or not served or served == requested:
             return
         self._warned = True
         logger.warning(
             "%s: requested the %s tier but the request was served as %s — "
-            "billed at %s rates. Tier selection needs the global endpoint and "
-            "a model that supports it; capacity limits also downgrade "
-            "silently. Further downgrades this session are not logged.",
+            "billed at %s rates, and the endpoint gives no reason. "
+            "Config seen: model=%s %s. If the model supports %s on this "
+            "endpoint, what is left is entitlement or capacity: Vertex "
+            "%s PayGo has organization-level ramp limits, and the Gemini "
+            "Developer API gates %s behind its higher paid tiers. Further "
+            "downgrades this session are not logged.",
             self._provider,
             requested,
             served,
             served,
+            model or "unknown",
+            where,
+            requested,
+            requested,
+            requested,
         )

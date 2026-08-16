@@ -61,6 +61,11 @@ class GeminiVertexProvider:
             f"/locations/{self._location}/publishers/google/models/{model}:generateContent"
         )
 
+    def _where(self) -> str:
+        """Endpoint context for a downgrade warning. API-key auth is
+        project-bound and global-only, so it has no location of its own."""
+        return "endpoint=global (api key)" if self._api_key else f"location={self._location}"
+
     def _headers(self, tier: str) -> dict[str, str]:
         if self._api_key:
             headers = {"x-goog-api-key": self._api_key}
@@ -103,5 +108,10 @@ class GeminiVertexProvider:
             wait_out_quota=budget.wait_out_quota,
         )
         resp = parse_response(data, request.model)
-        self._tier_check.observe(tier, tier_from_traffic_type(resp.traffic_type))
+        self._tier_check.observe(
+            tier,
+            tier_from_traffic_type(resp.traffic_type),
+            request.model,
+            self._where(),
+        )
         return resp

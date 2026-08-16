@@ -241,6 +241,20 @@ class TestServedTierCheck:
             _vertex(client).chat(_request(), 30.0)
         assert not caplog.records
 
+    def test_the_warning_names_the_config_it_saw(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # The endpoint reports no reason, so the warning has to hand the
+        # reader enough to rule out the documented preconditions themselves.
+        client, _ = _client([httpx.Response(200, json=_ok("ON_DEMAND"))])
+        with caplog.at_level("WARNING", logger="qirabot.engine"):
+            _vertex(client, service_tier="priority").chat(_request(), 30.0)
+        msg = caplog.records[0].getMessage()
+        assert "model=gemini-3.6-flash" in msg
+        assert "location=global" in msg
+        assert "no reason" in msg
+        assert "entitlement" in msg
+
     def test_gemini_api_reads_the_response_header(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:

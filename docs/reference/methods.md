@@ -110,8 +110,9 @@ reclaimed. Single-step calls stay available for cleanup throughout. See
 ### report_dir / task_id
 
 Properties: the per-run output directory
-(`./qira_runs/<date>/<time-id>/`) and the local run id (of the form
-`local-<8 hex chars>`).
+(`./qira_runs/<date>/<HHMMSS>-<task_id>/`) and the local run id (8 hex
+characters). The directory is named for the run id, so the id the CLI
+prints locates the run's output.
 
 ### usage
 

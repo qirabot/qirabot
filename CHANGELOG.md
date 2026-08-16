@@ -55,6 +55,23 @@
   now also shows how much of the step time was spent waiting on the model,
   a figure the timeline had always collected but never rendered.
 
+### Fix: the run id names the directory it belongs to
+
+- The output directory was built from `task_id[:8]`, but the id carried a
+  `local-` prefix that ate six of those characters — a run reported as
+  `local-40746eb1` landed in `100621-local-40`. The console prints the id and
+  never the path, so the one link between them didn't line up. Worse, the
+  truncation threw away the id's uniqueness: two clients constructed in the
+  same second had a 1-in-256 chance of sharing an output directory and
+  interleaving their screenshots.
+- `bot.task_id` is now bare hex (`40746eb1`) and the directory carries it
+  whole (`qira_runs/2026-08-16/100621-40746eb1/`). The `local-` prefix dated
+  from the cloud service, where there was another kind of id to tell it
+  apart from; every run is local now, so it distinguished nothing.
+- Breaking for anything parsing `bot.task_id` or the `task_id` field of
+  `--output-format json` / `stream-json`: the value no longer starts with
+  `local-`.
+
 ### Fix: no step is left without a screenshot in the report
 
 - A step that follows `save_note` is decided on the previous step's frame:

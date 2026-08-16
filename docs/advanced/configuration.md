@@ -354,8 +354,8 @@ holds.
 
 ## Run lifecycle
 
-Each `Qirabot` instance manages a local run: a run id (`local-` plus 8 hex
-characters, readable via `bot.task_id`) is assigned on construction, every
+Each `Qirabot` instance manages a local run: a run id (8 hex characters,
+readable via `bot.task_id`) is assigned on construction, every
 call is recorded as a step, and the HTML report is written on `close()` /
 context-manager exit. If `close()` is never called, `atexit` cleans up. The
 constructor validates the model configuration and Google Cloud credentials,

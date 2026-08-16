@@ -116,7 +116,7 @@ provider 的默认模型(`gemini` →
   "success": true,
   "status": "completed",
   "output": "已登录并进入仪表盘",
-  "task_id": "local-1a2b3c4d",
+  "task_id": "1a2b3c4d",
   "usage": {
     "ai_steps": 6,
     "input_tokens": 48210,
@@ -141,7 +141,7 @@ provider 的默认模型(`gemini` →
 适合实时监控运行的上层工具:
 
 ```
-{"type": "start", "task_id": "local-1a2b3c4d", "max_steps": 20}
+{"type": "start", "task_id": "1a2b3c4d", "max_steps": 20}
 {"type": "step", "step": 1, "action_type": "click", "params": {"locate": "登录按钮"}, "decision": "...", ...}
 {"type": "step", "step": 2, "action_type": "input", ...}
 {"type": "result", "success": true, ...}

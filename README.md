@@ -110,7 +110,7 @@ Then hand the AI a task. Real, unedited output:
 
 ```text
 $ qirabot browser "Search for SpaceX and get the first sentence of the article" --url wikipedia.org
-Run: local-6237d4ff
+Run: 6237d4ff
 [1/20] type_text  ← "SpaceX"
         └ Type 'SpaceX' into the Wikipedia search bar and press enter to search.
 Done: Space Exploration Technologies Corp., doing business as SpaceX, is an

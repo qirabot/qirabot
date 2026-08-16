@@ -97,7 +97,7 @@ export QIRA_VERTEX_PROJECT="my-gcp-project"                # 或 Qirabot(vertex_
 
 ```text
 $ qirabot browser "百度热搜中10条热点新闻，以表格形式返回" -l zh
-Run: local-d2631017
+Run: d2631017
 [1/20] navigate
         └ 打开百度热搜页面
 [2/20] save_note
@@ -136,7 +136,7 @@ qirabot open-browser --user-data-dir ~/.automation --url bilibili.com
 
 ```text
 $ qirabot browser --user-data-dir ~/.automation "给B站影视飓风最新发布的第二个视频点赞和评论" -l zh
-Run: local-f123a9a8
+Run: f123a9a8
 [1/20] navigate
         └ 打开B站官网
         ⋯（略 4 步：搜索、进入主页、打开投稿列表）

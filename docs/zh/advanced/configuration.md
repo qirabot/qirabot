@@ -323,8 +323,8 @@ bot = Qirabot(settle_seconds=0)     # 关闭;改用 wait_for()
 
 ## 运行生命周期
 
-每个 `Qirabot` 实例管理一次本地运行:构造时分配运行 id(`local-` 加
-8 位十六进制,可通过 `bot.task_id` 读取),每次调用记录为一个步骤,
+每个 `Qirabot` 实例管理一次本地运行:构造时分配运行 id(8 位十六进制,
+可通过 `bot.task_id` 读取),每次调用记录为一个步骤,
 `close()` / 上下文管理器退出时写出 HTML 报告。忘了 `close()` 有
 `atexit` 兜底。构造函数会校验模型配置并解析 Google Cloud 凭据,配置
 有误在构造时就报错,而不是运行到一半才失败。要以失败或取消而非完成

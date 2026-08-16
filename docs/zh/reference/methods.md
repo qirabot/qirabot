@@ -101,8 +101,9 @@ clear_user_abort() -> None
 
 ### report_dir / task_id
 
-属性:每次运行的输出目录(`./qira_runs/<date>/<time-id>/`)和本地运行
-id(形如 `local-<8 位十六进制>`)。
+属性:每次运行的输出目录(`./qira_runs/<date>/<HHMMSS>-<task_id>/`)和
+本地运行 id(8 位十六进制)。目录以运行 id 命名,因此 CLI 打印的 id
+就能定位到这次运行的输出。
 
 ### usage
 

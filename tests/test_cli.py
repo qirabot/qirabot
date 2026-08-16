@@ -1639,7 +1639,7 @@ class TestOutputFormats:
         )
 
         class _Bot:
-            task_id = "local-abc12345"
+            task_id = "abc12345"
             will_write_report = report
             report_dir = "/tmp/qira-run"
 
@@ -1690,7 +1690,7 @@ class TestOutputFormats:
         assert res["success"] is True
         assert res["status"] == "completed"
         assert res["output"] == "all done"
-        assert res["task_id"] == "local-abc12345"
+        assert res["task_id"] == "abc12345"
         # Usage mirrors SessionUsage's fields plus the total.
         assert res["usage"]["ai_steps"] == 2
         assert res["usage"]["total_tokens"] == 1_000 + 300 + 200
@@ -1760,7 +1760,7 @@ class TestOutputFormats:
 
         lines = self._lines(capsys)
         assert [ln["type"] for ln in lines] == ["start", "step", "step", "result"]
-        assert lines[0] == {"type": "start", "task_id": "local-abc12345", "max_steps": 5}
+        assert lines[0] == {"type": "start", "task_id": "abc12345", "max_steps": 5}
         # Step lines mirror StepResult's fields verbatim.
         assert lines[1]["action_type"] == "click"
         assert lines[1]["params"] == {"locate": "Login"}

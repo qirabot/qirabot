@@ -427,18 +427,24 @@ class Qirabot:
         # close()'s default bookkeeping never overrides an explicit failure.
         self._terminalized = False
         # Local run id: everything cloud-side is gone, but the report
-        # directory naming and report header still key off a task id.
-        self._task_id: str | None = f"local-{uuid.uuid4().hex[:8]}"
+        # directory naming and report header still key off a task id. Bare
+        # hex, no prefix — every run is local now, so a "local-" tag would
+        # distinguish nothing while making the id harder to match against
+        # the directory it names.
+        self._task_id: str | None = uuid.uuid4().hex[:8]
         # Per-run output directory, bucketed by date to avoid one flat pile:
-        #   <root>/<YYYY-MM-DD>/<HHMMSS>-<task_id[:8]>/
+        #   <root>/<YYYY-MM-DD>/<HHMMSS>-<task_id>/
         # report_dir / QIRA_REPORT_DIR set only the root; the date/run subdirs
         # are added automatically so one env var works across many runs.
+        # The directory carries the task id whole: the console prints only the
+        # id (never the path), so a truncated copy would leave nothing to
+        # match on — and would drop the uniqueness that keeps two clients
+        # constructed in the same second out of each other's output dir.
         root = report_dir or os.environ.get("QIRA_REPORT_DIR", "") or "./qira_runs"
-        short = (self._task_id or "run")[:8]
         self._report_dir = (
             Path(root).expanduser()
             / time.strftime("%Y-%m-%d")
-            / f"{time.strftime('%H%M%S')}-{short}"
+            / f"{time.strftime('%H%M%S')}-{self._task_id}"
         )
         # Outcome of the most recent ai() call, driving close()'s auto-complete
         # status: a run whose last command errored must not be recorded as

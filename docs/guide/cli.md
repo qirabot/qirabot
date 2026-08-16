@@ -120,7 +120,7 @@ human-readable output is suppressed; exit codes are unchanged):
   "success": true,
   "status": "completed",
   "output": "Signed in and reached the dashboard",
-  "task_id": "local-1a2b3c4d",
+  "task_id": "1a2b3c4d",
   "usage": {
     "ai_steps": 6,
     "input_tokens": 48210,
@@ -146,7 +146,7 @@ written as the process exits, so read it after the CLI returns.
 per step, for tools that supervise a run live:
 
 ```
-{"type": "start", "task_id": "local-1a2b3c4d", "max_steps": 20}
+{"type": "start", "task_id": "1a2b3c4d", "max_steps": 20}
 {"type": "step", "step": 1, "action_type": "click", "params": {"locate": "Login button"}, "decision": "...", ...}
 {"type": "step", "step": 2, "action_type": "input", ...}
 {"type": "result", "success": true, ...}

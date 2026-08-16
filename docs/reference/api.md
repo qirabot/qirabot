@@ -185,8 +185,8 @@ executable directly. Also available standalone:
 ## Task lifecycle
 
 Each `Qirabot` instance manages a local run that tracks all operations:
-created on construction with a local run id (`bot.task_id`, of the form
-`local-<8 hex chars>`), every `click()` / `extract()` / `ai()` recorded as
+created on construction with a local run id (`bot.task_id`, 8 hex
+characters), every `click()` / `extract()` / `ai()` recorded as
 a step, marked complete on `close()` or context-manager exit. All run
 bookkeeping stays on your machine and is used only to build the HTML report:
 

@@ -540,15 +540,23 @@ class TestSessionUsage:
 
 class TestQirabotInit:
     def test_task_id_is_locally_generated(self, make_bot):
-        # No server round-trip anymore: the run id is minted locally.
+        # No server round-trip anymore: the run id is minted locally — bare
+        # hex, since there is no longer a cloud id to tell it apart from.
         bot = make_bot()
-        assert bot.task_id.startswith("local-")
-        suffix = bot.task_id.removeprefix("local-")
-        assert len(suffix) == 8
-        int(suffix, 16)  # hex
+        assert len(bot.task_id) == 8
+        int(bot.task_id, 16)  # hex
 
     def test_task_ids_are_unique_per_instance(self, make_bot):
         assert make_bot().task_id != make_bot().task_id
+
+    def test_report_dir_is_named_for_the_whole_task_id(self, make_bot):
+        # The console prints the run id and never the path, so the directory
+        # has to carry the id intact for the two to be matched up. Truncating
+        # it also threw away the uniqueness two same-second clients rely on
+        # to stay out of each other's output dir.
+        bot = make_bot()
+        assert Path(bot.report_dir).name.endswith(f"-{bot.task_id}")
+        assert Path(bot.report_dir).parent.name == time.strftime("%Y-%m-%d")
 
     def test_backend_receives_model_config(self, make_bot):
         bot = make_bot(

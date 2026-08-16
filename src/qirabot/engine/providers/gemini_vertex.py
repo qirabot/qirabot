@@ -13,7 +13,6 @@ import httpx
 
 from ._gemini_wire import parse_response, post_json, run_chat
 from .base import ChatRequest, ChatResponse
-from .retry import DEFAULT_ATTEMPTS
 from .service_tier import (
     VERTEX_TIER_HEADER,
     TierCheck,
@@ -89,7 +88,6 @@ class GeminiVertexProvider:
     def _chat_once(
         self, request: ChatRequest, timeout: float, tier: str, escalated: bool
     ) -> ChatResponse:
-        budget = self._ladder.budget(escalated, DEFAULT_ATTEMPTS)
         timeout = self._ladder.timeout_for(tier, timeout)
         # The header factory is passed as a callable: ADC bearer tokens
         # refresh per request, unlike a static API key.
@@ -104,8 +102,7 @@ class GeminiVertexProvider:
             request,
             post,
             self._part_media_resolution,
-            attempts=budget.attempts,
-            wait_out_quota=budget.wait_out_quota,
+            wait_out_quota=self._ladder.wait_out_quota(escalated),
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(

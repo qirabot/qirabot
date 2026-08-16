@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TypeVar
 
 from .base import ErrorCategory, ProviderError
@@ -70,44 +69,6 @@ FLEX_TIMEOUT_SCALE = 1.5
 FLEX_PROBE_TIMEOUT = 30.0
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class RetryBudget:
-    attempts: int
-    wait_out_quota: bool
-
-
-def retry_budget(
-    tier: str, escalation: bool, escalated: bool, default: int
-) -> RetryBudget:
-    """How much to spend inside `tier` before giving up on it.
-
-    ``attempts`` governs the generic schedule only — a rate limit follows
-    RATE_LIMIT_DELAYS regardless, unless ``wait_out_quota`` turns that off.
-    The split is deliberate, because the two failures argue opposite ways:
-
-    - A 429 is a rolling quota window. Waiting it out is free and usually
-      works, while escalating costs money, so every tier waits first —
-      including flex, where the cheap capacity is the whole point.
-    - A 503 or a blown budget is a capacity signal. A queue deep enough to
-      shed a request will not have drained a second later, and on flex each
-      retry costs a full widened timeout, so flex hands off after one try
-      rather than fighting.
-
-    An escalated call skips the rate-limit schedule entirely: the tier below
-    already waited out a full window, and the tiers commonly share one
-    bucket, so a second minute of sleeping stalls the run for capacity that
-    is not coming. It keeps the generic budget for transport blips.
-
-    Without escalation the normal budget applies everywhere — there is
-    nowhere else to go, so the retries are all the caller has.
-    """
-    if escalated:
-        return RetryBudget(default, wait_out_quota=False)
-    if tier == FLEX and escalation:
-        return RetryBudget(1, wait_out_quota=True)
-    return RetryBudget(default, wait_out_quota=True)
 
 
 def normalize(value: str) -> str:
@@ -192,8 +153,23 @@ class TierLadder:
     def _may_escalate(self) -> bool:
         return self._escalation and not self._parked
 
-    def budget(self, escalated: bool, default: int) -> RetryBudget:
-        return retry_budget(self._tier, self._may_escalate(), escalated, default)
+    def wait_out_quota(self, escalated: bool) -> bool:
+        """Whether a 429 on this call should sit through the full quota
+        window.
+
+        Yes for a first attempt on any tier, flex included: the window is a
+        rolling minute, waiting it out is free, and escalating costs money —
+        on flex it doubles the rate, which is the opposite of why you chose
+        it. No once escalated, because the tier below already spent a window
+        and the tiers commonly share one bucket.
+
+        Nothing else needs a per-tier retry budget. The failure that would
+        be expensive to repeat on flex — a probe that burns its whole
+        timeout — is already non-retryable at the transport (see
+        RETRYABLE_CATEGORIES); a 503 comes back at once, so retrying it a
+        couple of times to stay on half-price capacity is nearly free.
+        """
+        return not escalated
 
     def timeout_for(self, tier: str, budget: float) -> float:
         """The client budget for one attempt at `tier`.

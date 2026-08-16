@@ -33,7 +33,7 @@ from .base import (
     http_error,
     map_finish_reason,
 )
-from .retry import DEFAULT_ATTEMPTS, with_retry
+from .retry import with_retry
 
 logger = logging.getLogger("qirabot.engine")
 
@@ -118,7 +118,6 @@ def run_chat(
     post: Any,
     part_media_resolution: bool,
     service_tier: str = "",
-    attempts: int = DEFAULT_ATTEMPTS,
     wait_out_quota: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     """Build the body and POST it (post: callable(body) -> response dict),
@@ -128,8 +127,8 @@ def run_chat(
     still believed supported) — callers keep that flag per provider instance
     so at most one request is ever wasted on the probe.
 
-    ``attempts`` caps the generic retry budget; ``wait_out_quota`` decides
-    whether rate limits get their own longer schedule (see with_retry)."""
+    ``wait_out_quota`` decides whether a rate limit gets its own longer
+    schedule (see with_retry)."""
     body = build_request_body(
         request,
         part_media_resolution=part_media_resolution,
@@ -137,7 +136,7 @@ def run_chat(
     )
     try:
         return (
-            with_retry(lambda: post(body), attempts=attempts, wait_out_quota=wait_out_quota),
+            with_retry(lambda: post(body), wait_out_quota=wait_out_quota),
             part_media_resolution,
         )
     except ProviderError as exc:
@@ -154,7 +153,7 @@ def run_chat(
             request.model,
         )
         return (
-            with_retry(lambda: post(fallback), attempts=attempts, wait_out_quota=wait_out_quota),
+            with_retry(lambda: post(fallback), wait_out_quota=wait_out_quota),
             False,
         )
 

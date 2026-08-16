@@ -390,8 +390,8 @@ class TestStickiness:
         provider = _vertex(client, service_tier="flex", tier_escalation=True)
         for _ in range(4):
             provider.chat(_request(), 30.0)
-        # One probe, then straight to standard for the rest of the session.
-        assert tiers == ["flex", "standard", "standard", "standard", "standard"]
+        # Flex retries as any tier would, then parks: no further probes.
+        assert tiers == ["flex"] * 3 + ["standard"] * 4
 
     def test_it_warns_once_and_names_the_new_home(
         self, caplog: pytest.LogCaptureFixture
@@ -443,17 +443,9 @@ class TestFlexProbeBudget:
 
 
 class TestRetryBudget:
-    """How much to spend fighting inside a tier before handing off."""
-
-    def test_flex_with_somewhere_to_go_tries_once(self) -> None:
-        assert st.retry_budget("flex", True, False, 3) == st.RetryBudget(1, True)
-
-    @pytest.mark.parametrize(
-        ("tier", "escalation"),
-        [("flex", False), ("priority", True), ("", True), ("standard", False)],
-    )
-    def test_everyone_else_keeps_the_normal_budget(self, tier: str, escalation: bool) -> None:
-        assert st.retry_budget(tier, escalation, False, 3) == st.RetryBudget(3, True)
+    """Retrying inside a tier vs handing off. There is no per-tier attempt
+    budget: the failure that would be expensive to repeat on flex is already
+    non-retryable at the transport, so every tier retries the same way."""
 
     def test_a_rate_limit_waits_before_escalating_even_on_flex(self) -> None:
         # attempts=1 caps the generic schedule only. A 429 is a rolling quota
@@ -465,18 +457,38 @@ class TestRetryBudget:
         tiers = [r.headers.get(st.VERTEX_TIER_HEADER, "standard") for r in seen]
         assert tiers == ["flex"] * 5 + ["standard"] * 3
 
-    def test_a_refusal_hands_off_at_once_on_flex(self) -> None:
-        # The opposite case: capacity, not quota. Waiting does not help.
+    def test_a_refusal_retries_cheaply_before_handing_off(self) -> None:
+        # A 503 comes back at once, so a couple of retries cost seconds while
+        # escalating doubles the rate — flex is worth another try, same as
+        # any other tier.
         client, seen = _client([httpx.Response(503, json={"error": "at capacity"})])
         with pytest.raises(ProviderError):
             _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
         tiers = [r.headers.get(st.VERTEX_TIER_HEADER, "standard") for r in seen]
-        assert tiers == ["flex"] + ["standard"] * 3
+        assert tiers == ["flex"] * 3 + ["standard"] * 3
+
+    def test_a_burnt_probe_hands_off_at_once(self) -> None:
+        # The expensive failure: a flex attempt that spends its whole budget.
+        # Non-retryable at the transport, so it escalates on the first one.
+        tiers: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            tier = request.headers.get(st.VERTEX_TIER_HEADER, "standard")
+            tiers.append(tier)
+            if tier == "flex":
+                raise httpx.ReadTimeout("still queued")
+            return httpx.Response(200, json=_ok())
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        _vertex(client, service_tier="flex", tier_escalation=True).chat(_request(), 30.0)
+        assert tiers == ["flex", "standard"]
 
     def test_an_escalated_call_skips_the_quota_window(self) -> None:
         # The tier below already waited one out, and the tiers commonly share
         # the bucket, so a second minute stalls the run for nothing.
-        assert st.retry_budget("priority", True, True, 3) == st.RetryBudget(3, False)
+        ladder = st.TierLadder("flex", True, "p")
+        assert ladder.wait_out_quota(False) is True
+        assert ladder.wait_out_quota(True) is False
 
     def test_flex_hands_off_after_a_single_shed(self) -> None:
         # A queue deep enough to shed will not have drained a second later,

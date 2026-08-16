@@ -195,12 +195,13 @@ Moving is permanent for the life of the bot because the alternative is
 paying to rediscover the same congestion on every step. A new `Qirabot`
 probes again.
 
-That also changes what a flex attempt is worth waiting for. With escalation
-on it is a probe you are happy to abandon, so it gets a short leash rather
-than the widened budget, and it is never retried in place — a queue that
-just shed or stalled a request will not have drained a moment later. With
-escalation off, flex keeps the widened budget and the normal retries, since
-waiting is the only option left.
+It also changes what a flex attempt is worth waiting for. With escalation on
+it is a probe you are happy to abandon, so it gets a short leash rather than
+the widened budget; with escalation off it keeps the widened budget, since
+waiting is the only option left. Either way flex retries like any other tier
+— a refusal comes back at once, so trying again costs seconds while
+escalating doubles the rate. Only a probe that burns its whole budget hands
+off immediately, because repeating it is the one expensive move.
 
 The effect on a congested tier is the whole point. A 20-step run against a
 queued flex endpoint, standard healthy:

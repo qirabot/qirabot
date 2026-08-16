@@ -216,9 +216,9 @@ Config seen: model=gemini-3.6-flash location=global. …
    Gemini Developer API 则把 priority 限制在更高的付费层级。**这一层
    API 侧看不到** —— 去 Cloud Console 查配额,或者问账号的负责人。
 
-运行报告的汇总行会把档位打在它重新定价的 token 计数旁边 —— 两者不一致
-时是 `tier priority (served: standard)`,档位生效时就是 `tier flex`,没
-配置档位则完全不显示。
+运行报告会在头部把档位打在模型旁边 —— 两者不一致时是
+`tier priority (served: standard)`,档位生效时就是 `tier flex`,没配置
+档位则完全不显示。
 
 降级**不是**失败,也不会触发 `tier_escalation`:那次调用成功了,只是
 按标准价计费。升档响应的是容量**失败** —— 限流、拒绝,或 flex 请求

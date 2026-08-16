@@ -233,10 +233,9 @@ used so you can rule out the first two at a glance:
    priority behind its higher paid tiers. This is invisible to the API —
    check your quotas in the Cloud Console, or ask whoever owns the account.
 
-The run report's summary line names the tier alongside the token counts it
-reprices — `tier priority (served: standard)` when the two differ, just
-`tier flex` when the tier was honoured, and nothing at all for an
-unconfigured run.
+The run report names the tier in its header, next to the model —
+`tier priority (served: standard)` when the two differ, just `tier flex`
+when the tier was honoured, and nothing at all for an unconfigured run.
 
 A downgrade is **not** a failure and does not trigger `tier_escalation`: the
 call succeeded, at standard price. Escalation reacts to capacity *failures*

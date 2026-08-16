@@ -279,8 +279,12 @@ def fmt_ms(ms: int) -> str:
     return f"{mins // 60}h{mins % 60:02d}m"
 
 
-def _render_stats(stats: dict[str, int], model: str, tier: str = "") -> str:
-    """A one-line run summary (steps · tokens · timing · model · tier).
+def _render_stats(stats: dict[str, int]) -> str:
+    """What the run did: steps · tokens · timing.
+
+    Model and tier are configuration, not outcome, and live on the meta line
+    with the timestamp — keeping both lines short enough to read at a glance
+    instead of one that wraps mid-item.
 
     The headline count is ``total_steps`` — every timeline entry — with the
     AI-decision subset in parentheses.
@@ -312,12 +316,6 @@ def _render_stats(stats: dict[str, int], model: str, tier: str = "") -> str:
         bits.append(f"{fmt_tokens(total)} tokens ({' / '.join(detail)})")
     if stats.get("step_duration_ms"):
         bits.append(fmt_ms(stats["step_duration_ms"]))
-    if model:
-        bits.append(f"model {model}")
-    if tier:
-        # Which tier was served decides the per-token rate, so it belongs
-        # next to the token counts it reprices.
-        bits.append(f"tier {tier}")
     return f"<div class='stats'>{html.escape(' · '.join(bits))}</div>"
 
 
@@ -474,8 +472,14 @@ def write_html(
     )
     if task_id:
         meta += f" · task {html.escape(task_id)}"
+    if model:
+        meta += f" · {html.escape(model)}"
+    if tier:
+        # Which tier was served sets the per-token rate, so a report has to
+        # name it to be reconcilable against a bill.
+        meta += f" · tier {html.escape(tier)}"
     parts.append(f"<div class='meta'>{meta}</div>")
-    parts.append(_render_stats(stats, model, tier))
+    parts.append(_render_stats(stats))
 
     # Overall tally, on its own line: the report's headline answer ("how many
     # tasks ran, how many passed"), kept clear of the per-task badges below.

@@ -38,10 +38,12 @@
   standard healthy, a 20-step run goes from completing nothing to
   completing everything after a single probe.
 
-- The run report names the tier next to the token counts it reprices, and
-  shows the served side when it differs from the one requested. Which tier
-  ran decides the per-token rate, so a report that omitted it could not be
-  reconciled against a bill.
+- The run report names the tier in its header alongside the model, showing
+  the served side when it differs from the one requested. Which tier ran
+  decides the per-token rate, so a report that omitted it could not be
+  reconciled against a bill. Model and tier moved up to the timestamp line
+  in the process: they are configuration, and leaving them among the step
+  and token counts made a single line long enough to wrap mid-item.
 
 ### Fix: a slow model call is no longer retried like a transport blip
 

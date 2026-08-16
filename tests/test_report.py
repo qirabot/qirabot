@@ -309,7 +309,7 @@ class TestStatsLine:
         html = out.read_text(encoding="utf-8")
         assert "2 steps (0 AI)" in html
 
-    def test_tier_sits_next_to_the_tokens_it_reprices(self, tmp_path):
+    def test_tier_and_model_sit_on_the_meta_line(self, tmp_path):
         out = write_html(
             [_entry("a")],
             tmp_path / "report.html",
@@ -319,7 +319,13 @@ class TestStatsLine:
             tier="priority (served: standard)",
         )
         html = out.read_text(encoding="utf-8")
-        assert "tier priority (served: standard)" in html
+        # Configuration belongs with the timestamp, not among the outcome
+        # counts — one line each, neither long enough to wrap mid-item.
+        meta = html.split("class='meta'>")[1].split("</div>")[0]
+        stats = html.split("class='stats'>")[1].split("</div>")[0]
+        assert "tier priority (served: standard)" in meta
+        assert "gemini-vertex/gemini-3.6-flash" in meta
+        assert "tier" not in stats and "gemini" not in stats
 
     def test_an_unconfigured_tier_adds_nothing(self, tmp_path):
         out = write_html(

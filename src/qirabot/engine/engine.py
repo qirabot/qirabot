@@ -47,10 +47,13 @@ from .types import (
 
 logger = logging.getLogger("qirabot.engine")
 
+# Per-call ceilings, not a step or run budget: nothing bounds an ai() run in
+# wall clock, `max_steps` bounds it in steps. A step therefore costs at most
+# two of these (the session layer re-decides once on an unparsable reply),
+# which is what to reason about when picking max_steps.
 DECIDE_TIMEOUT = 120.0
-# Deliberately tighter than decide/extract: the SDK's whole-step budget is
-# finite and the session layer may retry a locate once, so a single shot must
-# leave room for the second attempt.
+# Half of decide, because the session layer retries a locate once: two locate
+# shots should cost about what one decide shot does.
 LOCATE_TIMEOUT = 60.0
 
 

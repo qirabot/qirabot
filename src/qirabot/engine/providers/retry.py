@@ -48,8 +48,12 @@ def jitter(delay: float) -> float:
 def is_retryable(exc: Exception) -> bool:
     if isinstance(exc, ProviderError):
         return exc.retryable
-    # Transport hiccups: connect failures, resets, timeouts.
-    return isinstance(exc, (httpx.TransportError, httpx.TimeoutException))
+    # A read timeout means the model was reached and is just slow — see
+    # RETRYABLE_CATEGORIES. Every other transport failure (connect, reset,
+    # pool) never delivered the request, so a retry is cheap.
+    if isinstance(exc, httpx.ReadTimeout):
+        return False
+    return isinstance(exc, httpx.TransportError)
 
 
 def _is_rate_limited(exc: Exception) -> bool:
@@ -61,11 +65,16 @@ def with_retry(
     attempts: int = DEFAULT_ATTEMPTS,
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[float], float] = jitter,
+    wait_out_quota: bool = True,
 ) -> T:
     """Execute fn, retrying retryable failures. Generic schedule: linear
     1s→2s→3s (capped) backoff over `attempts` tries; rate limits follow
     RATE_LIMIT_DELAYS instead (see module docstring). Each delay passes
-    through `jitter` — tests inject the identity to assert the schedule."""
+    through `jitter` — tests inject the identity to assert the schedule.
+
+    `wait_out_quota=False` puts rate limits on the generic schedule too, for
+    callers that have already spent a quota window elsewhere and would only
+    be stalling the run by spending a second one."""
     delay = 1.0
     attempt = 0
     while True:
@@ -75,7 +84,7 @@ def with_retry(
         except Exception as exc:
             if not is_retryable(exc):
                 raise
-            if _is_rate_limited(exc):
+            if _is_rate_limited(exc) and wait_out_quota:
                 if attempt > len(RATE_LIMIT_DELAYS):
                     raise
                 wait = RATE_LIMIT_DELAYS[attempt - 1]

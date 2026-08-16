@@ -19,7 +19,7 @@ from .service_tier import (
     FLEX_TIMEOUT_SCALE,
     VERTEX_TIER_HEADER,
     TierCheck,
-    in_tier_attempts,
+    retry_budget,
     tier_from_traffic_type,
     with_escalation,
 )
@@ -85,10 +85,13 @@ class GeminiVertexProvider:
             self._service_tier,
             self._tier_escalation,
             _PROVIDER,
-            lambda tier: self._chat_once(request, timeout, tier),
+            lambda tier, escalated: self._chat_once(request, timeout, tier, escalated),
         )
 
-    def _chat_once(self, request: ChatRequest, timeout: float, tier: str) -> ChatResponse:
+    def _chat_once(
+        self, request: ChatRequest, timeout: float, tier: str, escalated: bool
+    ) -> ChatResponse:
+        budget = retry_budget(tier, self._tier_escalation, escalated, DEFAULT_ATTEMPTS)
         if tier == FLEX:
             timeout *= FLEX_TIMEOUT_SCALE
         # The header factory is passed as a callable: ADC bearer tokens
@@ -104,7 +107,8 @@ class GeminiVertexProvider:
             request,
             post,
             self._part_media_resolution,
-            attempts=in_tier_attempts(tier, self._tier_escalation, DEFAULT_ATTEMPTS),
+            attempts=budget.attempts,
+            wait_out_quota=budget.wait_out_quota,
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(tier, tier_from_traffic_type(resp.traffic_type))

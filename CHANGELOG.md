@@ -28,7 +28,22 @@
   not. A refusal hands off at once, and so does a flex request still queued
   when its budget expires: on flex a timeout *is* the capacity signal, and
   retrying a queue that just stalled costs a full widened timeout for
-  nothing.
+  nothing. The escalated call itself skips the quota window: the tier below
+  already waited one out and the tiers commonly share the bucket.
+
+### Fix: a slow model call is no longer retried like a transport blip
+
+- A read timeout means the request reached the model and the answer did not
+  come back inside the budget. It was being retried on the generic schedule,
+  so a hanging endpoint cost three full per-call budgets — over six minutes
+  on a decide — to re-ask a question that was already too slow once. Read
+  timeouts (and 408/504) now fail on the first occurrence; a worst-case
+  decide drops from ~363s to ~120s.
+- Failures that never reached the model — connect, write and pool timeouts —
+  are classified `UNAVAILABLE` instead of `TIMEOUT` and stay retryable, which
+  is what the old blanket rule was actually for.
+- Connect gets its own 10s budget rather than inheriting the call's. An
+  unreachable endpoint used to take the full timeout to report itself.
 
 ### Fix: retry backoff is jittered
 

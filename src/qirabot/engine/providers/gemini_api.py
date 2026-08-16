@@ -18,7 +18,7 @@ from .service_tier import (
     FLEX_TIMEOUT_SCALE,
     GEMINI_SERVED_TIER_HEADER,
     TierCheck,
-    in_tier_attempts,
+    retry_budget,
     with_escalation,
 )
 
@@ -56,17 +56,20 @@ class GeminiApiProvider:
             self._service_tier,
             self._tier_escalation,
             _PROVIDER,
-            lambda tier: self._chat_once(request, timeout, tier),
+            lambda tier, escalated: self._chat_once(request, timeout, tier, escalated),
         )
 
-    def _chat_once(self, request: ChatRequest, timeout: float, tier: str) -> ChatResponse:
+    def _chat_once(
+        self, request: ChatRequest, timeout: float, tier: str, escalated: bool
+    ) -> ChatResponse:
+        budget = retry_budget(tier, self._tier_escalation, escalated, DEFAULT_ATTEMPTS)
         headers = {"x-goog-api-key": self._api_key}
         if tier == FLEX:
             timeout *= FLEX_TIMEOUT_SCALE
             # Flex requests queue. Bound the wait server-side rather than
             # letting an interactive step hang for the endpoint's default
             # ten minutes; over capacity we would rather fail and escalate.
-            headers["X-Server-Timeout"] = str(int(timeout - _SERVER_TIMEOUT_MARGIN))
+            headers["X-Server-Timeout"] = str(max(1, int(timeout - _SERVER_TIMEOUT_MARGIN)))
 
         # The served tier only comes back as a response header here — unlike
         # Vertex, the body carries no trafficType.
@@ -84,7 +87,8 @@ class GeminiApiProvider:
             post,
             self._part_media_resolution,
             service_tier=tier,
-            attempts=in_tier_attempts(tier, self._tier_escalation, DEFAULT_ATTEMPTS),
+            attempts=budget.attempts,
+            wait_out_quota=budget.wait_out_quota,
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(tier, served[-1].strip().lower() if served else "")

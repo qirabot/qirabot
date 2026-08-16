@@ -28,8 +28,15 @@ class ErrorCategory(str, Enum):
 # Categories where a second attempt can plausibly succeed. Narrower than
 # go-llm's retry-everything: deterministic failures (400/401/403/404) never
 # get retried locally — the user pays for every attempt.
+#
+# TIMEOUT is deliberately absent. It means the request reached the model and
+# the answer did not come back inside the budget — a slow or queued call, not
+# a blip. Each retry costs another full budget (minutes at the engine's
+# per-call timeouts) to ask a question that was already too slow once.
+# Failures that never reached the model — connect, pool, reset — are
+# classified UNAVAILABLE instead and stay retryable.
 RETRYABLE_CATEGORIES = frozenset(
-    {ErrorCategory.RATE_LIMITED, ErrorCategory.TIMEOUT, ErrorCategory.UNAVAILABLE}
+    {ErrorCategory.RATE_LIMITED, ErrorCategory.UNAVAILABLE}
 )
 
 

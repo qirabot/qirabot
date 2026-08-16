@@ -44,6 +44,10 @@ _SAFETY_OFF = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF"},
 ]
 
+# Establishing the TCP/TLS connection is unrelated to how long the model
+# thinks, so it gets its own short budget.
+CONNECT_TIMEOUT = 10.0
+
 _SCHEMA_TYPES = {
     "string": "STRING",
     "integer": "INTEGER",
@@ -73,10 +77,27 @@ def post_json(
     def post(body: dict[str, Any]) -> dict[str, Any]:
         hdrs = headers() if callable(headers) else headers
         try:
-            resp = http.post(url, json=body, headers=hdrs, timeout=timeout)
-        except httpx.TimeoutException as exc:
+            # Only reading waits for the model. Giving the connect phase the
+            # same budget would make an unreachable endpoint take minutes to
+            # report itself.
+            resp = http.post(
+                url,
+                json=body,
+                headers=hdrs,
+                timeout=httpx.Timeout(timeout, connect=min(CONNECT_TIMEOUT, timeout)),
+            )
+        except httpx.ReadTimeout as exc:
+            # The model got the request and did not answer in time.
             raise ProviderError(
                 provider, f"request timed out: {exc}", category=ErrorCategory.TIMEOUT
+            ) from exc
+        except httpx.TimeoutException as exc:
+            # Connect, write or pool: the request never reached the model, so
+            # this is a transport blip and a retry is cheap.
+            raise ProviderError(
+                provider,
+                f"could not reach the endpoint: {exc}",
+                category=ErrorCategory.UNAVAILABLE,
             ) from exc
         if resp.status_code != 200:
             raise http_error(provider, resp.status_code, resp.text)
@@ -96,6 +117,7 @@ def run_chat(
     part_media_resolution: bool,
     service_tier: str = "",
     attempts: int = DEFAULT_ATTEMPTS,
+    wait_out_quota: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     """Build the body and POST it (post: callable(body) -> response dict),
     falling back once when the endpoint rejects per-part mediaResolution
@@ -104,15 +126,18 @@ def run_chat(
     still believed supported) — callers keep that flag per provider instance
     so at most one request is ever wasted on the probe.
 
-    ``attempts`` caps the generic retry budget; rate limits keep their own
-    longer schedule regardless."""
+    ``attempts`` caps the generic retry budget; ``wait_out_quota`` decides
+    whether rate limits get their own longer schedule (see with_retry)."""
     body = build_request_body(
         request,
         part_media_resolution=part_media_resolution,
         service_tier=service_tier,
     )
     try:
-        return with_retry(lambda: post(body), attempts=attempts), part_media_resolution
+        return (
+            with_retry(lambda: post(body), attempts=attempts, wait_out_quota=wait_out_quota),
+            part_media_resolution,
+        )
     except ProviderError as exc:
         fallback = (
             strip_part_media_resolution(body)
@@ -126,7 +151,10 @@ def run_chat(
             "and disabling it for this provider (model=%s)",
             request.model,
         )
-        return with_retry(lambda: post(fallback), attempts=attempts), False
+        return (
+            with_retry(lambda: post(fallback), attempts=attempts, wait_out_quota=wait_out_quota),
+            False,
+        )
 
 
 def rejects_part_media_resolution(exc: Exception) -> bool:

@@ -186,7 +186,9 @@ happens depends on which:
 A rate limit waits because waiting is free: quotas are rolling per-minute
 windows, so the next attempt often just succeeds. Escalation is the last move
 before a long `ai()` run dies and loses its accumulated progress, not the
-first response to a 429.
+first response to a 429. The escalated call does not wait out a second
+window — the tiers commonly draw on the same quota, so another minute of
+sleeping would stall the run for capacity that is not coming.
 
 Flex never retries in place while escalation is on — a queue that just shed
 or stalled a request will not have drained a moment later, and each flex

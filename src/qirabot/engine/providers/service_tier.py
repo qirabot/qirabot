@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TypeVar
 
 from .base import ErrorCategory, ProviderError
@@ -61,16 +62,33 @@ FLEX_TIMEOUT_SCALE = 1.5
 T = TypeVar("T")
 
 
-def in_tier_attempts(tier: str, escalation: bool, default: int) -> int:
-    """Retry budget to spend inside `tier` before giving up on it.
+@dataclass(frozen=True)
+class RetryBudget:
+    attempts: int
+    wait_out_quota: bool
 
-    Flex with somewhere to go gets exactly one: a queue deep enough to shed
-    or to blow the widened budget will not have drained a second later, and
-    each retry costs a full flex-sized timeout. Handing off beats fighting.
-    Without escalation the normal budget applies — there is nowhere else to
-    go, so the retries are all the caller has.
+
+def retry_budget(
+    tier: str, escalation: bool, escalated: bool, default: int
+) -> RetryBudget:
+    """How much to spend inside `tier` before giving up on it.
+
+    An escalated call skips the rate-limit schedule: the tier below already
+    waited out a full quota window, and the tiers commonly share one bucket,
+    so a second minute of sleeping stalls the run for capacity that is not
+    coming. It still gets the generic budget for transport blips.
+
+    Flex with somewhere to go gets exactly one attempt: a queue deep enough
+    to shed or to blow the widened budget will not have drained a second
+    later, and each retry costs a full flex-sized timeout. Handing off beats
+    fighting. Without escalation the normal budget applies — there is nowhere
+    else to go, so the retries are all the caller has.
     """
-    return 1 if tier == FLEX and escalation else default
+    if escalated:
+        return RetryBudget(default, wait_out_quota=False)
+    if tier == FLEX and escalation:
+        return RetryBudget(1, wait_out_quota=True)
+    return RetryBudget(default, wait_out_quota=True)
 
 
 def normalize(value: str) -> str:
@@ -135,7 +153,7 @@ def with_escalation(
     tier: str,
     enabled: bool,
     provider: str,
-    call: Callable[[str], T],
+    call: Callable[[str, bool], T],
 ) -> T:
     """Run ``call(tier)``, retrying once one rung up when the tier is out of
     capacity.
@@ -146,7 +164,7 @@ def with_escalation(
     losing an in-progress run.
     """
     try:
-        return call(tier)
+        return call(tier, False)
     except ProviderError as exc:
         target = escalate(tier, exc) if enabled else ""
         if not target:
@@ -161,7 +179,7 @@ def with_escalation(
             target,
             target,
         )
-        return call(wire_tier(target))
+        return call(wire_tier(target), True)
 
 
 class TierCheck:

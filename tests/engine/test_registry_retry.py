@@ -15,7 +15,13 @@ from qirabot.engine.providers.registry import (
     resolve_vertex_location,
     resolve_vertex_project,
 )
-from qirabot.engine.providers.retry import JITTER_FRACTION, RATE_LIMIT_DELAYS, jitter, with_retry
+from qirabot.engine.providers.retry import (
+    JITTER_FRACTION,
+    RATE_LIMIT_DELAYS,
+    is_retryable,
+    jitter,
+    with_retry,
+)
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
 
 
@@ -230,6 +236,36 @@ class TestRetry:
         with pytest.raises(ProviderError):
             with_retry(fn, sleep=lambda _: None)
         assert calls["n"] == 1
+
+    def test_a_read_timeout_is_not_retried(self) -> None:
+        # It reached the model and the answer was too slow; each retry costs
+        # another full per-call budget to re-ask the same question.
+        calls = {"n": 0}
+
+        def fn() -> str:
+            calls["n"] += 1
+            raise ProviderError("p", "slow", category=ErrorCategory.TIMEOUT, status_code=0)
+
+        with pytest.raises(ProviderError):
+            with_retry(fn, sleep=lambda _: None)
+        assert calls["n"] == 1
+
+    def test_raw_read_timeout_is_not_retried_either(self) -> None:
+        assert is_retryable(httpx.ReadTimeout("slow")) is False
+        assert is_retryable(httpx.ConnectTimeout("unreachable")) is True
+        assert is_retryable(httpx.PoolTimeout("no slot")) is True
+
+    def test_quota_window_can_be_skipped(self) -> None:
+        # Callers that already spent a window elsewhere (an escalated tier)
+        # put rate limits back on the generic schedule.
+        sleeps: list[float] = []
+
+        def fn() -> str:
+            raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+
+        with pytest.raises(ProviderError):
+            with_retry(fn, sleep=sleeps.append, jitter=_no_jitter, wait_out_quota=False)
+        assert sleeps == [1.0, 2.0]
 
     def test_transport_errors_retryable(self) -> None:
         calls = {"n": 0}

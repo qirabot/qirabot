@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 import pytest
 
-from qirabot.engine.providers import retry, service_tier as st
+from qirabot.engine.providers import _gemini_wire as wire, retry, service_tier as st
 from qirabot.engine.providers.base import ChatRequest, ErrorCategory, ProviderError
 from qirabot.engine.providers.gemini_api import GeminiApiProvider
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
@@ -159,6 +159,55 @@ class TestFlexTimeout:
         _vertex(client, service_tier="priority").chat(_request(), 60.0)
         assert seen == [60.0 * st.FLEX_TIMEOUT_SCALE, 60.0]
 
+    def test_connect_keeps_its_own_short_budget(self) -> None:
+        # Reaching the endpoint has nothing to do with how long the model
+        # thinks; inheriting a widened flex budget would make an unreachable
+        # host take minutes to report itself.
+        seen: list[dict[str, float | None]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.extensions.get("timeout", {}))
+            return httpx.Response(200, json=_ok())
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        _vertex(client, service_tier="flex").chat(_request(), 120.0)
+        assert seen[0]["read"] == 180.0
+        assert seen[0]["connect"] == wire.CONNECT_TIMEOUT
+
+
+class TestTimeoutClassification:
+    """A read timeout reached the model; anything else never did."""
+
+    def test_read_timeout_is_a_timeout_and_is_not_retried(self) -> None:
+        attempts = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            attempts["n"] += 1
+            raise httpx.ReadTimeout("model too slow")
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with pytest.raises(ProviderError) as ei:
+            _vertex(client).chat(_request(), 30.0)
+        assert ei.value.category is ErrorCategory.TIMEOUT
+        assert attempts["n"] == 1
+
+    @pytest.mark.parametrize(
+        "exc",
+        [httpx.ConnectTimeout("unreachable"), httpx.PoolTimeout("no slot")],
+    )
+    def test_unreached_endpoint_is_unavailable_and_is_retried(self, exc: Exception) -> None:
+        attempts = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            attempts["n"] += 1
+            raise exc
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with pytest.raises(ProviderError) as ei:
+            _vertex(client).chat(_request(), 30.0)
+        assert ei.value.category is ErrorCategory.UNAVAILABLE
+        assert attempts["n"] == 3
+
 
 # -- served-tier self-check --------------------------------------------
 
@@ -275,8 +324,9 @@ class TestEscalate:
         client, seen = _client([httpx.Response(429, json={"error": "quota"})])
         with pytest.raises(ProviderError):
             _vertex(client, tier_escalation=True).chat(_request(), 30.0)
-        # Two full backoff cycles (standard, then priority), then give up.
-        assert len(seen) == 10
+        # One full quota window on standard (5), then priority on the generic
+        # budget (3) — not a second minute of sleeping.
+        assert len(seen) == 8
 
     def test_flex_escalates_on_capacity_shedding(self) -> None:
         # Flex is sheddable and answers 503 when it cannot be placed.
@@ -305,18 +355,23 @@ class TestEscalate:
         assert st.VERTEX_TIER_HEADER not in seen[-1].headers
 
 
-class TestInTierAttempts:
+class TestRetryBudget:
     """How much to spend fighting inside a tier before handing off."""
 
     def test_flex_with_somewhere_to_go_tries_once(self) -> None:
-        assert st.in_tier_attempts("flex", True, 3) == 1
+        assert st.retry_budget("flex", True, False, 3) == st.RetryBudget(1, True)
 
     @pytest.mark.parametrize(
         ("tier", "escalation"),
         [("flex", False), ("priority", True), ("", True), ("standard", False)],
     )
     def test_everyone_else_keeps_the_normal_budget(self, tier: str, escalation: bool) -> None:
-        assert st.in_tier_attempts(tier, escalation, 3) == 3
+        assert st.retry_budget(tier, escalation, False, 3) == st.RetryBudget(3, True)
+
+    def test_an_escalated_call_skips_the_quota_window(self) -> None:
+        # The tier below already waited one out, and the tiers commonly share
+        # the bucket, so a second minute stalls the run for nothing.
+        assert st.retry_budget("priority", True, True, 3) == st.RetryBudget(3, False)
 
     def test_flex_hands_off_after_a_single_shed(self) -> None:
         # A queue deep enough to shed will not have drained a second later,

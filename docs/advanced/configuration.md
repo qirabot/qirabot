@@ -150,19 +150,42 @@ costs nothing. Interactive automation is where a queued tier hurts most.
 :::
 
 **You are billed for what is served, not what you ask for.** A tier the
-endpoint cannot place is served — and charged — at standard rates. Qirabot
-checks every response against the tier you requested (Vertex reports
-`usageMetadata.trafficType`, the Gemini Developer API an
-`x-gemini-service-tier` response header) and logs one warning per session on
-a mismatch.
+endpoint cannot place is served — and charged — at standard rates.
 
-Both non-standard tiers need:
+### When a tier is not honoured
 
-- **the global endpoint** — a regional `vertex_location` is rejected at
-  construction, because Vertex accepts the request and silently ignores the
-  tier;
-- **a model that supports them** — an unsupported model downgrades silently,
-  which is what the mismatch warning is for.
+A downgrade produces no error. The response is an ordinary `200` with no
+error field and no explanatory header; the only tell is the served-tier
+field, which Qirabot checks on every call (`usageMetadata.trafficType` on
+Vertex, the `x-gemini-service-tier` response header on the Gemini Developer
+API). On a mismatch it logs one warning per session:
+
+```
+gemini-vertex: requested the priority tier but the request was served as
+standard — billed at standard rates, and the endpoint gives no reason.
+Config seen: model=gemini-3.6-flash location=global. …
+```
+
+There are three causes, and the warning prints the model and endpoint it
+used so you can rule out the first two at a glance:
+
+1. **Wrong endpoint.** Vertex serves the non-standard tiers on the global
+   endpoint only, and accepts the header off a regional one while ignoring
+   it. Qirabot rejects a regional `vertex_location` at construction, so if
+   the bot was created at all, this is not your cause.
+2. **The model does not support the tier.** Coverage differs per tier and
+   changes over time; check Google's list for
+   [Vertex](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo)
+   or the [Gemini Developer API](https://ai.google.dev/gemini-api/docs/pricing).
+3. **Entitlement or capacity.** Vertex Priority PayGo carries
+   organization-level ramp limits, and the Gemini Developer API gates
+   priority behind its higher paid tiers. This is invisible to the API —
+   check your quotas in the Cloud Console, or ask whoever owns the account.
+
+A downgrade is **not** a failure and does not trigger `tier_escalation`: the
+call succeeded, at standard price. Escalation reacts to capacity *failures*
+— a rate limit, a refusal, or a flex request still queued when its budget
+expires.
 
 ### Escalating on exhaustion
 

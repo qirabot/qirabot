@@ -141,17 +141,38 @@ locate 的响应都很短,固定开销要全额承担、没有东西可以摊薄
 :::
 
 **计费按实际服务的档位算,而不是按你请求的档位算。** 端点无法安排的
-档位会以标准档提供服务,并按标准价计费。Qirabot 会把每次响应和你请求
-的档位对照(Vertex 返回 `usageMetadata.trafficType`,Gemini Developer
-API 返回 `x-gemini-service-tier` 响应头),不一致时每个会话打印一次
-warning。
+档位会以标准档提供服务,并按标准价计费。
 
-两个非标准档位都要求:
+### 档位没生效时怎么查
 
-- **global 端点** —— 指定了区域性 `vertex_location` 会在构造时直接
-  报错,因为 Vertex 会接受请求然后静默忽略档位设置;
-- **支持该档位的模型** —— 不支持的模型会静默降级,这正是那条不一致
-  warning 的用途。
+**降级不会产生任何错误。** 响应是一个普通的 `200`,没有 error 字段,
+也没有说明原因的响应头;唯一的线索是"实际服务档位"字段,Qirabot 每次
+调用都会检查它(Vertex 看 `usageMetadata.trafficType`,Gemini Developer
+API 看 `x-gemini-service-tier` 响应头)。不一致时每个会话打印一次
+warning:
+
+```
+gemini-vertex: requested the priority tier but the request was served as
+standard — billed at standard rates, and the endpoint gives no reason.
+Config seen: model=gemini-3.6-flash location=global. …
+```
+
+原因只有三种,而 warning 会把它实际用的模型和端点打出来,让你一眼排除
+前两种:
+
+1. **端点不对。** Vertex 的非标准档位只在 global 端点提供;用区域性
+   端点时它会接受 header 然后忽略。Qirabot 在构造时就会拒绝区域性
+   `vertex_location`,所以只要 bot 建起来了,就不是这个原因。
+2. **模型不支持该档位。** 各档位的覆盖范围不同,而且会变,查 Google
+   的列表:[Vertex](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo)
+   或 [Gemini Developer API](https://ai.google.dev/gemini-api/docs/pricing)。
+3. **权限或容量。** Vertex Priority PayGo 有组织级的 ramp limit,
+   Gemini Developer API 则把 priority 限制在更高的付费层级。**这一层
+   API 侧看不到** —— 去 Cloud Console 查配额,或者问账号的负责人。
+
+降级**不是**失败,也不会触发 `tier_escalation`:那次调用成功了,只是
+按标准价计费。升档响应的是容量**失败** —— 限流、拒绝,或 flex 请求
+在预算耗尽时仍在排队。
 
 ### 容量耗尽时升档
 

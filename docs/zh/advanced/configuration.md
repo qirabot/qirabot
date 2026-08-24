@@ -36,7 +36,7 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | 计费档位:`standard` / `flex` / `priority`([详见](#计费档位)) |
 | `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | 档位容量耗尽时向上升一档重试([详见](#计费档位)) |
 | `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
-| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
+| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini;`ultra_high` 需 Gemini 3 系列模型);调低可减少每步的图像 token |
 | `language` | — | 跟随指令语言 | 响应语言:语言标签(`"zh"`、`"ja"`、`"de"` 等)或任意语言名称 |
 | `task_name` | — | `""` | 任务名(显示在 HTML 报告里) |
 | `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | 元素定位输出格式;`bbox_yx_1000` 切换为归一化 y/x 包围盒 |

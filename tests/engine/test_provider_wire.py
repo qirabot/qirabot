@@ -181,7 +181,6 @@ class TestGeminiVertex:
             ("low", "MEDIA_RESOLUTION_LOW"),
             ("medium", "MEDIA_RESOLUTION_MEDIUM"),
             ("HIGH", "MEDIA_RESOLUTION_HIGH"),
-            ("ultra_high", "MEDIA_RESOLUTION_ULTRA_HIGH"),
             ("bogus", "MEDIA_RESOLUTION_MEDIUM"),  # go-llm's fallback
         ],
     )
@@ -236,6 +235,64 @@ class TestGeminiVertex:
         provider.chat(self.base_request(messages=self.two_image_messages()), timeout=30)
         parts = self.image_parts(sent_body(seen[0]))
         assert parts[0]["mediaResolution"] == {"level": "MEDIA_RESOLUTION_LOW"}
+
+    def test_ultra_high_moves_to_image_parts(self) -> None:
+        # ULTRA_HIGH is a per-part-only enum value: both endpoints reject it
+        # in generationConfig with a 400. It must ride on the images instead,
+        # without disturbing per-image overrides.
+        provider, seen = self.make()
+        provider.chat(
+            self.base_request(
+                messages=self.two_image_messages(),
+                params={"media_resolution": "ultra_high"},
+            ),
+            timeout=30,
+        )
+        body = sent_body(seen[0])
+        assert "mediaResolution" not in body["generationConfig"]
+        parts = self.image_parts(body)
+        assert parts[0]["mediaResolution"] == {"level": "MEDIA_RESOLUTION_LOW"}
+        assert parts[1]["mediaResolution"] == {"level": "MEDIA_RESOLUTION_ULTRA_HIGH"}
+
+    def test_ultra_high_downgrades_to_high_without_part_support(self) -> None:
+        # When the endpoint rejects per-part fields there is nowhere legal
+        # for ULTRA_HIGH to go: later requests fall back to the closest
+        # request-level value instead of resending a guaranteed 400.
+        rejection = {
+            "error": {
+                "code": 400,
+                "message": (
+                    "Invalid value at 'generate_content_request.contents[0]"
+                    ".parts[0].media_resolution'"
+                ),
+            }
+        }
+        responses = iter([(400, rejection), (200, GEMINI_OK), (200, GEMINI_OK)])
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            status, payload = next(responses)
+            return httpx.Response(status, json=payload)
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        provider = GeminiVertexProvider("proj-1", "global", FakeTokens(), client)  # type: ignore[arg-type]
+
+        req = self.base_request(
+            messages=self.two_image_messages(), params={"media_resolution": "ultra_high"}
+        )
+        provider.chat(req, timeout=30)
+        assert len(seen) == 2
+        # The stripped retry carries no resolution anywhere.
+        stripped = sent_body(seen[1])
+        assert all("mediaResolution" not in p for p in self.image_parts(stripped))
+        assert "mediaResolution" not in stripped["generationConfig"]
+
+        # Sticky: the next chat sends the request-level fallback directly.
+        provider.chat(req, timeout=30)
+        body = sent_body(seen[2])
+        assert body["generationConfig"]["mediaResolution"] == "MEDIA_RESOLUTION_HIGH"
+        assert all("mediaResolution" not in p for p in self.image_parts(body))
 
     def test_part_media_resolution_fallback_and_sticky(self) -> None:
         # First call: endpoint rejects the part-level field (400 naming the

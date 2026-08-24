@@ -39,7 +39,7 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | Consumption tier: `standard` / `flex` / `priority` ([details](#service-tier)) |
 | `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | Retry one rung up the tier ladder when a tier runs out of capacity ([details](#service-tier)) |
 | `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
-| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only); lower it to cut image tokens per step |
+| `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only; `ultra_high` needs a Gemini 3 model); lower it to cut image tokens per step |
 | `language` | — | instruction's language | Response language: a tag (`"zh"`, `"ja"`, `"de"`, …) or any language name |
 | `task_name` | — | `""` | Task name (shown in the HTML report) |
 | `locate_format` | `QIRA_LOCATE_FORMAT` | `""` | Element-location output format; `bbox_yx_1000` switches to normalized y/x bounding boxes |

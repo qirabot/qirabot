@@ -162,7 +162,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 | `-n, --name` | 从指令推导 | HTML 报告中显示的运行名 |
 | `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`,provider 为 `gemini-vertex` / `gemini` 之一(见[配置](/zh/advanced/configuration)) |
 | `--thinking-level` | 引擎默认 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
-| `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini);调低可减少每步的图像 token |
+| `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini;`ultra_high` 需 Gemini 3 系列模型);调低可减少每步的图像 token |
 | `-l, --language` | 跟随指令语言 | 响应语言:语言标签(`zh`、`ja`、`de` 等)或任意语言名称 |
 | `--max-steps` | `20` | AI 任务的步数预算 |
 | `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL,远程内容请先自行下载 |

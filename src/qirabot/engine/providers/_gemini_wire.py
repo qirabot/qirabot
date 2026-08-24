@@ -208,16 +208,29 @@ def build_request_body(
         }
 
     global_media_resolution = ""
+    default_image_resolution = ""
     media_resolution = request.param_str("media_resolution", "")
     if media_resolution:
-        global_media_resolution = _map_media_resolution(media_resolution)
-        generation_config["mediaResolution"] = global_media_resolution
+        level = _map_media_resolution(media_resolution)
+        if level == _ULTRA_HIGH and part_media_resolution:
+            # ULTRA_HIGH is a per-part-only level: both endpoints 400 it in
+            # generationConfig. Leave the global unset and tag every image
+            # that carries no override of its own instead.
+            default_image_resolution = level
+        else:
+            if level == _ULTRA_HIGH:
+                # Per-part fields are not supported here, so ULTRA_HIGH has
+                # nowhere legal to go; HIGH is the closest request-level value.
+                level = "MEDIA_RESOLUTION_HIGH"
+            global_media_resolution = level
+            generation_config["mediaResolution"] = level
 
     body: dict[str, Any] = {
         "contents": build_contents(
             request.messages,
             global_media_resolution=global_media_resolution,
             part_media_resolution=part_media_resolution,
+            default_image_resolution=default_image_resolution,
         ),
         "generationConfig": generation_config,
         "safetySettings": _SAFETY_OFF,
@@ -254,13 +267,16 @@ def _map_thinking_level(level: str, model: str) -> str:
     return "HIGH"  # high / xhigh / max / unknown
 
 
+_ULTRA_HIGH = "MEDIA_RESOLUTION_ULTRA_HIGH"
+
+
 def _map_media_resolution(value: str) -> str:
     # Same table (and same fallback-to-medium on unknown values) as go-llm.
     return {
         "low": "MEDIA_RESOLUTION_LOW",
         "medium": "MEDIA_RESOLUTION_MEDIUM",
         "high": "MEDIA_RESOLUTION_HIGH",
-        "ultra_high": "MEDIA_RESOLUTION_ULTRA_HIGH",
+        "ultra_high": _ULTRA_HIGH,
     }.get(value.lower(), "MEDIA_RESOLUTION_MEDIUM")
 
 
@@ -299,6 +315,7 @@ def build_contents(
     messages: list[Message],
     global_media_resolution: str = "",
     part_media_resolution: bool = False,
+    default_image_resolution: str = "",
 ) -> list[dict[str, Any]]:
     contents: list[dict[str, Any]] = []
 
@@ -326,12 +343,17 @@ def build_contents(
                     "data": base64.b64encode(img.data).decode("ascii"),
                 }
             }
-            # Per-image override, emitted only when it differs from the
-            # request-level resolution — a redundant field would just risk a
-            # rejection on endpoints without per-part support.
-            if part_media_resolution and img.resolution:
-                level = _map_media_resolution(img.resolution)
-                if level != global_media_resolution:
+            # Per-image override (or the per-part-only ULTRA_HIGH default),
+            # emitted only when it differs from the request-level resolution —
+            # a redundant field would just risk a rejection on endpoints
+            # without per-part support.
+            if part_media_resolution:
+                level = (
+                    _map_media_resolution(img.resolution)
+                    if img.resolution
+                    else default_image_resolution
+                )
+                if level and level != global_media_resolution:
                     part["mediaResolution"] = {"level": level}
             parts.append(part)
         if msg.content:

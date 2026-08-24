@@ -391,7 +391,7 @@ def _task_options(f: _FC) -> _FC:
     )(f)
     f = _option("--max-steps", group=_TASK_GROUP, default=20, help="Max steps for AI")(f)
     f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Response language: a tag (zh, ja, de) or any language name; default follows the instruction's language")(f)
-    f = _option("--media-resolution", group=_TASK_GROUP, default="", help="Screenshot resolution sent to the model: low, medium, high or ultra_high (env QIRA_MEDIA_RESOLUTION; gemini-vertex only)")(f)
+    f = _option("--media-resolution", group=_TASK_GROUP, default="", help="Screenshot resolution sent to the model: low, medium, high or ultra_high (ultra_high needs a Gemini 3 model; env QIRA_MEDIA_RESOLUTION)")(f)
     f = _option("--thinking-level", group=_TASK_GROUP, default="", help="Thinking level override: minimal, low, medium or high")(f)
     f = _option(
         "--model", "-m", group=_TASK_GROUP, default="",

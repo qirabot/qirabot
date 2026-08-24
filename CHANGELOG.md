@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.3.1 (2026-08-24)
+
+### Fix: `media_resolution="ultra_high"` was rejected with a 400
+
+- `ultra_high` now rides on each image part instead of
+  `generationConfig.mediaResolution`. The request-level field only
+  accepts `low` / `medium` / `high`, so every `ultra_high` run failed
+  with `INVALID_ARGUMENT` on both providers. History screenshots keep
+  their reduced `low` resolution, and the setting still needs a
+  Gemini 3 model.
+- On an endpoint that rejects per-part resolution fields, `ultra_high`
+  now falls back to request-level `high` — the closest supported
+  value — instead of resending a request that cannot succeed.
+
 ## 3.3.0 (2026-08-16)
 
 ### Consumption tiers: flex and priority

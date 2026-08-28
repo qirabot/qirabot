@@ -207,10 +207,13 @@ class LocateResult:
         yield self.y
 
 
-# How a bot.ai() run ended. "error" is never returned today — step-level
-# failures raise ActionError instead — but stays in the type for existing
-# callers matching on it (and for the section-outcome badges, which use it).
-RunStatus = Literal["completed", "goal_failed", "max_steps", "error"]
+# How a run or section ended — the single status vocabulary shared by
+# RunResult.status, the timeline's per-section outcomes (the report's badges)
+# and the CLI's JSON result. ai() itself never *returns* "error" or
+# "cancelled" — step-level failures raise ActionError and user aborts raise
+# QirabotError(code="user_abort") — but both occur as section outcomes, and
+# the CLI reports "cancelled" for Ctrl+C / the ESC kill switch.
+RunStatus = Literal["completed", "goal_failed", "max_steps", "error", "cancelled"]
 
 
 @dataclass
@@ -240,6 +243,9 @@ class RunResult:
       truncation, not a capability verdict; consider raising ``max_steps``
     - ``"error"``: reserved for terminal engine errors; step-level failures
       raise :class:`~qirabot.exceptions.ActionError` instead of returning
+    - ``"cancelled"``: never returned either — a user abort raises
+      :class:`~qirabot.exceptions.QirabotError` (``code="user_abort"``); the
+      value is part of the shared vocabulary for section badges and the CLI
 
     ``success`` is True iff ``status == "completed"``.
     """
@@ -423,8 +429,10 @@ class Qirabot:
         # On-screen progress window (capture-excluded, click-through); a no-op
         # on unsupported platforms, so gating here is on intent alone.
         self._overlay: Overlay | None = Overlay() if overlay else None
-        # Set once a terminal outcome was recorded (fail()/cancel()), so
-        # close()'s default bookkeeping never overrides an explicit failure.
+        # Latched by the first fail()/cancel() (and by close()): the run's
+        # terminal-outcome log record is first-wins — later calls log nothing,
+        # so a late Ctrl+C can't relabel an already-recorded failure and a
+        # closed run can't gain an outcome after the fact.
         self._terminalized = False
         # Local run id: everything cloud-side is gone, but the report
         # directory naming and report header still key off a task id. Bare
@@ -446,19 +454,12 @@ class Qirabot:
             / time.strftime("%Y-%m-%d")
             / f"{time.strftime('%H%M%S')}-{self._task_id}"
         )
-        # Outcome of the most recent ai() call, driving close()'s auto-complete
-        # status: a run whose last command errored must not be recorded as
-        # "completed" just because close() ran (atexit after a crash included).
-        # goal_failed/max_steps stay "completed" at task level — the command
-        # ran; whether that fails the task is the script's call via fail().
-        self._last_ai_status: str | None = None
         # Latched by a user abort (ESC hold / mouse-to-corner): blocks every
         # later ai() on this client until clear_user_abort(). ESC means
         # "give me the machine back" — its scope is the script's autonomous
         # control as a whole, not just the ai() call that happened to be
         # running; a try/except around bot.ai() must not re-take control.
         self._user_aborted = False
-        self._last_ai_error = ""
         self._screenshot_config = ScreenshotConfig(
             format=screenshot_format,
             quality=screenshot_quality,
@@ -1200,9 +1201,7 @@ class Qirabot:
                 exclude_tools=exclude_tools,
                 knowledge=knowledge,
             )
-            self._timeline.section_outcomes[self._timeline.current_section] = result.status
-            self._last_ai_status = result.status
-            self._last_ai_error = result.output if result.status == "error" else ""
+            self._timeline.record_outcome(result.status)
             self._overlay_finish(result.success, result.output or result.status)
             return result
         except Exception as e:
@@ -1215,11 +1214,9 @@ class Qirabot:
                 # cancellation, not a bot failure: record the distinct
                 # 'cancelled' outcome — same bucket as a Ctrl+C routed
                 # through cancel(), kept out of failure metrics. cancel()'s
-                # terminalized guard also stops close() from re-recording
-                # the task as failed.
-                self._timeline.section_outcomes[self._timeline.current_section] = "cancelled"
-                self._last_ai_status = "cancelled"
-                self._last_ai_error = str(e)
+                # first-wins guard also keeps a later fail() (e.g. a script's
+                # catch-all handler) from relabeling the abort as a failure.
+                self._timeline.record_outcome("cancelled")
                 self._user_aborted = True  # sticky: see clear_user_abort()
                 self.cancel(str(e))
             else:
@@ -1229,10 +1226,7 @@ class Qirabot:
                 # the exception text is otherwise only in the caller's hands,
                 # and an "error" badge with no explanation is useless when
                 # reading the report after the fact.
-                self._timeline.section_outcomes[self._timeline.current_section] = "error"
-                self._timeline.section_errors[self._timeline.current_section] = str(e)
-                self._last_ai_status = "error"
-                self._last_ai_error = str(e)
+                self._timeline.record_outcome("error", error=str(e))
             self._overlay_finish(False, str(e))
             raise
         finally:
@@ -1434,9 +1428,7 @@ class Qirabot:
         # rather than a synthetic step entry — the report's step count must
         # match the steps that actually ran.
         logger.warning("stopped: step budget exhausted (%d/%d)", max_steps, max_steps)
-        self._timeline.section_errors[self._timeline.current_section] = (
-            f"max steps reached ({max_steps})"
-        )
+        self._timeline.record_outcome("max_steps", error=f"max steps reached ({max_steps})")
         # Output string is load-bearing: callers may match "max steps reached".
         return RunResult(
             success=False, output="max steps reached", steps=steps, status="max_steps"
@@ -1953,28 +1945,25 @@ class Qirabot:
         adapter.execute(action_type, params)
 
     def fail(self, error_message: str = "") -> None:
-        """Record a client-side failure for the run's local bookkeeping.
+        """Record a client-side failure in the run log.
 
-        Use this when the run is aborted by an error on the client (e.g. your
-        script catches an exception) and you want the run recorded as failed
-        regardless of the last command's outcome. Idempotent; a subsequent
-        close() cannot override it.
+        Use this when your script decides the run failed (e.g. it caught an
+        exception, or a ``goal_failed`` ending should count as a failure) and
+        wants that on record regardless of the last command's outcome.
+        First terminal outcome wins: once fail() or cancel() has recorded one
+        — or the client is closed — later calls are no-ops.
         """
         if self._terminalized:
             return
         self._terminalized = True
-        # An explicit fail() message wins over whatever the last ai() error
-        # was — the caller is being deliberate.
-        if error_message:
-            self._last_ai_error = error_message
         logger.info("run marked failed%s", f": {error_message}" if error_message else "")
 
     def cancel(self, reason: str = "") -> None:
-        """Record a deliberate client-side abort (e.g. Ctrl+C) so the run is
-        treated as cancelled rather than failed or, worse, completed.
+        """Record a deliberate client-side abort (e.g. Ctrl+C) in the run log,
+        so the ending reads as cancelled rather than failed.
 
-        Shares fail()'s terminalized guard so it is idempotent and a later
-        close() cannot override it.
+        Shares fail()'s first-wins guard, so it is idempotent and cannot
+        relabel an already-recorded outcome.
         """
         if self._terminalized:
             return
@@ -2084,6 +2073,8 @@ class Qirabot:
                 self._write_report()
             except BaseException:
                 logger.debug("report write interrupted", exc_info=True)
+        # The run is over: a fail()/cancel() arriving after close() (e.g. from
+        # an outer exception handler) must not log a terminal outcome for it.
         self._terminalized = True
         # Let adapters unhook framework listeners (e.g. Playwright's "page"
         # event) before we tear down the contexts they're attached to. Several
@@ -2131,8 +2122,8 @@ class Qirabot:
         exc_val: BaseException | None,
         exc_tb: object,
     ) -> None:
-        # An exception leaving the with-block means the run aborted: report it
-        # instead of letting close() complete it as a success. A KeyboardInterrupt
+        # An exception leaving the with-block means the run aborted: put the
+        # terminal outcome on record before closing. A KeyboardInterrupt
         # (Ctrl+C) is a deliberate cancel, not a failure.
         if isinstance(exc_val, KeyboardInterrupt):
             self.cancel("aborted by user")

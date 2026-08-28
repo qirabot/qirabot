@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Combined-size ceiling, in UTF-8 bytes. The engine enforces the same limit
-# authoritatively; checking here fails before any model call. Large
-# enough for a real rules document, small enough that the knowledge section
-# cannot drown the rest of the prompt.
-MAX_KNOWLEDGE_BYTES = 32 * 1024
+# Combined-size ceiling, in UTF-8 bytes — the engine's authoritative limit
+# (declared once, in engine.custom_tools); checking it here too fails before
+# any model call. Large enough for a real rules document, small enough that
+# the knowledge section cannot drown the rest of the prompt.
+from qirabot.engine.custom_tools import MAX_KNOWLEDGE_BYTES
 
 
 def resolve_knowledge(knowledge: str | Path | list[str | Path]) -> str:

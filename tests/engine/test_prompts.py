@@ -9,7 +9,7 @@ from qirabot.engine.prompts import (
     PLATFORM_PROMPTS,
     build_conversation_messages,
     build_dynamic_prompt,
-    build_system_prompts,
+    build_system_prompt,
     excluded_tools_section,
     format_notes,
     parse_history_args,
@@ -35,36 +35,32 @@ class TestPlatformPrompts:
 
 
 class TestSystemPrompts:
-    def test_knowledge_in_cacheable_prefix(self) -> None:
-        # Knowledge is session-constant, so it must ride in the cacheable half
-        # — the prompt-cache prefix stays stable across steps — and never leak
-        # into the dynamic half where it would be re-tokenized every step.
-        cacheable, dynamic = build_system_prompts(
+    def test_knowledge_ahead_of_task_context(self) -> None:
+        # Knowledge is session-constant, so it must sit in the task-stable
+        # front of the prompt, ahead of the instruction-bearing tail — the
+        # section order is what keeps the prompt-cache prefix long.
+        p = build_system_prompt(
             "android", "完成每日副本", "GM 命令整个任务只能使用一次", "zh", False, [], NOW
         )
-        assert "# Domain knowledge" in cacheable
-        assert "GM 命令整个任务只能使用一次" in cacheable
-        assert "GM 命令整个任务只能使用一次" not in dynamic
+        assert "GM 命令整个任务只能使用一次" in p
+        assert p.index("# Domain knowledge") < p.index("# Current task context")
         # Framing: reference material, not goal.
-        assert "not the task goal" in cacheable
+        assert "not the task goal" in p
 
     def test_no_knowledge_no_section(self) -> None:
-        cacheable, _ = build_system_prompts("android", "完成每日副本", "", "zh", False, [], NOW)
-        assert "# Domain knowledge" not in cacheable
+        p = build_system_prompt("android", "完成每日副本", "", "zh", False, [], NOW)
+        assert "# Domain knowledge" not in p
 
     def test_grounding_guidance_always_present(self) -> None:
-        cacheable, _ = build_system_prompts("chrome", "goal", "", "zh", False, [], NOW)
-        assert "# Coordinate output" in cacheable
-        assert NORMALIZED_COORD_RULE in cacheable
-        assert "start_point_x" in cacheable
+        p = build_system_prompt("chrome", "goal", "", "zh", False, [], NOW)
+        assert "# Coordinate output" in p
+        assert NORMALIZED_COORD_RULE in p
+        assert "start_point_x" in p
 
-    def test_excluded_tools_in_cacheable_half(self) -> None:
-        cacheable, dynamic = build_system_prompts(
-            "chrome", "goal", "", "zh", False, ["scroll", "hover"], NOW
-        )
-        assert "# Tool availability" in cacheable
-        assert "`scroll`, `hover`" in cacheable
-        assert "# Tool availability" not in dynamic
+    def test_excluded_tools_ahead_of_task_context(self) -> None:
+        p = build_system_prompt("chrome", "goal", "", "zh", False, ["scroll", "hover"], NOW)
+        assert "`scroll`, `hover`" in p
+        assert p.index("# Tool availability") < p.index("# Current task context")
 
     def test_excluded_tools_section_empty(self) -> None:
         assert excluded_tools_section([]) == ""
@@ -86,12 +82,12 @@ class TestDynamicPrompt:
 
     def test_system_prompt_constant_within_task(self) -> None:
         # Cache-stability invariant: nothing that changes step to step
-        # (summary, notes) may appear in either system-prompt half — a change
-        # at the head of the token stream invalidates the whole provider
-        # cache prefix. Summary/notes travel via progress_context_section.
-        cacheable, dynamic = build_system_prompts("chrome", "goal", "知识", "en", True, [], NOW)
-        assert "## Summary of completed steps" not in cacheable + dynamic
-        assert "## Saved notes" not in cacheable + dynamic
+        # (summary, notes) may appear in the system prompt — a change at the
+        # head of the token stream invalidates the whole provider cache
+        # prefix. Summary/notes travel via progress_context_section.
+        p = build_system_prompt("chrome", "goal", "知识", "en", True, [], NOW)
+        assert "## Summary of completed steps" not in p
+        assert "## Saved notes" not in p
 
     def test_no_language_follows_instruction(self) -> None:
         p = build_dynamic_prompt("买一杯咖啡", "", False, NOW)

@@ -79,7 +79,7 @@ Rules:
 - If no element matches the description, report found=false with a short reason. Never guess coordinates."""
 
 
-def build_system_prompts(
+def build_system_prompt(
     platform: str,
     instruction: str,
     knowledge: str,
@@ -87,27 +87,29 @@ def build_system_prompts(
     annotate_for_model: bool,
     exclude_tools: list[str],
     now: datetime | None = None,
-) -> tuple[str, str]:
-    """Returns (cacheable, dynamic) halves of the system prompt. Both halves
-    are constant within a task — anything that changes step to step (summary,
-    notes) belongs in progress_context_section, not here."""
-    cacheable = (
+) -> str:
+    """The system prompt, constant within a task — anything that changes
+    step to step (summary, notes) belongs in progress_context_section, not
+    here. Section order is deliberate: the halves shared across tasks on the
+    same platform (role, grounding) come first and the task-specific ones
+    (knowledge, excluded tools, instruction/date) last, keeping the longest
+    possible byte-stable head for provider prompt caches."""
+    return (
         resolve_prompt(PLATFORM_PROMPTS, platform)
         + grounding_guidance()
         + knowledge_section(knowledge)
         + excluded_tools_section(exclude_tools)
+        + build_dynamic_prompt(instruction, language, annotate_for_model, now)
     )
-    dynamic = build_dynamic_prompt(instruction, language, annotate_for_model, now)
-    return cacheable, dynamic
 
 
 def excluded_tools_section(exclude_tools: list[str]) -> str:
-    """Tool-availability caveat for the cacheable system prompt. The platform
-    prompt is static text that references tools by name; when the caller
-    disabled some of them via exclude_tools, those references become
-    contradictory instructions — this section tells the model to disregard
-    them. Lives in the cacheable half because exclude_tools is fixed within a
-    task, so the prompt-cache prefix stays stable across steps."""
+    """Tool-availability caveat for the system prompt. The platform prompt is
+    static text that references tools by name; when the caller disabled some
+    of them via exclude_tools, those references become contradictory
+    instructions — this section tells the model to disregard them.
+    exclude_tools is fixed within a task, so the section never perturbs the
+    prompt-cache prefix across steps."""
     if not exclude_tools:
         return ""
     return (

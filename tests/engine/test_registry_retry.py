@@ -7,7 +7,6 @@ from qirabot.engine.providers.base import ErrorCategory, ProviderError, classify
 from qirabot.engine.providers.registry import (
     DEFAULT_MODELS,
     ModelSpec,
-    create_provider,
     parse_model,
     resolve_default_model,
     resolve_gemini_api_key,
@@ -22,7 +21,6 @@ from qirabot.engine.providers.retry import (
     jitter,
     with_retry,
 )
-from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
 
 
 def _no_jitter(delay: float) -> float:
@@ -98,12 +96,6 @@ class TestVertexConfig:
         monkeypatch.setenv("QIRA_VERTEX_LOCATION", "asia-east1")
         assert resolve_vertex_location("") == "asia-east1"
 
-    def test_create_provider_dispatch(self) -> None:
-        client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-        tokens = FakeTokens()
-        provider = create_provider(ModelSpec("gemini-vertex", "m"), "p", "global", tokens, client)  # type: ignore[arg-type]
-        assert isinstance(provider, GeminiVertexProvider)
-
     def test_api_key_priority(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("QIRA_VERTEX_API_KEY", "env-key")
         assert resolve_vertex_api_key("explicit") == "explicit"
@@ -126,24 +118,6 @@ class TestVertexConfig:
         # GOOGLE_API_KEY stays unread here too (could be either key kind).
         monkeypatch.setenv("GOOGLE_API_KEY", "ambiguous")
         assert resolve_gemini_api_key("") == ""
-
-    def test_create_provider_gemini_requires_key(self) -> None:
-        from qirabot.engine.providers.gemini_api import GeminiApiProvider
-
-        client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-        provider = create_provider(
-            ModelSpec("gemini", "m"), "", "", None, client, api_key="sk"
-        )
-        assert isinstance(provider, GeminiApiProvider)
-        with pytest.raises(ValueError, match="QIRA_GEMINI_API_KEY"):
-            create_provider(ModelSpec("gemini", "m"), "", "", None, client)
-
-    def test_create_provider_vertex_api_key(self) -> None:
-        client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
-        provider = create_provider(
-            ModelSpec("gemini-vertex", "m"), "", "", None, client, api_key="vk"
-        )
-        assert isinstance(provider, GeminiVertexProvider)
 
 
 class TestClassify:

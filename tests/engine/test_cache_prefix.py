@@ -9,7 +9,7 @@ second-newest history triad must not change from one step to the next.
 
 from datetime import datetime
 
-from qirabot.engine.prompts import build_conversation_messages, build_system_prompts
+from qirabot.engine.prompts import build_conversation_messages, build_system_prompt
 from qirabot.engine.providers.base import ChatRequest
 from qirabot.engine.providers._gemini_wire import build_request_body
 from qirabot.engine.tools import tool_definitions_for_platform
@@ -49,7 +49,7 @@ def _request_body(step: int, notes: list[str]) -> dict:
         current_screenshot=_screenshot(step),
         is_first_step=step == 1,
     )
-    cacheable, dynamic = build_system_prompts(
+    system = build_system_prompt(
         input.platform, input.instruction, "", input.language, False, [], NOW
     )
     return build_request_body(
@@ -58,8 +58,7 @@ def _request_body(step: int, notes: list[str]) -> dict:
             messages=build_conversation_messages(input),
             tools=tool_definitions_for_platform(input.platform),
             force_tool=True,
-            cacheable_system_prompt=cacheable,
-            system_prompt=dynamic,
+            system_prompt=system,
             params={},
         )
     )

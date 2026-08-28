@@ -1,10 +1,14 @@
-"""Terminal-outcome bookkeeping around close() — local-only in v3.
+"""Terminal-outcome records around close().
 
-There is no /complete request anymore: fail()/cancel() latch ``_terminalized``
-(first call wins, idempotent), close() does purely local cleanup, and the run's
-outcome lives in ``_last_ai_status`` / ``_last_ai_error``. A run whose final
-command errored must still be recorded as an error — including when close()
-runs via atexit after the script crashed out of ai() without calling fail().
+A run's ending lives in two places, and close() must disturb neither:
+
+- the timeline's per-section outcomes/errors — written by ai() as each run
+  ends, rendered by the report as badges/banners;
+- the run log — fail()/cancel() record the script's own verdict there,
+  first-wins idempotent; a closed run can't gain an outcome after the fact.
+
+Includes the atexit shape: a script that crashes out of ai() without calling
+fail() still has the error outcome on the timeline when close() runs late.
 """
 
 import logging
@@ -12,7 +16,7 @@ import logging
 import pytest
 
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo
-from qirabot.exceptions import ActionError
+from qirabot.exceptions import ActionError, QirabotError
 
 
 class _FakeAdapter(DeviceAdapter):
@@ -58,48 +62,37 @@ def _messages(caplog):
     return [r.getMessage() for r in caplog.records]
 
 
-class TestCloseStatusFollowsLastAiOutcome:
-    def test_ai_exception_then_close_marks_failed(self, make_bot):
+class TestSectionOutcomeSurvivesClose:
+    def test_ai_exception_then_close_keeps_error_outcome(self, make_bot):
         # Mirrors a script crashing out of ai() (e.g. invalid exclude_tools)
-        # with close() left to atexit: the error outcome must survive close().
+        # with close() left to atexit: the error outcome and its banner text
+        # are already on the timeline and close() must not touch them.
         bot = _bot(make_bot, [
             {"success": False, "finished": False, "error": "invalid exclude_tools: unknown tool"},
         ])
         with pytest.raises(ActionError):
             bot.ai(object(), "do thing", max_steps=3)
-        assert bot._last_ai_status == "error"
-        assert bot._last_ai_error == "invalid exclude_tools: unknown tool"
+        assert bot._timeline.section_outcomes["do thing"] == "error"
+        assert bot._timeline.section_errors["do thing"] == "invalid exclude_tools: unknown tool"
         bot.close()
-        assert bot._closed is True
-        assert bot._last_ai_status == "error", "close() must not override the error outcome"
+        assert bot._timeline.section_outcomes["do thing"] == "error"
+        assert bot._timeline.section_errors["do thing"] == "invalid exclude_tools: unknown tool"
 
-    def test_step_error_message_survives_close(self, make_bot):
-        # Every engine step failure raises; the message is kept for the
-        # report/bookkeeping and close() must not override it.
-        bot = _bot(make_bot, [
-            {"success": False, "finished": False, "error": "session expired"},
-        ])
-        with pytest.raises(ActionError):
-            bot.ai(object(), "do thing", max_steps=3)
-        assert bot._last_ai_status == "error"
-        assert bot._last_ai_error == "session expired"
-        bot.close()
-        assert bot._last_ai_status == "error"
-
-    def test_clean_run_completes(self, make_bot):
+    def test_clean_run_completes_and_close_latches(self, make_bot, caplog):
         bot = _bot(make_bot, [DONE])
         result = bot.ai(object(), "do thing", max_steps=3)
         assert result.success is True
-        assert bot._last_ai_status == "completed"
-        assert bot._last_ai_error == ""
-        # No explicit terminal outcome was recorded; only close() itself latches.
-        assert bot._terminalized is False
+        assert bot._timeline.section_outcomes["do thing"] == "completed"
         bot.close()
-        assert bot._terminalized is True
+        # The run is over: a late fail() (e.g. an outer exception handler
+        # firing during interpreter shutdown) must not log an outcome for it.
+        with caplog.at_level(logging.INFO, logger="qirabot"):
+            bot.fail("late")
+        assert not any("run marked failed" in m for m in _messages(caplog))
 
-    def test_recovered_error_completes(self, make_bot):
-        # An earlier errored ai() followed by a successful one: the run
-        # recovered, so the final outcome stays completed.
+    def test_recovered_error_keeps_both_section_outcomes(self, make_bot):
+        # An errored ai() followed by a successful one: each run keeps its own
+        # outcome under its own section key — recovery doesn't rewrite history.
         bot = _bot(make_bot, [
             {"success": False, "finished": False, "error": "boom"},
             DONE,
@@ -107,15 +100,15 @@ class TestCloseStatusFollowsLastAiOutcome:
         with pytest.raises(ActionError):
             bot.ai(object(), "first", max_steps=3)
         bot.ai(object(), "second", max_steps=3)
-        assert bot._last_ai_status == "completed"
-        assert bot._last_ai_error == ""
+        assert bot._timeline.section_outcomes["first"] == "error"
+        assert bot._timeline.section_outcomes["second"] == "completed"
 
 
 class TestUserAbortRecordsCancelled:
     """A deliberate user abort (ESC hold, mouse-to-corner failsafe) is a
-    cancellation, not a bot failure: the run is recorded with the distinct
-    'cancelled' outcome — kept out of the failure bucket — and close() must
-    not re-record the run as failed afterwards."""
+    cancellation, not a bot failure: the section is recorded with the distinct
+    'cancelled' outcome — kept out of the failure bucket — and the run log
+    says cancelled, never failed."""
 
     def test_failsafe_abort_reports_cancelled_not_failed(self, make_bot, caplog):
         class FailSafeException(Exception):  # matches pyautogui's, by name
@@ -135,17 +128,40 @@ class TestUserAbortRecordsCancelled:
                 bot.ai(object(), "task", max_steps=3)
             bot.close()
 
-        assert bot._last_ai_status == "cancelled"
-        assert "corner" in bot._last_ai_error
-        assert bot._user_aborted is True
-        assert bot._terminalized is True
+        assert bot._timeline.section_outcomes["task"] == "cancelled"
         # cancel() won and is idempotent: exactly one cancel record, no fail.
         assert sum("run cancelled" in m for m in _messages(caplog)) == 1
         assert not any("run marked failed" in m for m in _messages(caplog))
 
-    def test_goal_failed_still_completes(self, make_bot):
+    def test_abort_is_sticky_until_cleared(self, make_bot):
+        # The abort latches the whole client, not just the interrupted run: a
+        # try/except around ai() must not re-take the machine the user just
+        # reclaimed.
+        class FailSafeException(Exception):
+            pass
+
+        bot = _bot(make_bot, [
+            {"success": True, "finished": False,
+             "actionType": "click", "params": {"x": 1, "y": 2}},
+        ])
+
+        def corner(adapter, action_type, params):
+            raise FailSafeException("mouse in a screen corner")
+
+        bot._execute_action = corner
+        with pytest.raises(FailSafeException):
+            bot.ai(object(), "task", max_steps=3)
+        with pytest.raises(QirabotError) as excinfo:
+            bot.ai(object(), "next task", max_steps=3)
+        assert getattr(excinfo.value, "code", "") == "user_abort"
+        bot.clear_user_abort()
+        bot._backend.results.append(DONE)
+        assert bot.ai(object(), "after clearing", max_steps=3).success is True
+
+    def test_goal_failed_is_not_terminal_for_the_run(self, make_bot, caplog):
         # goal_failed means the command ran cleanly but the goal was
-        # unreachable; whether that fails the run is the script's call.
+        # unreachable; whether that fails the run is the script's call — so
+        # an explicit fail() afterwards still goes on record.
         bot = _bot(make_bot, [
             {"success": True, "finished": True, "actionType": "done",
              "params": {"result": "login wall", "success": False},
@@ -154,11 +170,12 @@ class TestUserAbortRecordsCancelled:
         result = bot.ai(object(), "do thing", max_steps=3)
         assert result.status == "goal_failed"
         assert result.success is False
-        assert bot._last_ai_status == "goal_failed"
-        # Not a terminal failure: nothing latched before close().
-        assert bot._terminalized is False
+        assert bot._timeline.section_outcomes["do thing"] == "goal_failed"
+        with caplog.at_level(logging.INFO, logger="qirabot"):
+            bot.fail("login wall means this task failed")
+        assert any("run marked failed: login wall" in m for m in _messages(caplog))
 
-    def test_explicit_fail_wins_over_auto_status(self, make_bot, caplog):
+    def test_explicit_fail_is_first_wins(self, make_bot, caplog):
         bot = _bot(make_bot, [
             {"success": False, "finished": False, "error": "boom"},
         ])
@@ -170,7 +187,6 @@ class TestUserAbortRecordsCancelled:
             bot.fail("a second fail must not re-record")
             bot.close()
 
-        assert bot._terminalized is True
         failed = [m for m in _messages(caplog) if "run marked failed" in m]
         assert len(failed) == 1, "fail() is first-wins idempotent"
         assert "my own message" in failed[0]
@@ -178,7 +194,7 @@ class TestUserAbortRecordsCancelled:
 
 
 class TestContextManagerExit:
-    """__exit__ maps the escape route to the terminal outcome: Ctrl+C is a
+    """__exit__ maps the escape route to the run-log record: Ctrl+C is a
     deliberate cancel, any other exception is a failure; close() always runs."""
 
     def test_keyboard_interrupt_maps_to_cancel(self, make_bot, caplog):
@@ -187,8 +203,7 @@ class TestContextManagerExit:
             with pytest.raises(KeyboardInterrupt):
                 with bot:
                     raise KeyboardInterrupt()
-        assert bot._closed is True
-        assert bot._terminalized is True
+        assert bot._backend.closed is True
         assert any("run cancelled: aborted by user" in m for m in _messages(caplog))
         assert not any("run marked failed" in m for m in _messages(caplog))
 
@@ -198,8 +213,6 @@ class TestContextManagerExit:
             with pytest.raises(RuntimeError):
                 with bot:
                     raise RuntimeError("boom")
-        assert bot._closed is True
-        assert bot._terminalized is True
-        assert bot._last_ai_error == "boom"  # fail(str(exc))
+        assert bot._backend.closed is True
         assert any("run marked failed: boom" in m for m in _messages(caplog))
         assert not any("run cancelled" in m for m in _messages(caplog))

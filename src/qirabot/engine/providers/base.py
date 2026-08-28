@@ -1,7 +1,7 @@
 """Provider protocol, wire-neutral request/response types and error taxonomy.
 
 Mirrors the slices of go-llm the decision engine actually uses: a single
-non-streaming chat call with tools, images and a split system prompt.
+non-streaming chat call with tools, images and a system prompt.
 """
 
 from __future__ import annotations
@@ -96,9 +96,8 @@ class ChatRequest:
     messages: list[Message] = field(default_factory=list)
     tools: list[ToolDefinition] = field(default_factory=list)
     force_tool: bool = False
-    # Split system prompt: the cacheable half is constant within a task (gets
-    # an explicit cache breakpoint on Claude; concatenated elsewhere).
-    cacheable_system_prompt: str = ""
+    # Constant within a task: the head of the token stream that provider
+    # prompt caches match on.
     system_prompt: str = ""
     params: dict[str, Any] = field(default_factory=dict)
 

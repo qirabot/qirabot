@@ -127,8 +127,8 @@ def _json_result(bot: Any, *, success: bool, status: str, output: str) -> dict[s
     """The terminal JSON object of a run — one schema on every exit path
     (done / failed / error / cancelled), so scripts parse a single shape.
 
-    ``status`` extends the SDK's RunStatus with ``"cancelled"`` (Ctrl+C or the
-    ESC kill switch). Field names mirror the SDK's public attributes verbatim
+    ``status`` is the SDK's RunStatus verbatim (``"cancelled"`` for Ctrl+C or
+    the ESC kill switch). Field names mirror the SDK's public attributes verbatim
     (``task_id``, SessionUsage's fields) so the two surfaces never drift.
     ``report`` is the path close() writes on exit — the emit happens *before*
     that write, so consumers should read the file after the process exits.
@@ -224,11 +224,11 @@ def _run_local(
                 knowledge=knowledge or None,
             )
         except KeyboardInterrupt:
-            # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT caught
-            # by `except Exception` below. Without this branch the interrupt would
-            # skip reporting and the caller's finally:bot.close() would complete the
-            # still-running task as succeeded. Report it as a deliberate cancel so
-            # the run lands in the 'cancelled' bucket, not 'failed' or 'succeeded'.
+            # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT
+            # caught by `except Exception` below. Report it as a deliberate
+            # cancel — cancel() puts it in the run log, the result line says
+            # Cancelled (yellow, not red) — so the run lands in the
+            # 'cancelled' bucket, not 'failed'.
             # (130 = 128 + SIGINT, the conventional Ctrl+C exit code.)
             bot.cancel("aborted by user")
             finish(
@@ -240,7 +240,7 @@ def _run_local(
                 # ESC-hold kill switch: the same deliberate cancel as Ctrl+C
                 # above, so it gets the same face — yellow, exit 130, never a
                 # red Error. ai() already routed it through cancel(), so the
-                # terminal state is recorded; no fail() here.
+                # abort is already in the run log; no fail() here.
                 finish(
                     success=False, status="cancelled", output="aborted by user (ESC held)",
                     code=130, text="\n[bold yellow]Cancelled[/bold yellow] (ESC held)",
@@ -251,10 +251,10 @@ def _run_local(
                 code=1, text=f"[bold red]Error:[/bold red] {escape(str(e))}",
             )
         except Exception as e:
-            # Report the client-side abort so the task is recorded as failed; without
-            # this the bot.close() in the caller's finally would complete the
-            # still-running task as succeeded. (Transport already collapses HTML
-            # error bodies to one-line summaries, so str(e) prints cleanly.)
+            # Put the failure in the run log via fail() — ai() already recorded
+            # the section outcome for the report — and print the red Error
+            # line. (The engine already collapses HTML error bodies to
+            # one-line summaries, so str(e) prints cleanly.)
             bot.fail(str(e))
             finish(
                 success=False, status="error", output=str(e),
@@ -266,9 +266,10 @@ def _run_local(
                 code=0, text=f"[bold green]Done:[/bold green] {result.output}",
             )
         else:
-            # The client already set a terminal status for known failures (e.g. max
-            # steps); fail() is idempotent there and ensures other failure paths are
-            # not left to close()'s success default.
+            # goal_failed / max_steps end the command without an exception, and
+            # the SDK leaves "does that fail the run?" to the caller (see
+            # fail()). For the CLI an unfinished task is a failure, so it goes
+            # in the run log as one.
             bot.fail(result.output)
             # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
             # bypasses the caller's `except Exception` and still runs its finally.
@@ -286,11 +287,10 @@ def _fail_setup(bot: Any, e: Exception, output_format: str = "text") -> NoReturn
 
     Setup — bot.open() for browser, Appium Remote() / device resolution for
     android/ios/desktop — runs after the bot is constructed but before
-    _run_local starts reporting outcomes. An
-    error there leaves the task un-terminalized, so the command's
-    finally:bot.close() would otherwise complete it as *succeeded*. Record it as
-    failed instead, print the error, and exit 1. Machine formats get the same
-    JSON result object as a run failure, so scripts parse one schema.
+    _run_local starts reporting outcomes, so this is the one place that puts
+    a setup error on record: fail() logs it, the error is printed, exit 1.
+    Machine formats get the same JSON result object as a run failure, so
+    scripts parse one schema.
     """
     bot.fail(str(e))
     if output_format in _MACHINE_FORMATS:
@@ -990,8 +990,7 @@ def browser(
     except Exception as e:
         # Only setup (bot.open) reaches here: _run_local reports its own errors
         # and exits via SystemExit, which this `except Exception` deliberately
-        # skips. Record the setup failure so close() below doesn't complete the
-        # task as succeeded.
+        # skips. _fail_setup puts the setup failure on record before exiting.
         _fail_setup(bot, e, output_format)
     finally:
         bot.close()
@@ -1058,10 +1057,10 @@ def _run_appium(opts: _TaskOpts, appium_url: str, options: Any, record: bool = F
         try:
             driver = appium_webdriver.Remote(appium_url, options=options)
         except Exception as e:
-            # Appium setup failed before _run_local took over reporting; record
-            # the failure so the outer finally:bot.close() doesn't complete the
-            # task as succeeded. Scoped to Remote() only — a driver.quit() error
-            # after a successful run must not be misreported as a task failure.
+            # Appium setup failed before _run_local took over reporting;
+            # _fail_setup puts the failure on record before exiting. Scoped to
+            # Remote() only — a driver.quit() error after a successful run
+            # must not be misreported as a task failure.
             _fail_setup(bot, e, opts.output_format)
         try:
             _run_local(
@@ -1106,9 +1105,9 @@ def _run_direct(
         try:
             target = connect()
         except Exception as e:
-            # Same contract as _run_appium: a setup failure before _run_local
-            # takes over reporting must be recorded, or the finally:bot.close()
-            # would complete the task as succeeded.
+            # Same contract as _run_appium: a setup failure lands before
+            # _run_local takes over reporting, so _fail_setup is what puts it
+            # on record (and in the JSON result) before exiting.
             _fail_setup(bot, e, opts.output_format)
         _run_local(
             bot, target, opts.instruction, opts.max_steps,

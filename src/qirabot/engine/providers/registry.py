@@ -1,5 +1,4 @@
-"""Model string parsing, Vertex project/location resolution and provider
-construction.
+"""Model string parsing and Vertex project/location/tier resolution.
 
 The user-facing model format is "{provider}/{model}" with provider one of
 gemini-vertex / gemini (the Gemini Developer API, AI Studio keys). The model
@@ -11,12 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-import httpx
-
 from . import service_tier
-from .base import Provider
-from .gemini_api import GeminiApiProvider
-from .gemini_vertex import GeminiVertexProvider
 from .vertex_auth import VertexTokenSource
 
 PROVIDER_GEMINI_VERTEX = "gemini-vertex"
@@ -161,39 +155,6 @@ def resolve_vertex_location(explicit: str) -> str:
         if candidate.strip():
             return candidate.strip()
     return "global"
-
-
-def create_provider(
-    spec: ModelSpec,
-    project: str,
-    location: str,
-    token_source: VertexTokenSource | None,
-    http_client: httpx.Client,
-    api_key: str = "",
-    tier: str = "",
-    tier_escalation: bool = False,
-) -> Provider:
-    if spec.provider == PROVIDER_GEMINI_VERTEX:
-        return GeminiVertexProvider(
-            project,
-            location,
-            token_source,
-            http_client,
-            api_key=api_key,
-            service_tier=tier,
-            tier_escalation=tier_escalation,
-        )
-    if spec.provider == PROVIDER_GEMINI:
-        if not api_key:
-            raise ValueError(
-                "the gemini provider (Gemini Developer API / AI Studio) "
-                "requires an API key; pass gemini_api_key= or set "
-                "QIRA_GEMINI_API_KEY / GEMINI_API_KEY"
-            )
-        return GeminiApiProvider(
-            api_key, http_client, service_tier=tier, tier_escalation=tier_escalation
-        )
-    raise ValueError(_format_hint(f'unknown provider "{spec.provider}"'))
 
 
 def check_tier_location(tier: str, location: str) -> None:

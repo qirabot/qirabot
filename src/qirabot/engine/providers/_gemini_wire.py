@@ -242,9 +242,8 @@ def build_request_body(
     if service_tier:
         body["service_tier"] = service_tier
 
-    full_system = request.cacheable_system_prompt + request.system_prompt
-    if full_system:
-        body["systemInstruction"] = {"parts": [{"text": full_system}]}
+    if request.system_prompt:
+        body["systemInstruction"] = {"parts": [{"text": request.system_prompt}]}
 
     if request.tools:
         body["tools"] = [{"functionDeclarations": [_declaration(t) for t in request.tools]}]

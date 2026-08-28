@@ -17,9 +17,7 @@ from qirabot.engine.providers.base import ChatRequest, ErrorCategory, ProviderEr
 from qirabot.engine.providers.gemini_api import GeminiApiProvider
 from qirabot.engine.providers.gemini_vertex import GeminiVertexProvider
 from qirabot.engine.providers.registry import (
-    ModelSpec,
     check_tier_location,
-    create_provider,
     resolve_service_tier,
     resolve_tier_escalation,
 )
@@ -603,11 +601,3 @@ class TestResolution:
             check_tier_location("priority", "us-central1")
         check_tier_location("", "us-central1")
         check_tier_location("priority", "global")
-
-    def test_create_provider_threads_the_tier(self) -> None:
-        client, seen = _client([httpx.Response(200, json=_ok())])
-        provider = create_provider(
-            ModelSpec("gemini", "m"), "", "", None, client, api_key="k", tier="flex"
-        )
-        provider.chat(_request(), 30.0)
-        assert json.loads(seen[0].content)["service_tier"] == "flex"

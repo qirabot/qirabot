@@ -25,11 +25,12 @@ from . import actions
 from .engine import LocalEngine
 from .providers.base import Provider, ProviderError
 from .providers.service_tier import tier_label
+from .providers.gemini_api import GeminiApiProvider
+from .providers.gemini_vertex import GeminiVertexProvider
 from .providers.registry import (
     PROVIDER_GEMINI,
     ModelSpec,
     check_tier_location,
-    create_provider,
     parse_model,
     resolve_gemini_api_key,
     resolve_service_tier,
@@ -190,25 +191,19 @@ class LocalBackend:
 
         if provider is None and self._spec.provider == PROVIDER_GEMINI:
             # Gemini Developer API (AI Studio keys): no ADC, no
-            # project/location — the key is the whole auth story.
-            # create_provider raises the actionable error when no key
-            # resolves (param > QIRA_GEMINI_API_KEY > GEMINI_API_KEY).
-            self._http = httpx.Client()
-            try:
-                provider = create_provider(
-                    self._spec,
-                    "",
-                    "",
-                    None,
-                    self._http,
-                    api_key=resolve_gemini_api_key(gemini_api_key),
-                    tier=tier,
-                    tier_escalation=escalate,
+            # project/location — the key is the whole auth story
+            # (param > QIRA_GEMINI_API_KEY > GEMINI_API_KEY).
+            api_key = resolve_gemini_api_key(gemini_api_key)
+            if not api_key:
+                raise ValueError(
+                    "the gemini provider (Gemini Developer API / AI Studio) "
+                    "requires an API key; pass gemini_api_key= or set "
+                    "QIRA_GEMINI_API_KEY / GEMINI_API_KEY"
                 )
-            except ValueError:
-                self._http.close()
-                self._http = None
-                raise
+            self._http = httpx.Client()
+            provider = GeminiApiProvider(
+                api_key, self._http, service_tier=tier, tier_escalation=escalate
+            )
             logger.info(
                 "local engine: model=%s/%s auth=api-key endpoint=generativelanguage"
                 "%s",
@@ -229,14 +224,13 @@ class LocalBackend:
                         "is project-bound and global-endpoint only"
                     )
                 self._http = httpx.Client()
-                provider = create_provider(
-                    self._spec,
+                provider = GeminiVertexProvider(
                     "",
                     "",
                     None,
                     self._http,
                     api_key=api_key,
-                    tier=tier,
+                    service_tier=tier,
                     tier_escalation=escalate,
                 )
                 logger.info(
@@ -251,13 +245,12 @@ class LocalBackend:
                 check_tier_location(tier, location)
                 project = resolve_vertex_project(vertex_project, tokens)
                 self._http = httpx.Client()
-                provider = create_provider(
-                    self._spec,
+                provider = GeminiVertexProvider(
                     project,
                     location,
                     tokens,
                     self._http,
-                    tier=tier,
+                    service_tier=tier,
                     tier_escalation=escalate,
                 )
                 logger.info(

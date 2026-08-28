@@ -8,8 +8,8 @@ import pytest
 
 from qirabot.engine.local_backend import LocalBackend
 from qirabot.engine.providers.base import ChatRequest, ChatResponse, ErrorCategory, ProviderError
-from qirabot.engine.session import StepError, history_config_for_provider
-from qirabot.engine.types import ModelConfig, TokenUsage, ToolCall
+from qirabot.engine.session import StepError
+from qirabot.engine.types import TokenUsage, ToolCall
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
@@ -417,18 +417,6 @@ class TestSaveNoteAndDone:
         assert step(run, PNG, "ok").step_number == 2
 
 
-class TestHistoryWindowByProvider:
-    def test_9_all_providers_default(self) -> None:
-        # No prefix-cache provider is left, so everything takes the default
-        # window; the hook stays for Claude-style providers (see session.py).
-        for provider in ("gemini-vertex", "gemini"):
-            cfg = history_config_for_provider(
-                ModelConfig(provider=provider, model="m"), max_steps=20
-            )
-            assert cfg.max_entries == 5
-            assert cfg.max_screenshots == 1
-
-
 class TestSingleStepLocate:
     def test_10_success(self) -> None:
         fake = FakeProvider(
@@ -572,7 +560,7 @@ class TestPlatformNormalization:
         # it the chrome prompt/tools silently fall back to android.
         fake = FakeProvider(tool_resp("click", CLICK_ARGS))
         step(start_run(backend(fake), platform="browser"))
-        assert fake.requests[0].cacheable_system_prompt.startswith(
+        assert fake.requests[0].system_prompt.startswith(
             "# Role\nYou are a UI automation agent for the Chrome browser platform"
         )
         assert any(t.name == "navigate" for t in fake.requests[0].tools)

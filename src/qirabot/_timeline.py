@@ -86,6 +86,20 @@ class RunTimeline:
         self.current_section = section
         return section
 
+    def record_outcome(self, status: str, error: str = "") -> None:
+        """Record how the current section ended.
+
+        ``status`` is a :data:`qirabot.client.RunStatus` value (a plain str
+        here to keep this module import-light); the report renders it as the
+        section's badge. ``error``, when non-empty, becomes the banner above
+        the section's step table — and is left untouched otherwise, so a
+        later outcome update (ai() recording "max_steps" after the loop
+        already noted the truncation banner) cannot erase it.
+        """
+        self.section_outcomes[self.current_section] = status
+        if error:
+            self.section_errors[self.current_section] = error
+
     def add_tokens(
         self, usage: TokenUsage, *, step_ms: int = 0, llm_ms: int = 0
     ) -> None:

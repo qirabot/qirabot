@@ -90,8 +90,7 @@ class TestGeminiVertex:
                 )
             ],
             force_tool=True,
-            cacheable_system_prompt="CACHEABLE",
-            system_prompt="DYNAMIC",
+            system_prompt="SYSTEM",
             params={"temperature": 0.2, "max_tokens": 4096},
         )
         defaults.update(kwargs)
@@ -123,7 +122,7 @@ class TestGeminiVertex:
         provider, seen = self.make()
         provider.chat(self.base_request(), timeout=30)
         body = sent_body(seen[0])
-        assert body["systemInstruction"] == {"parts": [{"text": "CACHEABLEDYNAMIC"}]}
+        assert body["systemInstruction"] == {"parts": [{"text": "SYSTEM"}]}
         assert body["toolConfig"] == {"functionCallingConfig": {"mode": "ANY"}}
         assert len(body["safetySettings"]) == 4
         assert all(s["threshold"] == "OFF" for s in body["safetySettings"])
@@ -422,8 +421,7 @@ class TestGeminiApi:
             messages=[Message(role="user", content="Task: go")],
             tools=[ToolDefinition(name="click", description="c", parameters={"type": "object"})],
             force_tool=True,
-            cacheable_system_prompt="CACHEABLE",
-            system_prompt="DYNAMIC",
+            system_prompt="SYSTEM",
             params={"temperature": 0.2},
         )
         defaults.update(kwargs)
@@ -441,7 +439,7 @@ class TestGeminiApi:
         assert req.headers["x-goog-api-key"] == "sk-1"
         assert "Authorization" not in req.headers
         body = sent_body(req)
-        assert body["systemInstruction"] == {"parts": [{"text": "CACHEABLEDYNAMIC"}]}
+        assert body["systemInstruction"] == {"parts": [{"text": "SYSTEM"}]}
         assert body["toolConfig"] == {"functionCallingConfig": {"mode": "ANY"}}
         assert resp.tool_calls[0].name == "click"
 

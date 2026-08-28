@@ -403,7 +403,7 @@ def test_client_aborts_between_steps_on_esc_hold(fake_spawn):
     # "I hit the kill switch and it clicked once more" is not acceptable.
     assert executed == []
     # Recorded as a user cancellation, not a bot failure.
-    assert bot._last_ai_status == "cancelled"
+    assert bot._timeline.section_outcomes["drive the desktop"] == "cancelled"
     # The overlay shows the failed ending, glow off.
     last = _sent_lines(fake_spawn[0])[-1]
     assert last["state"] == "fail" and last["edge"] is False

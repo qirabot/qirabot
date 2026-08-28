@@ -19,7 +19,7 @@ from .coords import bbox_center, rescale_point, to_float
 from .prompts import (
     LOCATE_SYSTEM_PROMPT,
     build_conversation_messages,
-    build_system_prompts,
+    build_system_prompt,
 )
 from .custom_tools import custom_tool_definitions, filter_excluded
 from .providers.base import ChatRequest, Provider
@@ -78,7 +78,7 @@ class LocalEngine:
         tools = filter_excluded(tools, input.exclude_tools)
         tools = tools + custom_tool_definitions(input.custom_tools, input.language)
 
-        cacheable, dynamic = build_system_prompts(
+        system_prompt = build_system_prompt(
             input.platform,
             input.instruction,
             input.knowledge,
@@ -93,8 +93,7 @@ class LocalEngine:
                 messages=messages,
                 tools=tools,
                 force_tool=True,
-                cacheable_system_prompt=cacheable,
-                system_prompt=dynamic,
+                system_prompt=system_prompt,
                 params=params,
             ),
             timeout=DECIDE_TIMEOUT,

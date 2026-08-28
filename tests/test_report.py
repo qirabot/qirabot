@@ -389,3 +389,16 @@ class TestRunInfo:
         )
         html = out.read_text(encoding="utf-8")
         assert "<dt>Steps</dt><dd>1 (all AI-decided)</dd>" in html
+
+
+class TestStatusVocabulary:
+    def test_badge_map_covers_run_status_exactly(self):
+        # qirabot.client.RunStatus is the single status vocabulary; the
+        # report's badge map must cover it exactly — a new status added there
+        # without a badge here would render as a misleading FAIL fallback.
+        from typing import get_args
+
+        from qirabot.client import RunStatus
+        from qirabot.report import _STATUS_KINDS
+
+        assert set(_STATUS_KINDS) == set(get_args(RunStatus))

@@ -7,6 +7,7 @@ credentials; tests script decisions via ``bot._backend.results`` and assert
 outbound request bodies via ``bot._backend.requests``.
 """
 
+import logging
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -320,14 +321,14 @@ class TestAiLoopStatus:
 
     def test_step_error_raises_and_keeps_error_text(self, make_bot):
         # Engine step failures raise ActionError; ai() records the "error"
-        # outcome and keeps the message for close()'s bookkeeping.
+        # outcome and keeps the message for the report's section banner.
         bot = self._bot_returning(make_bot, {
             "success": False, "finished": False, "error": "decide exploded",
         })
         with pytest.raises(ActionError, match="decide exploded"):
             bot.ai(object(), "do thing", max_steps=3)
         assert bot._timeline.section_outcomes["do thing"] == "error"
-        assert "decide exploded" in bot._last_ai_error
+        assert "decide exploded" in bot._timeline.section_errors["do thing"]
 
     def test_max_steps_yields_max_steps(self, make_bot):
         # Never finishes: every step is a successful non-terminal action.
@@ -766,13 +767,12 @@ class TestQirabotContextManager:
 
     def test_exit_with_exception_records_failure(self, make_bot):
         bot = make_bot()
+        bot.fail = MagicMock(wraps=bot.fail)
         with pytest.raises(ValueError):
             with bot:
                 raise ValueError("boom")
-        # __exit__ routed the exception through fail(): terminal state latched,
-        # error kept, and the client is closed.
-        assert bot._terminalized is True
-        assert bot._last_ai_error == "boom"
+        # __exit__ routed the exception through fail() and closed the client.
+        bot.fail.assert_called_once_with("boom")
         assert bot._closed is True
 
     def test_exit_with_keyboardinterrupt_records_cancel(self, make_bot):
@@ -783,55 +783,54 @@ class TestQirabotContextManager:
                 raise KeyboardInterrupt()
         # Ctrl+C is a deliberate cancel, not a failure.
         bot.cancel.assert_called_once_with("aborted by user")
-        assert bot._terminalized is True
         assert bot._closed is True
 
 
 class TestQirabotTerminalStatus:
-    """fail()/cancel() are local bookkeeping in v3 (no /complete round-trip):
-    they latch the terminal state so close() can't record a clean ending over
-    an explicit failure/abort."""
+    """fail()/cancel() record the script's verdict in the run log — the first
+    terminal outcome wins, and a closed run can't gain one after the fact."""
 
-    def test_fail_latches_terminal_state_and_error(self, make_bot):
-        bot = make_bot()
-        assert bot._terminalized is False
-        bot.fail("screenshot encode error")
-        assert bot._terminalized is True
-        assert bot._last_ai_error == "screenshot encode error"
+    def _messages(self, caplog):
+        return [r.getMessage() for r in caplog.records]
 
-    def test_fail_is_idempotent_first_error_wins(self, make_bot):
+    def test_fail_logs_once_first_message_wins(self, make_bot, caplog):
         bot = make_bot()
-        bot.fail("first")
-        bot.fail("second")
-        assert bot._last_ai_error == "first"
+        with caplog.at_level(logging.INFO, logger="qirabot"):
+            bot.fail("first")
+            bot.fail("second")
+        failed = [m for m in self._messages(caplog) if "run marked failed" in m]
+        assert failed == ["run marked failed: first"]
 
-    def test_fail_explicit_message_wins_over_ai_error(self, make_bot):
-        # An explicit fail("msg") is deliberate: it overrides whatever the
-        # last ai() run captured (matching the v2 /complete semantics, where
-        # the caller's message was what got recorded).
+    def test_cancel_after_fail_is_a_noop(self, make_bot, caplog):
         bot = make_bot()
-        bot._last_ai_error = "step 3 exploded"
-        bot.fail("script-level wrapper error")
-        assert bot._last_ai_error == "script-level wrapper error"
+        with caplog.at_level(logging.INFO, logger="qirabot"):
+            bot.fail("boom")
+            bot.cancel("late ctrl+c")
+        assert any("run marked failed: boom" in m for m in self._messages(caplog))
+        assert not any("run cancelled" in m for m in self._messages(caplog))
 
-    def test_cancel_latches_terminal_state(self, make_bot):
+    def test_fail_after_cancel_is_a_noop(self, make_bot, caplog):
         bot = make_bot()
-        bot.cancel("aborted by user")
-        assert bot._terminalized is True
+        with caplog.at_level(logging.INFO, logger="qirabot"):
+            bot.cancel("aborted by user")
+            bot.fail("late catch-all handler")
+        assert any("run cancelled: aborted by user" in m for m in self._messages(caplog))
+        assert not any("run marked failed" in m for m in self._messages(caplog))
 
-    def test_cancel_after_fail_is_a_noop(self, make_bot):
+    def test_fail_after_close_logs_nothing(self, make_bot, caplog):
         bot = make_bot()
-        bot.fail("boom")
-        bot.cancel("late ctrl+c")
-        # First terminal status wins; cancel is a no-op once failed.
-        assert bot._last_ai_error == "boom"
+        bot.close()
+        with caplog.at_level(logging.INFO, logger="qirabot"):
+            bot.fail("late")
+            bot.cancel("late")
+        assert not any("run marked failed" in m for m in self._messages(caplog))
+        assert not any("run cancelled" in m for m in self._messages(caplog))
 
     def test_close_is_local_and_closes_backend(self, make_bot):
         bot = make_bot()
         backend = bot._backend
         bot.close()
         assert bot._closed is True
-        assert bot._terminalized is True
         assert backend.closed is True
 
     def test_close_is_idempotent(self, make_bot):

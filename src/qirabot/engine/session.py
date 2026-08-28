@@ -17,7 +17,7 @@ from typing import Any
 
 from . import actions
 from .engine import LocalEngine
-from .history import History, HistoryConfig, default_history_config
+from .history import History, default_history_config
 from .prompts import NORMALIZED_COORD_RULE
 from .coords import rescale_point
 from .types import (
@@ -71,15 +71,6 @@ class StepOutcome:
     step_duration_ms: int = 0
 
 
-def history_config_for_provider(cfg: ModelConfig | None, max_steps: int) -> HistoryConfig:
-    """History sizing by provider. Gemini's implicit caching needs no
-    provider-specific buffer, so everything takes the default today. The
-    hook stays because prefix-cache providers (Claude-style explicit
-    breakpoints) need max_steps-sized buffers to keep the prefix stable —
-    that's what the cloud engine did for its claude aliases."""
-    return default_history_config()
-
-
 class LocalAISession:
     """State for one in-flight ai() command."""
 
@@ -106,7 +97,7 @@ class LocalAISession:
         self.annotate_for_model = annotate_for_model
         self.step_count = 0
         self.notes: list[str] = []
-        self.history = History(history_config_for_provider(model_config, max_steps))
+        self.history = History(default_history_config())
         # Cached screenshots for history replay, capped at the history
         # high-water mark (entries are batch-trimmed, so up to that many can
         # be retained at once).

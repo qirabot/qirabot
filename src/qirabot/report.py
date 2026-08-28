@@ -226,8 +226,10 @@ def _badge(label: str, kind: str) -> str:
     return f'<span class="badge {kind}">{html.escape(label)}</span>'
 
 
-# RunStatus -> (badge label, css class). Unknown statuses fall back to FAIL —
-# a status we don't recognize should read as broken, never silently green.
+# RunStatus -> (badge label, css class): one entry per qirabot.client.RunStatus
+# value — that Literal is the single status vocabulary, and a test keeps this
+# mapping in lockstep with it. Unknown statuses fall back to FAIL — a status
+# we don't recognize should read as broken, never silently green.
 _STATUS_KINDS = {
     "completed": ("PASS", "pass"),
     "goal_failed": ("FAIL", "fail"),

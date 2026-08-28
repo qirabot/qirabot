@@ -41,7 +41,7 @@ login`。
 
 | 异常 | 时机 |
 |---|---|
-| `AuthenticationError` | 凭据配置问题——凭据缺失、不可用或有歧义。环境里残留 v2 时代的 `QIRA_API_KEY` 时也会抛出。不重试。 |
+| `AuthenticationError` | 凭据配置问题——凭据缺失、不可用或有歧义。不重试。 |
 | `QirabotTimeoutError` | 客户端等待超时(`wait_for`、自动等待)。 |
 | `ActionError` | AI 动作失败,包括你的 Vertex AI 端点报告的模型调用失败(消息携带提供方的详细信息)。 |
 | `MissingDependencyError` | 某个可选后端依赖(playwright、pyautogui 等)未安装;消息里会按 qirabot 当前所处的环境给出要执行的确切安装命令。同时也是 `ImportError`。 |

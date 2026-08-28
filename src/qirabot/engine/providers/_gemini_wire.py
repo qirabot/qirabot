@@ -5,8 +5,8 @@ gemini_api (Gemini Developer API, AI Studio key) — speak the identical
 generateContent dialect; only URL and auth differ. Everything wire-shaped
 lives here so the transports stay thin and neither sibling imports the other.
 
-Wire semantics mirror go-llm's gemini.go: system instruction is the
-concatenated cacheable+dynamic prompt (Gemini caches implicitly), tool
+Wire semantics: the system prompt goes out as the
+systemInstruction verbatim (Gemini caches implicitly), tool
 schemas are reduced to type/description/enum/properties/required (Gemini's
 schema dialect rejects the rest), forced tool calling uses mode ANY, safety
 filters are off (screenshots of arbitrary UIs trip them constantly), and a
@@ -192,10 +192,12 @@ def build_request_body(
     service_tier: str = "",
 ) -> dict[str, Any]:
     generation_config: dict[str, Any] = {
+        # temperature/topP always go out, as an explicit 0.0 when unset
+        # rather than omitted; the wire tests pin the exact body.
         "temperature": request.param_float("temperature", 0.0),
         "topP": request.param_float("top_p", 0.0),
-        # NOTE: reads max_output_tokens (not max_tokens), faithfully mirroring
-        # go-llm — the engine's max_tokens default never applied to Gemini.
+        # NOTE: reads max_output_tokens, not max_tokens — the engine's
+        # max_tokens default never applies to Gemini.
         "maxOutputTokens": request.param_int("max_output_tokens", 8192),
     }
 
@@ -270,7 +272,7 @@ _ULTRA_HIGH = "MEDIA_RESOLUTION_ULTRA_HIGH"
 
 
 def _map_media_resolution(value: str) -> str:
-    # Same table (and same fallback-to-medium on unknown values) as go-llm.
+    # Unknown values fall back to medium rather than erroring.
     return {
         "low": "MEDIA_RESOLUTION_LOW",
         "medium": "MEDIA_RESOLUTION_MEDIUM",
@@ -424,6 +426,9 @@ def _usage(data: dict[str, Any]) -> TokenUsage:
     cached = n("cachedContentTokenCount")
     candidates = n("candidatesTokenCount")
     thoughts = n("thoughtsTokenCount")
+    # promptTokenCount includes the cache hits, so cache reads are carved out
+    # of input_tokens and reported only in cache_read_tokens — the two fields
+    # sum back to promptTokenCount without double counting.
     return TokenUsage(
         input_tokens=prompt - cached,
         output_tokens=candidates + thoughts,

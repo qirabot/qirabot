@@ -1,5 +1,4 @@
-"""ParseCustomTools / ParseExcludeTools / knowledge validation — ported from
-the Go server's custom_tools_test.go and knowledge_test.go."""
+"""parse_custom_tools / parse_exclude_tools / knowledge validation."""
 
 from typing import Any
 

@@ -1,13 +1,11 @@
 """System-prompt assembly and conversation-message building.
 
-Mirrors internal/decision/prompts.go (+ knowledgeSection from knowledge.go),
-with one deliberate deviation: v2 put the step summary and saved notes in the
-dynamic system prompt, which sits at the head of the token stream — every
-save_note or window truncation changed it and invalidated the whole provider
-prompt-cache prefix. Here BOTH system prompt halves are constant within a
-task, and summary/notes travel as a progress-context message near the tail
-of the conversation (see build_conversation_messages), so the cache prefix
-survives across steps.
+The step summary and saved notes deliberately stay OUT of the system prompt:
+it sits at the head of the token stream, so every save_note or window
+truncation would change it and invalidate the whole provider prompt-cache
+prefix. The system prompt is constant within a task, and summary/notes
+travel as a progress-context message near the tail of the conversation (see
+build_conversation_messages), so the cache prefix survives across steps.
 """
 
 from __future__ import annotations
@@ -90,7 +88,7 @@ def build_system_prompt(
 ) -> str:
     """The system prompt, constant within a task — anything that changes
     step to step (summary, notes) belongs in progress_context_section, not
-    here. Section order is deliberate: the halves shared across tasks on the
+    here. Section order is deliberate: the sections shared across tasks on the
     same platform (role, grounding) come first and the task-specific ones
     (knowledge, excluded tools, instruction/date) last, keeping the longest
     possible byte-stable head for provider prompt caches."""
@@ -122,7 +120,7 @@ def excluded_tools_section(exclude_tools: list[str]) -> str:
 
 
 def grounding_guidance() -> str:
-    """Element-targeting section appended to the cacheable system prompt.
+    """Element-targeting section of the system prompt.
     Kept in sync with the tool schema (which carries point_x/point_y via
     with_point_fields) so the prompt never contradicts it."""
     return (
@@ -134,7 +132,7 @@ def grounding_guidance() -> str:
 
 
 def knowledge_section(knowledge: str) -> str:
-    """User-supplied domain knowledge for the cacheable system prompt. The
+    """User-supplied domain knowledge section of the system prompt. The
     framing matters: this is reference material, not the goal, so imperative
     sentences inside a rules document must not read as pending tasks."""
     if not knowledge:
@@ -152,7 +150,7 @@ _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 
 
 def _format_date(d: _date) -> str:
-    # Go's "2006-01-02 Monday"; weekday names spelled out so the output is
+    # "2026-01-02 Monday" — weekday names spelled out so the output is
     # locale-independent (strftime %A follows the process locale).
     return f"{d.isoformat()} {_WEEKDAYS[d.weekday()]}"
 
@@ -268,8 +266,8 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
             )
 
     # Always include task instruction as first user message so the model sees
-    # the goal in conversation context, not just in system prompt. Some models
-    # (e.g. qwen) follow system prompt less strictly.
+    # the goal in conversation context, not just in the system prompt, which
+    # some models follow less strictly.
     if input.is_first_step:
         task_content = f"Task: {input.instruction}\n\nPlease begin."
     else:
@@ -282,7 +280,6 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
     if progress:
         messages.append(Message(role="user", content=progress))
 
-    # Add current screenshot
     if input.current_screenshot:
         messages.append(
             Message(

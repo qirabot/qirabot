@@ -25,9 +25,8 @@ _CSS = """
 body { font: 14px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
        margin: 0; padding: 24px; background: #f6f7f9; color: #1a1a1a; }
 h1 { font-size: 20px; margin: 0 0 4px; }
-/* Run facts as label/value pairs. Each value used to be a bare fragment in
-   one long dot-separated line, which asked the reader to know what every
-   string was; the label column answers that and lets values grow. */
+/* Run facts as label/value pairs: the label column tells the reader what
+   each value is (see _render_run_info) and lets values grow. */
 .runinfo { display: grid; grid-template-columns: max-content minmax(0, 1fr);
            gap: 4px 16px; font-size: 12px; color: #555; margin-bottom: 18px; }
 .runinfo dt { color: #888; }
@@ -295,10 +294,10 @@ def _render_run_info(
 ) -> str:
     """The run's facts as labelled rows.
 
-    Everything here used to be two dot-separated lines of bare fragments, which
-    left the reader to work out what each string was — an opaque id, a model
-    name, "in/out/think", a duration of something unstated. A label column
-    answers all of that, and rows appear only when they have something to say.
+    Bare fragments would leave the reader to work out what each string is —
+    an opaque id, a model name, "in/out/think", a duration of something
+    unstated. The label column answers all of that, and rows appear only when
+    they have something to say.
     """
     rows: list[tuple[str, str]] = [("Run", when)]
     if model:

@@ -235,11 +235,10 @@ def _fake_local_backend(monkeypatch):
 def _isolate_user_config(tmp_path, monkeypatch):
     """Point the user-level config dir at a temp path for every test, and
     scrub Qirabot env vars that change construction behavior (a developer's
-    shell may carry QIRA_MODEL / a stale QIRA_API_KEY / report settings)."""
+    shell may carry QIRA_MODEL / report settings)."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     for var in (
-        "QIRA_API_KEY",
         "QIRA_MODEL",
         "QIRA_MEDIA_RESOLUTION",
         "QIRA_REPORT_DIR",

@@ -10,7 +10,7 @@ Behavior deliberately preserved from the retired airtest Windows adapter:
 click hardening (pre-move jitter + a real hold), modifier press→pace→base→
 reverse-release ordering, per-key hold/gap pacing, and the focus settle before
 typing. What airtest couldn't do — horizontal wheel, unicode text without a
-SendKeys fallback — is native here. Text games can't receive as injected
+SendKeys fallback — is native here. Text that games can't receive as injected
 unicode (CJK and friends: KEYEVENTF_UNICODE needs a TranslateMessage loop
 Raw-Input/DirectInput games don't run) is delivered via clipboard + Ctrl+V;
 QIRA_TEXT_FALLBACK=unicode reverts to injection.

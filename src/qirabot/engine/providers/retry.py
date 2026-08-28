@@ -1,9 +1,8 @@
 """Transport-level retry with per-category backoff.
 
-Deliberately narrower than go-llm's retry-everything policy: only 429/5xx,
-timeouts and connection errors are retried — deterministic failures
-(400/401/403) fail fast because the user pays for every attempt. The generic
-attempt budget stays at 3 (matching production server.toml retry_times).
+Deliberately narrow: only 429/5xx, timeouts and connection errors are
+retried — deterministic failures (400/401/403) fail fast because the user
+pays for every attempt. The generic attempt budget is 3.
 Content-level failures (empty or unparsable responses) are NOT retried here;
 that is the engine's corrective-re-decide path.
 

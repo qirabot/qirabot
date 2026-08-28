@@ -663,6 +663,8 @@ def open_browser(
     click.echo("Browser is open — log in to the sites your automation needs.")
     click.echo("When you're done, close the browser window (or press Ctrl-C here).")
     try:
+        # Playwright timeout=0 means "no timeout": block until the user
+        # closes the browser window.
         launched.context.wait_for_event("close", timeout=0)
     except KeyboardInterrupt:
         pass
@@ -816,28 +818,6 @@ def doctor(ctx: click.Context) -> None:
     else:
         console.print(f"{bad} Google Cloud credentials: {escape(cred_err)}")
         problems += 1
-
-    # A leftover v2 cloud key is the one setup state where doctor could say
-    # "Ready" while every default run refuses to start: the SDK's migration
-    # guard trips on QIRA_API_KEY unless a model is chosen explicitly.
-    # Surface it here, where the user is already looking for setup problems.
-    if os.environ.get("QIRA_API_KEY") and not os.environ.get("QIRA_MODEL", "").strip():
-        from qirabot._dotenv import injected_from
-
-        src = injected_from("QIRA_API_KEY")
-        where = f"loaded from {escape(src)}" if src else "exported in the environment"
-        console.print(
-            f"{warn} leftover v2 QIRA_API_KEY ({where}) — the cloud backend is "
-            "gone, and runs will refuse to start until you remove it (and "
-            "QIRA_BASE_URL) or opt into v3 with --model / QIRA_MODEL"
-        )
-    from qirabot._userconfig import config_path, load_api_key
-
-    if load_api_key():
-        console.print(
-            f"{warn} v2 credentials in {escape(str(config_path()))} — unused "
-            "in v3; delete the file to clean up"
-        )
 
     # (label, ready, fix-hint). A missing Chromium download or missing system
     # libraries both count as not-ready: bot.open() would fail at launch even

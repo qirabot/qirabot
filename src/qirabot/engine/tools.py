@@ -1,7 +1,7 @@
 """Built-in tool registry — the single source of truth for action metadata.
 
-Mirrors internal/decision/tools.go. Registry order determines the LLM tool
-list order (and therefore the prompt-cache prefix), so it must stay stable.
+Registry order determines the LLM tool list order (and therefore the
+prompt-cache prefix), so it must stay stable.
 """
 
 from __future__ import annotations

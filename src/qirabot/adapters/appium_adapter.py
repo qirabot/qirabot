@@ -130,8 +130,9 @@ class AppiumAdapter(DeviceAdapter):
             else:
                 self._focused_element().send_keys(key)
         else:
-            # iOS：键名要转成 XCUITest 能识别的字符，否则会被当文本输入。
-            # 回车需发 "\n" 触发键盘 return/搜索键（直接发 "Enter" 会输出字面文字）。
+            # iOS: key names must become characters XCUITest recognizes, or
+            # they are typed as literal text — enter must be sent as "\n" to
+            # trigger the keyboard's return/search key.
             ios_key_map = {"enter": "\n", "return": "\n", "tab": "\t"}
             self._focused_element().send_keys(ios_key_map.get(key.lower(), key))
 

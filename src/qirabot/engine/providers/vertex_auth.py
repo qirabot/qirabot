@@ -1,9 +1,9 @@
 """GCP ADC token source for the Vertex providers.
 
-Same semantics as go-llm's google.DefaultTokenSource: Application Default
-Credentials resolve, in order, GOOGLE_APPLICATION_CREDENTIALS (service
-account JSON), gcloud user credentials, and the GCE metadata server. Tokens
-are cached on the credentials object and refreshed just before expiry.
+Application Default Credentials resolve, in order,
+GOOGLE_APPLICATION_CREDENTIALS (service account JSON), gcloud user
+credentials, and the GCE metadata server. Tokens are cached on the
+credentials object and refreshed just before expiry.
 """
 
 from __future__ import annotations

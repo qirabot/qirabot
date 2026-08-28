@@ -1,9 +1,9 @@
 """Core data types for the local decision engine.
 
-Mirrors the server's internal/decision/types.go plus the small structs the Go
-package pulled from internal/modelalias (ModelConfig, locate-format constants)
-and go-llm (Message/Image/ToolCall/ToolResult/ToolDefinition/TokenUsage), so
-the whole engine package is self-contained.
+Everything the engine needs lives here — decision inputs/results, the
+provider-neutral chat structs (Message/Image/ToolCall/ToolResult/
+ToolDefinition/TokenUsage), ModelConfig and the locate-format constants —
+so the engine package is self-contained.
 """
 
 from __future__ import annotations
@@ -36,8 +36,7 @@ class UnsupportedScreenshotError(EngineError):
     """The screenshot could not be decoded; deterministic, never retried."""
 
 
-# Locate coordinate dialects (mirrors internal/modelalias/alias.go).
-# Unset/unknown falls back to LOCATE_FORMAT_POINT.
+# Locate coordinate dialects. Unset/unknown falls back to LOCATE_FORMAT_POINT.
 LOCATE_FORMAT_POINT = "point_xy_1000"
 LOCATE_FORMAT_BBOX = "bbox_yx_1000"
 
@@ -161,7 +160,7 @@ class DecisionInput:
     """All context needed for a decision."""
 
     instruction: str = ""
-    knowledge: str = ""  # domain background, appended to the cacheable system prompt
+    knowledge: str = ""  # domain background, becomes a system-prompt section
     platform: str = ""  # android, ios, chrome, desktop
     language: str = ""
     current_screenshot: bytes = b""

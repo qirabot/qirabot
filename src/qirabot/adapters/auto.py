@@ -77,13 +77,12 @@ def detect(target: Any) -> DeviceAdapter:
             return cls(target)
     if _is_airtest_target(target):
         raise TypeError(
-            "airtest support was removed in qirabot 2.0. Migrate the target: "
+            "airtest targets are not supported directly. Use "
             "Android -> qirabot.AdbDevice (direct adb, zero dependencies), "
             "Windows -> qirabot.Window(hwnd=/title=/title_re=), "
             "iOS -> qirabot.WdaClient(wda_url). To keep driving airtest, copy "
             "examples/airtest/adapter.py into your project and "
-            "register_adapter(AirtestAdapter) — or pin qirabot<2.0. "
-            "See the 2.0 migration guide in the README."
+            "register_adapter(AirtestAdapter)."
         )
     raise TypeError(
         f"Unsupported target type: {type(target).__name__}. "

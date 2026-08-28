@@ -38,15 +38,6 @@ with deterministic steps instead of `ai()`. Note that `screenshot_quality`
 is *not* a cost lever: image tokens depend only on the resolution tier. Full
 breakdown in [Controlling Cost](/advanced/cost).
 
-## I upgraded from v2 and it won't start
-
-v3 refuses to run while a v2-era `QIRA_API_KEY` is in the environment,
-rather than silently switching billing to a Google Cloud project. Unset
-`QIRA_API_KEY` and `QIRA_BASE_URL` (including in `.env` and CI secrets).
-Setting `model=` (or `QIRA_MODEL`) also counts as acknowledging the switch
-and disarms the guard. For credentials, see
-[Configuration](/advanced/configuration).
-
 ## What data leaves my machine?
 
 Screenshots, your instruction text, and step metadata. They are sent

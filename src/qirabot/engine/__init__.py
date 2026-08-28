@@ -1,8 +1,9 @@
 """Local decision engine: prompts, tool registry, history and coordinate
-logic ported from the qirabot-v2 server's internal/decision package.
+logic.
 
-The LLM-facing entry points (Engine, LocalBackend) land in later stages; this
-package level re-exports the stable data types.
+The LLM-facing entry points live in engine.py (LocalEngine) and
+local_backend.py (LocalBackend); this package level re-exports the stable
+data types.
 """
 
 from .types import (

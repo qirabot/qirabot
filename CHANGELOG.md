@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### v2 migration aids retired
+
+- A leftover v2-era `QIRA_API_KEY` no longer blocks construction: the
+  refuse-to-start migration guard, `qirabot doctor`'s leftover-key and
+  leftover-credential-file warnings, and the `auth.cloud_removed` error
+  code are gone. The variable is now simply ignored.
+- Removed the internal `_userconfig` module (the v2 credential file at
+  `~/.config/qirabot/config.json` is no longer read) and
+  `load_dotenv`'s injected-key origin tracking.
+- Comments and docs no longer reference the v2 cloud backend.
+
 ## 3.3.1 (2026-08-24)
 
 ### Fix: `media_resolution="ultra_high"` was rejected with a 400

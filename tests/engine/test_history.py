@@ -1,5 +1,4 @@
-"""History window, summary compression and export/load — ported from the Go
-engine's history.go semantics (partially covered there via export_test.go)."""
+"""History window, summary compression and export/load."""
 
 from qirabot.engine.history import History, HistoryConfig, default_history_config, load_history
 from qirabot.engine.types import ConversationTurn, HistoryState

@@ -24,7 +24,8 @@ from qirabot import Qirabot
 bot = Qirabot(task_name="connect-cdp")
 
 # Connects to the running Chrome and opens a fresh tab — your other tabs are
-# left untouched. headless/channel/args don't apply when connecting over CDP.
+# left untouched. Don't pass headless/channel/args together with cdp_url:
+# they can't apply to an already-running browser, so open() rejects the mix.
 page = bot.open("https://www.wikipedia.org", cdp_url="http://localhost:9222")
 
 title = bot.extract(page, "What is the main heading on this page?")

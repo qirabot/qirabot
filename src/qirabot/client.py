@@ -40,23 +40,6 @@ from qirabot.overlay import Overlay
 logger = logging.getLogger("qirabot")
 
 
-def _stale_key_source() -> str:
-    """Where the leftover v2 QIRA_API_KEY came from, for error messages.
-
-    The CLI loads ``./.env`` into the environment before the SDK ever runs, so
-    by the time the migration guard fires the variable's origin is invisible —
-    except that :mod:`qirabot._dotenv` records which keys it injected. Name
-    the file when we know it; otherwise point at the places a real export
-    would live.
-    """
-    from qirabot._dotenv import injected_from
-
-    path = injected_from("QIRA_API_KEY")
-    if path:
-        return f"(loaded from {path})"
-    return "(exported in your environment — check your shell profile or CI config)"
-
-
 @contextlib.contextmanager
 def _suppress_sigint() -> Iterator[None]:
     """Make the wrapped block uninterruptible by Ctrl+C (SIGINT).
@@ -355,23 +338,11 @@ class Qirabot:
         record_device: bool = False,
         overlay: bool = False,
     ):
-        # v2 configured a Qirabot cloud API key; v3 runs the decision engine
-        # locally against your own Vertex AI credentials. A leftover
-        # QIRA_API_KEY with no explicit model choice means the user has not
-        # acknowledged the v3 switch — refuse with a migration pointer rather
-        # than silently changing which account gets billed. Passing model= or
-        # setting QIRA_MODEL counts as opting in and disarms the guard.
-        stale_key = bool(os.environ.get("QIRA_API_KEY")) and not (
-            model or os.environ.get("QIRA_MODEL", "").strip()
-        )
         # ADC + project resolution and the provider handshake happen here so a
         # bad credential setup fails at construction, not mid-run. Config
         # failures surface as the SDK's own exception types: missing/broken
         # credentials -> AuthenticationError, bad model/project values ->
-        # QirabotError (the engine's messages are already actionable). The
-        # stale-key guard deliberately fires *after* the handshake: knowing
-        # whether ADC works lets the message name the user's actual next step
-        # instead of prescribing credential setup they may already have.
+        # QirabotError (the engine's messages are already actionable).
         try:
             self._backend = LocalBackend(
                 model=model or resolve_default_model(),
@@ -387,36 +358,9 @@ class Qirabot:
                 locate_format=locate_format or os.environ.get("QIRA_LOCATE_FORMAT", ""),
             )
         except ProviderError as e:
-            if stale_key:
-                raise AuthenticationError(
-                    "Qirabot v3 runs the decision engine locally — the cloud "
-                    "backend is gone, but a v2-era QIRA_API_KEY is still set "
-                    f"{_stale_key_source()}. To use v3: remove QIRA_API_KEY "
-                    "(and QIRA_BASE_URL), configure Google Cloud ADC (set "
-                    "GOOGLE_APPLICATION_CREDENTIALS or run `gcloud auth "
-                    "application-default login`), and optionally pick a model "
-                    'via model=... / QIRA_MODEL (e.g. "gemini-vertex/'
-                    'gemini-3.6-flash"). To keep the old cloud behavior, '
-                    f"pin qirabot<3. (credential check: {e})",
-                    code="auth.cloud_removed",
-                ) from e
             raise AuthenticationError(str(e), code="auth.credentials") from e
         except ValueError as e:
             raise QirabotError(str(e), code="config.invalid") from e
-        if stale_key:
-            self._backend.close()
-            raise AuthenticationError(
-                "Your Google Cloud setup works and Qirabot v3 is ready to use "
-                "it — but a v2-era QIRA_API_KEY is still set "
-                f"{_stale_key_source()}, and the cloud backend it belonged to "
-                "is gone. Refusing to start rather than silently switching "
-                "billing to your GCP project: remove QIRA_API_KEY (and "
-                "QIRA_BASE_URL), or opt into v3 explicitly via model=... / "
-                "QIRA_MODEL (e.g. "
-                '"gemini-vertex/gemini-3.6-flash"). To keep the old '
-                "cloud behavior, pin qirabot<3.",
-                code="auth.cloud_removed",
-            )
         self._adapters: dict[int, DeviceAdapter] = {}
         self._pw_instances: list[Any] = []
         self._cdp_pages: list[Any] = []
@@ -684,7 +628,7 @@ class Qirabot:
         ``modifier`` holds modifier key(s) around the click (``"alt"``,
         ``"ctrl"``, ``"shift"``, ``"win"``; join several with ``+``, e.g.
         ``"ctrl+shift"``) — desktop backends only (pyautogui / the Windows
-        Windows); other backends degrade to a plain click.
+        window backend); other backends degrade to a plain click.
 
         When ``timeout > 0``, auto-waits until the element looks present before
         clicking (polling a visual assertion every ``interval`` seconds), and
@@ -2027,9 +1971,8 @@ class Qirabot:
                 recording=recording,
                 recording_start=self._recording.started_ts if recording else 0.0,
                 record_error=record_error,
-                # total_steps drives the stats line's headline count; with the
-                # synthetic entries gone and local steps recorded, the entry
-                # count is exactly the steps that ran.
+                # total_steps drives the stats line's headline count; the
+                # entry count is exactly the steps that ran.
                 stats={**timeline.stats, "total_steps": len(timeline.entries)},
                 model=self._backend.model_label,
                 tier=self._backend.tier_label,

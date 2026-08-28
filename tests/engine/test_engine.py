@@ -1,6 +1,6 @@
-"""LocalEngine entry points — ported from the Go engine_test.go corpus:
-tool-call priority, JSON text fallback, meta-field filtering, and the locate
-dialects with their differing salvage semantics."""
+"""LocalEngine entry points: tool-call priority, JSON text fallback,
+meta-field filtering, and the locate dialects with their differing salvage
+semantics."""
 
 import io
 

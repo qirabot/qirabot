@@ -1,7 +1,7 @@
 """Outbound wire-format tests for the Gemini providers, using
-httpx.MockTransport — asserts the exact JSON go-llm produced where fidelity
-matters (schema cleaning, functionResponse shape, thinking/media-resolution
-mapping, API-key vs ADC auth)."""
+httpx.MockTransport — pins the exact JSON where the shape matters (schema
+cleaning, functionResponse shape, thinking/media-resolution mapping,
+API-key vs ADC auth)."""
 
 import base64
 import json
@@ -140,8 +140,8 @@ class TestGeminiVertex:
         assert params["required"] == ["reason"]
 
     def test_max_tokens_param_name_fidelity(self) -> None:
-        # go-llm's Gemini path reads max_output_tokens, so the engine default
-        # max_tokens=4096 never applied there — keep that quirk.
+        # The Gemini wire reads max_output_tokens only, so the engine default
+        # max_tokens=4096 never applies — pin that quirk.
         provider, seen = self.make()
         provider.chat(self.base_request(), timeout=30)
         assert sent_body(seen[0])["generationConfig"]["maxOutputTokens"] == 8192
@@ -180,7 +180,7 @@ class TestGeminiVertex:
             ("low", "MEDIA_RESOLUTION_LOW"),
             ("medium", "MEDIA_RESOLUTION_MEDIUM"),
             ("HIGH", "MEDIA_RESOLUTION_HIGH"),
-            ("bogus", "MEDIA_RESOLUTION_MEDIUM"),  # go-llm's fallback
+            ("bogus", "MEDIA_RESOLUTION_MEDIUM"),  # unknown → medium
         ],
     )
     def test_media_resolution_mapping(self, value: str, want: str) -> None:

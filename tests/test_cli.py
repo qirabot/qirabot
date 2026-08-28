@@ -1379,36 +1379,6 @@ class TestDoctor:
 
         assert "fall back to headless" not in self._flat(result)
 
-    def test_stale_v2_key_prints_migration_warning(self, monkeypatch):
-        """Without this warning, doctor says "Ready" while every default run
-        trips the SDK's cloud-removed migration guard."""
-        monkeypatch.setenv("QIRA_API_KEY", "qk_stale")
-        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
-
-        out = self._flat(result)
-        assert result.exit_code == 0, result.output
-        assert "leftover v2 QIRA_API_KEY" in out
-        assert "--model / QIRA_MODEL" in out
-
-    def test_qira_model_silences_stale_key_warning(self, monkeypatch):
-        # An explicit model choice disarms the SDK guard, so doctor must not
-        # warn about a key that no longer blocks anything.
-        monkeypatch.setenv("QIRA_API_KEY", "qk_stale")
-        monkeypatch.setenv("QIRA_MODEL", "gemini-vertex/gemini-3-flash-preview")
-        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
-
-        assert "leftover v2 QIRA_API_KEY" not in self._flat(result)
-
-    def test_v2_user_config_file_prints_cleanup_note(self, monkeypatch):
-        # conftest points XDG_CONFIG_HOME/APPDATA at a tmp dir, so this writes
-        # a throwaway config.json, not the developer's real one.
-        from qirabot._userconfig import save_api_key
-
-        save_api_key("qk_old")
-        result = self._run(monkeypatch, has={"playwright"}, chromium="ready")
-
-        assert "unused in v3" in self._flat(result)
-
     def test_chromium_missing_system_libs_is_not_ready(self, monkeypatch):
         """A downloaded Chromium whose shared libraries don't resolve (bare Linux
         server) fails at launch; the fix is install-deps, not a re-download."""

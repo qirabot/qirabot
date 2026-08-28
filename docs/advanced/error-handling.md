@@ -42,7 +42,7 @@ single `except QirabotError` is always a safe catch-all:
 
 | Exception | When |
 |---|---|
-| `AuthenticationError` | Credential setup problem — missing, unusable, or ambiguous credentials. Also raised when a v2-era `QIRA_API_KEY` is still set. Not retried. |
+| `AuthenticationError` | Credential setup problem — missing, unusable, or ambiguous credentials. Not retried. |
 | `QirabotTimeoutError` | A client-side wait timed out (`wait_for`, auto-wait). |
 | `ActionError` | An AI action failed, including model-call failures reported by your Vertex AI endpoint (the message carries the provider's detail). |
 | `MissingDependencyError` | An optional backend dependency (playwright, pyautogui, …) isn't installed; the message includes the exact install command for the environment qirabot is running in. Also an `ImportError`. |

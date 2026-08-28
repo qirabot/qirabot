@@ -1,8 +1,6 @@
-"""Sliding-window conversation history.
-
-Mirrors internal/decision/history.go: keeps only the most recent entries to
-avoid exceeding context window limits; truncated entries are compressed into
-a summary string.
+"""Sliding-window conversation history: keeps only the most recent entries
+to avoid exceeding context window limits; truncated entries are compressed
+into a summary string.
 """
 
 from __future__ import annotations
@@ -85,8 +83,7 @@ class History:
         """Inject screenshot data into the most recent max_screenshots entries,
         using reverse alignment with the provided screenshots list.
 
-        Entries live across steps (unlike the v2 server, which rebuilt them
-        from Redis per request), so first strip what a previous call attached —
+        Entries live across steps, so first strip what a previous call attached —
         otherwise every entry in the window keeps its screenshot and each
         request carries max_entries images instead of max_screenshots."""
         for e in self._entries:

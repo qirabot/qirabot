@@ -1,5 +1,5 @@
 """Tool registry assembly: platform filtering, overrides, point-field
-substitution and common-field injection — mirrors tools.go behavior."""
+substitution and common-field injection."""
 
 from typing import Any
 

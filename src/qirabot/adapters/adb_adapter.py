@@ -2,8 +2,8 @@
 
 Drives an :class:`~qirabot.adb.AdbDevice` with plain ``adb shell input`` /
 ``screencap`` calls. Screenshot/tap/swipe/keyevent are the whole surface the
-AI loop needs — the CV runs server-side, so none of a framework's local image
-matching is wanted here.
+AI loop needs — the vision runs in the decision engine, so none of a
+framework's local image matching is wanted here.
 
 Text input: ASCII goes through ``input text``; anything else (Chinese, emoji,
 ``%``, control chars) is delivered via the ADBKeyboard IME's ``ADB_INPUT_B64``
@@ -49,7 +49,7 @@ def _shell_single_quote(arg: str) -> str:
 class AdbAdapter(DeviceAdapter):
     """Adapter for :class:`qirabot.adb.AdbDevice` targets."""
 
-    # adb keyevent names for the keys the server may emit. `input keyevent`
+    # adb keyevent names for the keys the engine may emit. `input keyevent`
     # accepts both bare names (ENTER) and KEYCODE_-prefixed ones; unknown keys
     # pass through uppercased.
     _KEY_MAP = {

@@ -1,10 +1,9 @@
 """LocalEngine: the four LLM entry points (decide / extract /
 check_condition / locate).
 
-Mirrors internal/decision/engine.go + locate.go. Response parsing prefers a
-tool call; a text-only reply falls back to JSON extraction, and an
-unparsable reply raises UnparsableResponseError so the session layer can
-re-decide with corrective feedback (same contract as the Go engine).
+Response parsing prefers a tool call; a text-only reply falls back to JSON
+extraction, and an unparsable reply raises UnparsableResponseError so the
+session layer can re-decide with corrective feedback.
 """
 
 from __future__ import annotations
@@ -375,6 +374,9 @@ class LocalEngine:
         self, cfg: ModelConfig | None
     ) -> tuple[str, dict[str, Any]]:
         model = self._model
+        # Engine fallbacks for callers that pass no ModelConfig (LocalBackend
+        # always overrides temperature). max_tokens never reaches Gemini: the
+        # wire layer reads max_output_tokens only (see _gemini_wire NOTE).
         params: dict[str, Any] = {"temperature": 0.2, "max_tokens": 4096}
         if cfg is not None:
             if cfg.model:
@@ -394,8 +396,8 @@ def _validate_decide_input(input: DecisionInput) -> None:
 
 def _decode_dimensions(screenshot: bytes) -> tuple[int, int]:
     """Screenshot dimensions from the image header only (drives the
-    normalized→pixel conversion). Pillow decodes webp too, so unlike the Go
-    server the local engine accepts it."""
+    normalized→pixel conversion). Pillow decodes webp too, so the engine
+    accepts it alongside png/jpeg."""
     try:
         from PIL import Image as PILImage
 

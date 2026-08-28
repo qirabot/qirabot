@@ -24,4 +24,4 @@ device = connect_device("Android:///")  # first adb device; or Android:///emulat
 
 with Qirabot().bind(device) as bot:
     result = bot.ai("Go to About Phone in Settings and report the Android version")
-    print(result.answer)
+    print(result.output)

@@ -76,8 +76,8 @@ class Recorder(Protocol):
 
     def stop(self, timeout: float = 10.0) -> str | None: ...
 
-# avfoundation screen index used when device probing fails (on this Mac
-# ``Capture screen 0`` is index 1).
+# avfoundation screen index used when device probing fails (with one webcam
+# present, ``Capture screen 0`` is typically index 1).
 _DEFAULT_SCREEN_INDEX = "1"
 
 # Preferred Windows DirectShow device names for capturing *system* (loopback)

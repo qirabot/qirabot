@@ -1,10 +1,8 @@
 """LocalAISession: the multi-step ai() decision loop, one step per call.
 
-Ports internal/task/act_service.go's session bootstrap + runAIDecision +
-resolveCoordinates, minus everything multi-tenant (idempotency, billing,
-Redis, heartbeats). One deliberate deviation from the server: token usage
-accumulates across ALL attempts of a step, including discarded re-decides —
-the user pays their own LLM bill, so under-reporting would lie to them.
+Token usage accumulates across ALL attempts of a step, including discarded
+re-decides — the user pays their own LLM bill, so under-reporting would lie
+to them.
 """
 
 from __future__ import annotations

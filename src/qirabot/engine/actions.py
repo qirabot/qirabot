@@ -1,8 +1,7 @@
 """Action-type and platform constants.
 
-Mirrors the server's internal/action package (action.go + platform.go) so the
-tool registry and session logic reference the same wire strings the SDK
-dispatcher already understands.
+The tool registry and session logic reference these so they emit exactly the
+wire strings the SDK dispatcher understands.
 """
 
 from __future__ import annotations

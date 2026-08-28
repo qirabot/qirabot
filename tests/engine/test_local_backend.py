@@ -514,10 +514,10 @@ class TestMisc:
         assert fake.requests[0].params["thinking_level"] == "high"
 
     def test_engine_default_params(self) -> None:
-        # v2-cloud-parity defaults: without them the provider zero-value
-        # fallbacks apply (temperature 0.0 — below Gemini 3's recommended
-        # 1.0 — and API-side media resolution / thinking level, the latter
-        # defaulting to high on Gemini 3).
+        # Backend defaults: without them the engine's fallback temperature
+        # 0.2 (below Gemini 3's recommended 1.0) and the API-side media
+        # resolution / thinking level apply, the latter defaulting to high
+        # on Gemini 3.
         fake = FakeProvider(tool_resp("click", CLICK_ARGS))
         step(start_run(backend(fake)))
         params = fake.requests[0].params

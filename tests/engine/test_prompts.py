@@ -1,5 +1,5 @@
-"""System-prompt assembly and conversation replay — ported from the Go
-server's prompts.go behavior plus knowledge_test.go's prompt-placement tests."""
+"""System-prompt assembly and conversation replay, including where the
+knowledge section lands in the prompt."""
 
 from datetime import datetime
 

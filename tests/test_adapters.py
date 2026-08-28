@@ -1072,9 +1072,10 @@ class TestCustomAdapterHooks:
         assert "register_adapter" in qirabot.__all__
 
 
-class TestAirtestTombstone:
-    """2.0 removed airtest; detect() must recognize its targets by module-name
-    strings (zero imports) and answer with the migration guidance."""
+class TestAirtestGuidance:
+    """detect() must recognize airtest targets by module-name strings (zero
+    imports) and answer with specific guidance — not the generic
+    unsupported-target error."""
 
     def _assert_tombstone(self, target):
         from qirabot.adapters.auto import detect
@@ -1082,11 +1083,11 @@ class TestAirtestTombstone:
         with pytest.raises(TypeError) as ei:
             detect(target)
         msg = str(ei.value)
-        assert "removed in qirabot 2.0" in msg
+        assert "airtest targets are not supported directly" in msg
         assert "qirabot.AdbDevice" in msg
         assert "qirabot.Window" in msg
         assert "qirabot.WdaClient" in msg
-        assert "qirabot<2.0" in msg
+        assert "register_adapter(AirtestAdapter)" in msg
 
     def test_device_instance(self):
         class FakeDevice:
@@ -1112,5 +1113,5 @@ class TestAirtestTombstone:
 
         with pytest.raises(TypeError) as ei:
             detect(object())
-        assert "removed in qirabot 2.0" not in str(ei.value)
+        assert "airtest" not in str(ei.value)
         assert "Unsupported target type" in str(ei.value)

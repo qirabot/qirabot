@@ -1,8 +1,7 @@
 """User-registered custom tools, exclude_tools and knowledge validation.
 
-Mirrors internal/decision/custom_tools.go + knowledge.go. Error messages
-describe the caller's own input verbatim (kept aligned with the Go server so
-existing SDK tests and user-facing docs stay accurate).
+Error messages describe the caller's own input verbatim — SDK tests and
+user-facing docs quote them, so wording changes ripple.
 """
 
 from __future__ import annotations

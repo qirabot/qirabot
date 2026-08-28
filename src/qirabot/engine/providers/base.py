@@ -1,6 +1,6 @@
 """Provider protocol, wire-neutral request/response types and error taxonomy.
 
-Mirrors the slices of go-llm the decision engine actually uses: a single
+Deliberately minimal — only what the decision engine actually uses: a single
 non-streaming chat call with tools, images and a system prompt.
 """
 
@@ -25,9 +25,9 @@ class ErrorCategory(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
-# Categories where a second attempt can plausibly succeed. Narrower than
-# go-llm's retry-everything: deterministic failures (400/401/403/404) never
-# get retried locally — the user pays for every attempt.
+# Categories where a second attempt can plausibly succeed. Deterministic
+# failures (400/401/403/404) never get retried — the user pays for every
+# attempt.
 #
 # TIMEOUT is deliberately absent. It means the request reached the model and
 # the answer did not come back inside the budget — a slow or queued call, not
@@ -63,8 +63,7 @@ class ProviderError(Exception):
 
 
 def classify_http_status(code: int) -> ErrorCategory:
-    """Map an HTTP status code to a neutral ErrorCategory (same table as
-    go-llm's classifyHTTPStatus)."""
+    """Map an HTTP status code to a neutral ErrorCategory."""
     if code == 429:
         return ErrorCategory.RATE_LIMITED
     if code in (408, 504):
@@ -90,7 +89,7 @@ def http_error(provider: str, status: int, body: str) -> ProviderError:
 
 @dataclass
 class ChatRequest:
-    """A single conversation call (go-llm ConversationRequest subset)."""
+    """A single conversation call."""
 
     model: str = ""
     messages: list[Message] = field(default_factory=list)
@@ -132,7 +131,7 @@ FINISH_SAFETY = "safety"
 
 
 def map_finish_reason(reason: str) -> str:
-    """Normalize provider finish reasons (same table as go-llm)."""
+    """Normalize provider finish reasons to the FINISH_* vocabulary."""
     r = reason.lower()
     if r in ("stop", "end_turn", "stop_sequence"):
         return FINISH_STOP
@@ -149,7 +148,7 @@ def map_finish_reason(reason: str) -> str:
 
 @dataclass
 class ChatResponse:
-    """Unified provider response (go-llm LLMResponse subset)."""
+    """Unified provider response."""
 
     content: str = ""
     thinking: str = ""

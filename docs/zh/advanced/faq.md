@@ -33,14 +33,6 @@ Google Cloud 在你的项目上计费;每个结果对象都带 token 计数。
 `screenshot_quality` **不是**成本杠杆:图像 token 只取决于分辨率档位。
 完整拆解见[控制成本](/zh/advanced/cost)。
 
-## 从 v2 升级后启动不了
-
-只要环境里还有 v2 时代的 `QIRA_API_KEY`,v3 就拒绝运行——而不是悄悄把
-账单切到某个 Google Cloud 项目。取消设置 `QIRA_API_KEY` 和
-`QIRA_BASE_URL`(包括 `.env` 和 CI secrets 里的)。设置 `model=`
-(或 `QIRA_MODEL`)同样算作确认切换,也会解除这道拦截。凭据配置见
-[配置](/zh/advanced/configuration)。
-
 ## 哪些数据会离开我的机器?
 
 截图、指令文本和步骤元数据。它们直接从你的机器发往你配置的模型端点

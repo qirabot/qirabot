@@ -58,10 +58,10 @@ class ScreenshotConfig:
 class DeviceInfo:
     """Device metadata sent with each AI request.
 
-    Deliberately minimal: only what the server consumes (platform) plus the
-    screen dimensions. We do not collect host/OS fingerprinting metadata
-    (hostname, os, arch, …) — it has no server-side use and the client is
-    open-source, so it must not silently gather machine identifiers.
+    Deliberately minimal: only what the decision engine consumes (platform)
+    plus the screen dimensions. We do not collect host/OS fingerprinting
+    metadata (hostname, os, arch, …) — the engine has no use for it and the
+    client is open-source, so it must not silently gather machine identifiers.
     """
 
     platform: str

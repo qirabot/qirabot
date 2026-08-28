@@ -1,7 +1,5 @@
-"""Coordinate rescaling shared by inline grounding and single-step locate.
-
-Mirrors internal/decision/coords.go, plus the bbox center conversion that Go
-keeps in locate.go.
+"""Coordinate rescaling shared by inline grounding and single-step locate,
+plus the bbox → center-point conversion.
 """
 
 from __future__ import annotations

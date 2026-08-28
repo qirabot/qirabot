@@ -1,10 +1,10 @@
 """Tests for Qirabot client, StepResult, and RunResult.
 
-v3: the decision engine runs in-process (qirabot.engine); there is no HTTP
-transport. conftest's autouse fixture patches ``qirabot.client.LocalBackend``
-with :class:`FakeBackend`, so plain ``Qirabot()`` constructs without GCP
-credentials; tests script decisions via ``bot._backend.results`` and assert
-outbound request bodies via ``bot._backend.requests``.
+The decision engine runs in-process (qirabot.engine). conftest's autouse
+fixture patches ``qirabot.client.LocalBackend`` with :class:`FakeBackend`,
+so plain ``Qirabot()`` constructs without GCP credentials; tests script
+decisions via ``bot._backend.results`` and assert outbound request bodies
+via ``bot._backend.requests``.
 """
 
 import logging
@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.conftest import FakeBackend
 from qirabot.adapters.base import DeviceAdapter, DeviceInfo, ScreenshotConfig
 from qirabot._annotate import render_step_images as _render_step_images
 from qirabot.client import (
@@ -468,7 +467,7 @@ class TestSessionUsage:
         assert u.total_tokens == 560
 
     def test_ai_located_action_counts(self, make_bot):
-        # click()/type_text()/… discard their /act result — the usage must
+        # click()/type_text()/… discard their decision result — the usage must
         # still land in the session totals (pure bolt-on scripts would
         # otherwise report ~0 tokens).
         bot = self._bot(make_bot)
@@ -656,62 +655,11 @@ class TestQirabotInit:
         assert adapter.settle_seconds == adapter._SETTLE_SECONDS
 
 
-class TestCloudRemovedMigrationGuard:
-    """A stale v2 setup (QIRA_API_KEY set, no v3 model configured) must fail
-    at construction with a migration pointer instead of the old variable
-    being silently ignored. The guard fires *after* the provider handshake so
-    the message reflects the real credential state: working ADC points at the
-    leftover key, broken ADC keeps the full gcloud setup guidance."""
+class TestBackendConstructionErrors:
+    """Credential failures surface at construction, as the SDK's own
+    exception types — not mid-run as raw provider errors."""
 
-    def test_stale_api_key_without_model_raises(self, monkeypatch):
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
-        with pytest.raises(AuthenticationError) as exc_info:
-            Qirabot(report=False)
-        assert exc_info.value.code == "auth.cloud_removed"
-
-    def test_working_adc_message_points_at_the_key_not_adc(self, monkeypatch):
-        # Backend construction succeeds (conftest's FakeBackend): the user's
-        # GCP setup is fine, so the message must say so and direct them at
-        # the leftover key — not tell them to configure ADC again.
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
-        with pytest.raises(AuthenticationError) as exc_info:
-            Qirabot(report=False)
-        msg = str(exc_info.value)
-        assert "Google Cloud setup works" in msg
-        assert "remove QIRA_API_KEY" in msg
-        assert "gcloud auth application-default login" not in msg
-
-    def test_working_adc_backend_is_closed_before_raising(self, monkeypatch):
-        import qirabot.client as client_mod
-
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
-        built = []
-        monkeypatch.setattr(
-            client_mod,
-            "LocalBackend",
-            lambda **kw: built.append(FakeBackend(**kw)) or built[-1],
-        )
-        with pytest.raises(AuthenticationError):
-            Qirabot(report=False)
-        assert built and built[0].closed
-
-    def test_broken_adc_message_keeps_setup_guidance(self, monkeypatch):
-        import qirabot.client as client_mod
-        from qirabot.engine.providers.base import ProviderError
-
-        def _no_adc(**kw):
-            raise ProviderError("vertex", "could not resolve ADC credentials")
-
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
-        monkeypatch.setattr(client_mod, "LocalBackend", _no_adc)
-        with pytest.raises(AuthenticationError) as exc_info:
-            Qirabot(report=False)
-        assert exc_info.value.code == "auth.cloud_removed"
-        msg = str(exc_info.value)
-        assert "gcloud auth application-default login" in msg
-        assert "could not resolve ADC credentials" in msg
-
-    def test_broken_adc_without_stale_key_stays_credentials_error(self, monkeypatch):
+    def test_broken_adc_raises_credentials_error(self, monkeypatch):
         import qirabot.client as client_mod
         from qirabot.engine.providers.base import ProviderError
 
@@ -722,39 +670,7 @@ class TestCloudRemovedMigrationGuard:
         with pytest.raises(AuthenticationError) as exc_info:
             Qirabot(report=False)
         assert exc_info.value.code == "auth.credentials"
-
-    def test_message_names_the_dotenv_file_when_key_came_from_one(
-        self, monkeypatch, tmp_path
-    ):
-        import qirabot._dotenv as dotenv_mod
-        from qirabot._dotenv import load_dotenv
-
-        envfile = tmp_path / ".env"
-        envfile.write_text("QIRA_API_KEY=stale_v2_key\n", encoding="utf-8")
-        monkeypatch.setattr(dotenv_mod, "_injected", {})
-        monkeypatch.delenv("QIRA_API_KEY", raising=False)
-        load_dotenv(str(envfile))
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")  # register cleanup
-        with pytest.raises(AuthenticationError) as exc_info:
-            Qirabot(report=False)
-        assert f"loaded from {envfile}" in str(exc_info.value)
-
-    def test_explicit_model_arg_disarms_guard(self, monkeypatch, make_bot):
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
-        bot = make_bot(model="gemini-vertex/gemini-3-flash-preview")
-        assert bot._backend.init_kwargs["model"] == "gemini-vertex/gemini-3-flash-preview"
-
-    def test_qira_model_env_disarms_guard(self, monkeypatch, make_bot):
-        monkeypatch.setenv("QIRA_API_KEY", "stale_v2_key")
-        monkeypatch.setenv("QIRA_MODEL", "gemini-vertex/gemini-3-flash-preview")
-        bot = make_bot()
-        assert bot._backend.init_kwargs["model"] == "gemini-vertex/gemini-3-flash-preview"
-
-    def test_no_api_key_constructs_without_model(self, make_bot):
-        # conftest scrubs QIRA_API_KEY: a clean v3 setup needs no model arg
-        # (the engine default applies).
-        bot = make_bot()
-        assert bot._backend.init_kwargs["model"]
+        assert "could not resolve ADC credentials" in str(exc_info.value)
 
 
 class TestQirabotContextManager:

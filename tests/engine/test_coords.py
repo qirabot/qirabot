@@ -1,5 +1,5 @@
-"""rescale_point / bbox_center — ported from the Go engine's coordinate
-contract (coords.go), including the raw-pixel salvage semantics."""
+"""rescale_point / bbox_center — the engine's coordinate contract,
+including the raw-pixel salvage semantics."""
 
 from qirabot.engine.coords import bbox_center, rescale_point, to_float
 
@@ -13,7 +13,8 @@ class TestRescalePoint:
         assert rescale_point(1000, 1000, 1280, 720) == (1280, 720, "normalized")
 
     def test_normalized_rounding_half_away(self) -> None:
-        # 1/1000*500 = 0.5 must round to 1 (Go math.Round), not bankers' 0.
+        # 1/1000*500 = 0.5 must round half-away-from-zero to 1, not
+        # bankers' 0.
         assert rescale_point(1, 1, 500, 500) == (1, 1, "normalized")
 
     def test_pixel_salvage_both_axes_in_frame(self) -> None:

@@ -1,12 +1,9 @@
 """LocalBackend: the in-process decision engine behind the SDK client.
 
-Originally built as a drop-in replacement for the v2 cloud /act endpoint,
-speaking that wire protocol's request/response dicts. With the cloud gone the
-wire emulation went with it: the client talks to the engine through typed
-calls — an explicit :class:`AIRun` per ai() command, one method per
-single-step action. Session lifetime belongs to the caller's loop (a local
-variable, not backend state), so an abandoned run can never leak into the
-next one.
+The client talks to the engine through typed calls — an explicit
+:class:`AIRun` per ai() command, one method per single-step action. Session
+lifetime belongs to the caller's loop (a local variable, not backend state),
+so an abandoned run can never leak into the next one.
 """
 
 from __future__ import annotations
@@ -102,8 +99,8 @@ def _tier_suffix(tier: str, escalate: bool) -> str:
 
 
 def _normalize_platform(platform: str) -> str:
-    # SDK adapters report "browser"; the engine's platform vocabulary says
-    # "chrome" (same mapActPlatform normalization the v2 server did).
+    # SDK adapters report "browser"; the engine's platform vocabulary
+    # (and its platform prompt files) say "chrome".
     return actions.PLATFORM_CHROME if platform == "browser" else platform
 
 
@@ -286,15 +283,15 @@ class LocalBackend:
     # -- model config --------------------------------------------------
 
     def _model_config(self, thinking_level: str = "") -> ModelConfig:
-        # Engine-level defaults, mirroring what the v2 cloud aliases always
-        # sent. Without them the provider ports' zero-value fallbacks apply:
-        # temperature 0.0 (Gemini 3 degrades below its recommended 1.0) and
-        # the API-side media resolution. Screenshots default to "high" — UI
-        # text is dense and the decision quality is the product.
+        # Backend-level defaults. Without them the engine's
+        # _resolve_model_params fallbacks apply: temperature 0.2 (Gemini 3
+        # degrades below its recommended 1.0) and the API-side media
+        # resolution. Screenshots default to "high" — UI text is dense and
+        # the decision quality is the product.
         # thinking_level: per-call override > constructor > "low". The
-        # explicit "low" floor matches every v2 cloud alias (fast ran
-        # minimal); leaving it unset would drift with the API-side default,
-        # which for Gemini 3 is high — slower and pricier on every step.
+        # explicit "low" floor keeps latency and cost predictable; leaving it
+        # unset would drift with the API-side default, which for Gemini 3 is
+        # high — slower and pricier on every step.
         params: dict[str, Any] = {
             "temperature": 1.0,
             "media_resolution": self._media_resolution or "high",
@@ -479,8 +476,8 @@ class LocalBackend:
         thinking_level: str = "",
     ) -> ExtractOutcome:
         """One extract call. Raises ValueError (engine-level failure) or
-        ProviderError; neither carries usage — parity with the v2 engine,
-        which never metered these failure paths."""
+        ProviderError; neither carries usage — these failure paths are not
+        metered."""
         if not isinstance(instruction, str) or not instruction:
             raise ValueError("extract requires instruction parameter")
         try:

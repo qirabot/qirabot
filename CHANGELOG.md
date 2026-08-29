@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.4.0 (2026-08-29)
 
 ### v2 migration aids retired
 
@@ -12,6 +12,14 @@
   `~/.config/qirabot/config.json` is no longer read) and
   `load_dotenv`'s injected-key origin tracking.
 - Comments and docs no longer reference the v2 cloud backend.
+
+### `RunStatus` gains `"cancelled"`
+
+- The public `RunStatus` literal is now the single status vocabulary
+  shared by `RunResult.status`, the report's section badges and the CLI
+  JSON result, and it gains `"cancelled"` — the value the CLI already
+  reported for Ctrl+C and the ESC kill switch. `ai()` itself still never
+  returns it: a user abort raises `QirabotError(code="user_abort")`.
 
 ## 3.3.1 (2026-08-24)
 

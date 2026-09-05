@@ -170,14 +170,14 @@ Runnable example:
 ## Model & language
 
 ```python
-bot = Qirabot(model="gemini-vertex/gemini-3.6-pro", language="zh")        # defaults for all calls
+bot = Qirabot(model="gemini/gemini-3.8-flash", language="zh")        # defaults for all calls
 bot.verify(page, "every row shows the discounted price",
            thinking_level="high")                          # think harder on hard calls
 ```
 
-`model` selects the Vertex AI model (`"{provider}/{model}"`) for the whole
+`model` selects the provider and model (`"{provider}/{model}"`) for the whole
 bot; leave it unset for the default
-`gemini-vertex/gemini-3.6-flash`. `thinking_level`
+`gemini-vertex/gemini-3.8-flash`. `thinking_level`
 (`minimal`/`low`/`medium`/`high`) scales reasoning depth within the same
 model and can be overridden per call. See
 [Configuration](/advanced/configuration). Deterministic single-step calls

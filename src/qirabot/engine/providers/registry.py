@@ -26,8 +26,8 @@ SUPPORTED_PROVIDERS = (
 # field the engine emits is Gemini-3-only (2.5 rejects it with a 400),
 # verified against Vertex.
 DEFAULT_MODELS: dict[str, str] = {
-    PROVIDER_GEMINI_VERTEX: "gemini-3.6-flash",
-    PROVIDER_GEMINI: "gemini-3.6-flash",
+    PROVIDER_GEMINI_VERTEX: "gemini-3.8-flash",
+    PROVIDER_GEMINI: "gemini-3.8-flash",
 }
 
 # The model used when nothing is configured at all.

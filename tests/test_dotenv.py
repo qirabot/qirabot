@@ -17,9 +17,9 @@ class TestLoadDotenv:
 
     def test_basic_key_value(self, tmp_path, monkeypatch):
         monkeypatch.delenv("QIRA_MODEL", raising=False)
-        path = _write(tmp_path, "QIRA_MODEL=gemini-vertex/gemini-3.6-flash\n")
+        path = _write(tmp_path, "QIRA_MODEL=gemini-vertex/gemini-3.8-flash\n")
         assert load_dotenv(path) is True
-        assert os.environ["QIRA_MODEL"] == "gemini-vertex/gemini-3.6-flash"
+        assert os.environ["QIRA_MODEL"] == "gemini-vertex/gemini-3.8-flash"
 
     def test_real_env_wins_by_default(self, tmp_path, monkeypatch):
         monkeypatch.setenv("QIRA_MODEL", "real")

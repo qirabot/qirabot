@@ -35,8 +35,8 @@ uv pip install "qirabot[browser]"    # then: playwright install chromium
 gcloud auth application-default login   # one-time Google Cloud auth (ADC) — or set
 #   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 #   or, gemini-vertex models only: QIRA_VERTEX_API_KEY=<Vertex AI API key> (no gcloud needed)
-#   or, no Google Cloud at all: QIRA_GEMINI_API_KEY=<AI Studio key> + QIRA_MODEL=gemini/gemini-3.6-flash
-echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env   # optional: pin the model
+#   or, no Google Cloud at all: QIRA_GEMINI_API_KEY=<AI Studio key> + QIRA_MODEL=gemini/gemini-3.8-flash
+echo 'QIRA_MODEL=gemini-vertex/gemini-3.8-flash' > .env   # optional: pin the model
 ```
 
 All extras install cleanly together (no numpy/opencv pins anywhere): one

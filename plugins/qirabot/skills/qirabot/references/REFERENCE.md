@@ -23,7 +23,7 @@ Common constructor options (all keyword):
 
 | Option | Default | Notes |
 |---|---|---|
-| `model` / env `QIRA_MODEL` | built-in default | `"{provider}/{model}"`, e.g. `"gemini-vertex/gemini-3.6-flash"`; providers: `gemini-vertex` \| `gemini` (list with `qirabot models`) |
+| `model` / env `QIRA_MODEL` | built-in default | `"{provider}/{model}"`, e.g. `"gemini-vertex/gemini-3.8-flash"`; providers: `gemini-vertex` \| `gemini` (list with `qirabot models`) |
 | `vertex_project` / `vertex_location` | ADC project / `global` | Google Cloud project/location for Vertex AI (env `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION`, fallback `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`); ignored when an API key is set |
 | `vertex_api_key` | unset | Vertex AI API key auth instead of ADC (env `QIRA_VERTEX_API_KEY`); gemini-vertex only, global endpoint only |
 | `gemini_api_key` | unset | AI Studio key for the `gemini` provider — Gemini Developer API, no Google Cloud (env `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) |

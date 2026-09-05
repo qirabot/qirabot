@@ -11,7 +11,7 @@ description: Qirabot 的全部配置项——模型与 Vertex AI 设置、Google
 ```python
 from qirabot import Qirabot
 
-bot = Qirabot()  # model 参数 > QIRA_MODEL 环境变量 > gemini-vertex/gemini-3.6-flash
+bot = Qirabot()  # model 参数 > QIRA_MODEL 环境变量 > gemini-vertex/gemini-3.8-flash
 ```
 
 **凭据**使用标准的 Google Cloud Application Default Credentials(ADC):
@@ -28,7 +28,7 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 
 | 参数 | 环境变量 | 默认值 | 说明 |
 |---|---|---|---|
-| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`([详情](#模型与语言)) |
+| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.8-flash` | 模型,格式 `{provider}/{model}`([详情](#模型与语言)) |
 | `vertex_project` | `QIRA_VERTEX_PROJECT` | 见下文 | Vertex 调用使用的 Google Cloud 项目 |
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
 | `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | 用 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) 代替 ADC,无需配置 gcloud。仅对 `gemini-vertex` 有效,固定走全局端点,并覆盖 `vertex_project`/`vertex_location`。它不是 AI Studio key;`GOOGLE_API_KEY` 被刻意不读取 |
@@ -89,16 +89,16 @@ us-east5 browser "..."`。
 
 | Provider | 提供 | 认证 | 默认模型 |
 |---|---|---|---|
-| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | ADC,或 Vertex AI API key(`vertex_api_key=` / `QIRA_VERTEX_API_KEY`) | `gemini-3.6-flash` |
-| `gemini` | Gemini Developer API 上的 Google Gemini 模型 | AI Studio API key(`gemini_api_key=` / `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) | `gemini-3.6-flash` |
+| `gemini-vertex` | Vertex AI 上的 Google Gemini 模型 | ADC,或 Vertex AI API key(`vertex_api_key=` / `QIRA_VERTEX_API_KEY`) | `gemini-3.8-flash` |
+| `gemini` | Gemini Developer API 上的 Google Gemini 模型 | AI Studio API key(`gemini_api_key=` / `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) | `gemini-3.8-flash` |
 
 ```python
-bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
+bot = Qirabot(model="gemini-vertex/gemini-3.8-flash")
 bot = Qirabot(model="gemini")  # 只写 provider → 该 provider 的默认模型
 ```
 
 只写 provider 名会解析为该 provider 的默认模型。什么都不配置时,
-SDK 使用 `gemini-vertex/gemini-3.6-flash`。`qirabot models` 列出
+SDK 使用 `gemini-vertex/gemini-3.8-flash`。`qirabot models` 列出
 各 provider、各自的默认模型,以及所配置的认证能否解析。
 
 Qirabot 不按步计费:模型调用直接从你的机器发往你自己的 Vertex AI
@@ -168,7 +168,7 @@ token 究竟花在哪里、本页哪些开关能真正影响它们,见
 | `priority` | 比标准价高约 75%~100% | 秒级,排在标准流量之前 | 超出容量时降级为标准档 |
 
 ```python
-bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
+bot = Qirabot(model="gemini-vertex/gemini-3.8-flash", service_tier="priority")
 ```
 
 ::: warning 用之前先自己测一下 flex 的代价
@@ -200,7 +200,7 @@ warning:
 ```
 gemini-vertex: requested the priority tier but the request was served as
 standard — billed at standard rates, and the endpoint gives no reason.
-Config seen: model=gemini-3.6-flash location=global. …
+Config seen: model=gemini-3.8-flash location=global. …
 ```
 
 原因只有三种,而 warning 会把它实际用的模型和端点打出来,让你一眼排除
@@ -225,7 +225,7 @@ Config seen: model=gemini-3.6-flash location=global. …
 ```bash
 curl -sS -X POST \
   "https://aiplatform.googleapis.com/v1/projects/PROJECT/locations/global\
-/publishers/google/models/gemini-3.6-flash:generateContent" \
+/publishers/google/models/gemini-3.8-flash:generateContent" \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -H "Content-Type: application/json" \
   -H "X-Vertex-AI-LLM-Shared-Request-Type: priority" \

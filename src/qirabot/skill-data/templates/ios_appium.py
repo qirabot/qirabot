@@ -21,7 +21,7 @@ Install:
     python -m venv .venv && source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
     uv pip install "qirabot[appium]"
     gcloud auth application-default login    # one-time Google Cloud auth (ADC)
-    echo 'QIRA_MODEL=gemini-vertex/gemini-3.6-flash' > .env    # load_dotenv() reads this
+    echo 'QIRA_MODEL=gemini-vertex/gemini-3.8-flash' > .env    # load_dotenv() reads this
 
 When to pick this over ios_wda.py:
     - Simulators (Appium can build WDA itself — see Variant A below).

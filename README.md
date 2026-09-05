@@ -92,16 +92,16 @@ with an AI Studio API key:
 
 ```bash
 export QIRA_GEMINI_API_KEY="..."   # or GEMINI_API_KEY, or Qirabot(gemini_api_key=...)
-export QIRA_MODEL="gemini/gemini-3.6-flash"
+export QIRA_MODEL="gemini/gemini-3.8-flash"
 ```
 
 Optionally pick a model as `{provider}/{model}` — provider is one of
 `gemini-vertex`, `gemini`; the default is
-`gemini-vertex/gemini-3.6-flash`. Set the Google Cloud project if your
+`gemini-vertex/gemini-3.8-flash`. Set the Google Cloud project if your
 credentials don't already carry one:
 
 ```bash
-export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # or Qirabot(model=...)
+export QIRA_MODEL="gemini-vertex/gemini-3.8-flash"   # or Qirabot(model=...)
 export QIRA_VERTEX_PROJECT="my-gcp-project"                # or Qirabot(vertex_project=...)
 ```
 

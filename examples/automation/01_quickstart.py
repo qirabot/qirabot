@@ -16,8 +16,8 @@ Run:
 from qirabot import Qirabot
 
 # model= picks the Vertex AI model ("{provider}/{model}"); QIRA_MODEL works too.
-# Omit both and the default is gemini-vertex/gemini-3.6-flash.
-bot = Qirabot(task_name="quickstart", model="gemini-vertex/gemini-3.6-flash")
+# Omit both and the default is gemini-vertex/gemini-3.8-flash.
+bot = Qirabot(task_name="quickstart", model="gemini-vertex/gemini-3.8-flash")
 
 # Qirabot launches the browser and returns a Playwright page.
 page = bot.open("https://www.wikipedia.org", headless=False, user_data_dir=".automation")

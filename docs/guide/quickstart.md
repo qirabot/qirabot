@@ -18,7 +18,7 @@ The browser opens, the AI does the task, and the result — plus an HTML report 
 lands in your terminal. The rest of the commands and options are in the
 [CLI Reference](/guide/cli).
 
-Runs default to `gemini-vertex/gemini-3.6-flash` on your credentials' own
+Runs default to `gemini-vertex/gemini-3.8-flash` on your credentials' own
 project. To change the model or project, or to authenticate with an API key
 instead of gcloud, see [Configuration](/advanced/configuration).
 

@@ -127,7 +127,7 @@ def main() -> int:
         line(OK, f"QIRA_MODEL={qira_model}")
     else:
         line(WARN, "QIRA_MODEL not set",
-             "Default model gemini-vertex/gemini-3.6-flash will be used "
+             "Default model gemini-vertex/gemini-3.8-flash will be used "
              "(override with QIRA_MODEL or Qirabot(model=...); list providers: qirabot models).")
 
     # 3. qirabot importable

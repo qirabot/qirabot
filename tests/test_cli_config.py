@@ -89,11 +89,11 @@ class TestVertexConfigWiring:
 
     def test_model_flag_reaches_qirabot(self, qirabot_kwargs):
         result = _invoke([
-            "browser", "do it", "-m", "gemini-vertex/gemini-3.6-pro",
+            "browser", "do it", "-m", "gemini/gemini-3.8-flash",
         ])
 
         assert result.exit_code == 0, result.output
-        assert qirabot_kwargs["model"] == "gemini-vertex/gemini-3.6-pro"
+        assert qirabot_kwargs["model"] == "gemini/gemini-3.8-flash"
 
     def test_construction_failure_prints_engine_error(self, monkeypatch):
         """Engine construction errors (missing ADC / unknown provider /

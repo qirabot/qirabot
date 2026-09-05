@@ -52,7 +52,7 @@ def _ok(traffic_type: str = "") -> dict[str, Any]:
 
 
 def _request() -> ChatRequest:
-    return ChatRequest(model="gemini-3.6-flash", messages=[Message(role="user", content="hi")])
+    return ChatRequest(model="gemini-3.8-flash", messages=[Message(role="user", content="hi")])
 
 
 class _Tokens:
@@ -248,7 +248,7 @@ class TestServedTierCheck:
         with caplog.at_level("WARNING", logger="qirabot.engine"):
             _vertex(client, service_tier="priority").chat(_request(), 30.0)
         msg = caplog.records[0].getMessage()
-        assert "model=gemini-3.6-flash" in msg
+        assert "model=gemini-3.8-flash" in msg
         assert "location=global" in msg
         assert "no reason" in msg
         assert "entitlement" in msg

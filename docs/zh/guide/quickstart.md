@@ -16,7 +16,7 @@ qirabot browser "搜索 SpaceX 并提取词条的第一句话" --url wikipedia.o
 浏览器打开，AI 完成任务，结果（和一份 HTML 报告）输出到终端。其余命令和
 选项见 [CLI 参考](/zh/guide/cli)。
 
-默认使用 `gemini-vertex/gemini-3.6-flash`，项目取自凭据自身。要更换模型或
+默认使用 `gemini-vertex/gemini-3.8-flash`，项目取自凭据自身。要更换模型或
 项目，或改用 API key 而不是 gcloud 认证，见
 [配置](/zh/advanced/configuration)。
 

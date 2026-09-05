@@ -88,7 +88,7 @@ global endpoint, and overrides `--vertex-project`/`--vertex-location`.
 `--gemini-api-key` (or `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) is the
 [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key) for the
 `gemini` provider, which calls the Gemini Developer API instead of Vertex;
-no Google Cloud is involved (`-m gemini/gemini-3.6-flash`).
+no Google Cloud is involved (`-m gemini/gemini-3.8-flash`).
 
 `--service-tier` (or `QIRA_SERVICE_TIER`) picks the consumption tier —
 `flex` for roughly half price on slower, sheddable capacity, `priority` for a
@@ -100,8 +100,8 @@ supports them; see
 
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default
-`gemini-vertex/gemini-3.6-flash`. A bare provider name selects that
-provider's default model (`gemini` → `gemini-3.6-flash`).
+`gemini-vertex/gemini-3.8-flash`. A bare provider name selects that
+provider's default model (`gemini` → `gemini-3.8-flash`).
 
 ## Exit codes
 
@@ -166,7 +166,7 @@ a consumer always sees one terminal line.
 | Option | Default | What it does |
 |---|---|---|
 | `-n, --name` | derived from the instruction | Run name shown in the HTML report |
-| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}`, provider one of `gemini-vertex` / `gemini` (see [Configuration](/advanced/configuration)) |
+| `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.8-flash` | Model as `{provider}/{model}`, provider one of `gemini-vertex` / `gemini` (see [Configuration](/advanced/configuration)) |
 | `--thinking-level` | engine default | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only; `ultra_high` needs a Gemini 3 model); lower it to cut image tokens per step |
 | `-l, --language` | instruction's language | Response language: a tag (`zh`, `ja`, `de`, …) or any language name |

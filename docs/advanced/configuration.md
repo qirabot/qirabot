@@ -12,7 +12,7 @@ Cloud credentials, and which model to use.
 ```python
 from qirabot import Qirabot
 
-bot = Qirabot()  # model param > QIRA_MODEL env var > gemini-vertex/gemini-3.6-flash
+bot = Qirabot()  # model param > QIRA_MODEL env var > gemini-vertex/gemini-3.8-flash
 ```
 
 **Credentials** are standard Google Cloud Application Default Credentials
@@ -31,7 +31,7 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 
 | Parameter | Env Variable | Default | Description |
 |---|---|---|---|
-| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.6-flash` | Model as `{provider}/{model}` ([details](#model-language)) |
+| `model` | `QIRA_MODEL` | `gemini-vertex/gemini-3.8-flash` | Model as `{provider}/{model}` ([details](#model-language)) |
 | `vertex_project` | `QIRA_VERTEX_PROJECT` | see below | Google Cloud project for the Vertex call |
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
 | `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) instead of ADC — no gcloud setup. `gemini-vertex` only, always the global endpoint, and it overrides `vertex_project`/`vertex_location`. Not an AI Studio key; `GOOGLE_API_KEY` is deliberately never read |
@@ -93,16 +93,16 @@ Env-only overrides with no constructor equivalent:
 
 | Provider | Serves | Auth | Default model |
 |---|---|---|---|
-| `gemini-vertex` | Google Gemini models on Vertex AI | ADC, or a Vertex AI API key (`vertex_api_key=` / `QIRA_VERTEX_API_KEY`) | `gemini-3.6-flash` |
-| `gemini` | Google Gemini models via the Gemini Developer API | AI Studio API key (`gemini_api_key=` / `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) | `gemini-3.6-flash` |
+| `gemini-vertex` | Google Gemini models on Vertex AI | ADC, or a Vertex AI API key (`vertex_api_key=` / `QIRA_VERTEX_API_KEY`) | `gemini-3.8-flash` |
+| `gemini` | Google Gemini models via the Gemini Developer API | AI Studio API key (`gemini_api_key=` / `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) | `gemini-3.8-flash` |
 
 ```python
-bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
+bot = Qirabot(model="gemini-vertex/gemini-3.8-flash")
 bot = Qirabot(model="gemini")  # bare provider → its default model
 ```
 
 A bare provider name resolves to that provider's default model. If nothing
-is set, the SDK uses `gemini-vertex/gemini-3.6-flash`.
+is set, the SDK uses `gemini-vertex/gemini-3.8-flash`.
 `qirabot models` lists the providers, their default models, and whether
 the configured auth resolves.
 
@@ -180,7 +180,7 @@ capacity. It moves price and latency in opposite directions:
 | `priority` | ~75–100% above standard | Seconds, scheduled ahead of standard traffic | Downgraded to standard when over capacity |
 
 ```python
-bot = Qirabot(model="gemini-vertex/gemini-3.6-flash", service_tier="priority")
+bot = Qirabot(model="gemini-vertex/gemini-3.8-flash", service_tier="priority")
 ```
 
 ::: warning Check what flex costs you before relying on it
@@ -214,7 +214,7 @@ API). On a mismatch it logs one warning per session:
 ```
 gemini-vertex: requested the priority tier but the request was served as
 standard — billed at standard rates, and the endpoint gives no reason.
-Config seen: model=gemini-3.6-flash location=global. …
+Config seen: model=gemini-3.8-flash location=global. …
 ```
 
 There are three causes, and the warning prints the model and endpoint it
@@ -243,7 +243,7 @@ Qirabot out of the loop and ask the endpoint directly:
 ```bash
 curl -sS -X POST \
   "https://aiplatform.googleapis.com/v1/projects/PROJECT/locations/global\
-/publishers/google/models/gemini-3.6-flash:generateContent" \
+/publishers/google/models/gemini-3.8-flash:generateContent" \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -H "Content-Type: application/json" \
   -H "X-Vertex-AI-LLM-Shared-Request-Type: priority" \

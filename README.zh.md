@@ -83,13 +83,13 @@ export QIRA_VERTEX_API_KEY="..."   # 或 Qirabot(vertex_api_key=...)
 
 ```bash
 export QIRA_GEMINI_API_KEY="..."   # 或 GEMINI_API_KEY、Qirabot(gemini_api_key=...)
-export QIRA_MODEL="gemini/gemini-3.6-flash"
+export QIRA_MODEL="gemini/gemini-3.8-flash"
 ```
 
-模型按 `{provider}/{model}` 格式指定，provider 为 `gemini-vertex`、`gemini` 之一，默认 `gemini-vertex/gemini-3.6-flash`；如果凭据本身不带项目，再指定 Google Cloud 项目：
+模型按 `{provider}/{model}` 格式指定，provider 为 `gemini-vertex`、`gemini` 之一，默认 `gemini-vertex/gemini-3.8-flash`；如果凭据本身不带项目，再指定 Google Cloud 项目：
 
 ```bash
-export QIRA_MODEL="gemini-vertex/gemini-3.6-flash"   # 或 Qirabot(model=...)
+export QIRA_MODEL="gemini-vertex/gemini-3.8-flash"   # 或 Qirabot(model=...)
 export QIRA_VERTEX_PROJECT="my-gcp-project"                # 或 Qirabot(vertex_project=...)
 ```
 

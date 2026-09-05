@@ -300,7 +300,7 @@ class Qirabot:
 
     Usage::
 
-        bot = Qirabot(model="gemini-vertex/gemini-3.6-flash")
+        bot = Qirabot(model="gemini-vertex/gemini-3.8-flash")
         bot.click(page, "Login button")
         bot.type_text(page, "Username field", "admin@example.com")
         result = bot.ai(page, "Find the cheapest item and add to cart")

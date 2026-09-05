@@ -152,13 +152,13 @@ handler 里先裁剪,别拿模型的上下文去装它。
 ## 模型与语言
 
 ```python
-bot = Qirabot(model="gemini-vertex/gemini-3.6-pro", language="zh")        # 全局默认
+bot = Qirabot(model="gemini/gemini-3.8-flash", language="zh")        # 全局默认
 bot.verify(page, "每一行都显示折扣价",
            thinking_level="high")                          # 难的调用 → 多想想
 ```
 
-`model` 为整个 bot 选择 Vertex AI 模型(`"{provider}/{model}"`);留空
-使用默认的 `gemini-vertex/gemini-3.6-flash`。`thinking_level`
+`model` 为整个 bot 选择 provider 与模型(`"{provider}/{model}"`);留空
+使用默认的 `gemini-vertex/gemini-3.8-flash`。`thinking_level`
 (`minimal`/`low`/`medium`/`high`)在同一模型内伸缩推理深度,可按调用
 覆盖。详见[配置](/zh/advanced/configuration)。确定性的单步调用见
 [API 参考](/zh/reference/api)。

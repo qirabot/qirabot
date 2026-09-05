@@ -86,7 +86,7 @@ key,不是 AI Studio 的 key;仅支持 `gemini-vertex` 系列模型,固定走全
 `gemini` provider 用的
 [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)。该
 provider 直接调用 Gemini Developer API 而非 Vertex,完全不涉及 Google
-Cloud(`-m gemini/gemini-3.6-flash`)。
+Cloud(`-m gemini/gemini-3.8-flash`)。
 
 `--service-tier`(或 `QIRA_SERVICE_TIER`)选择计费档位 —— `flex` 用
 约半价换更慢、可被丢弃的容量,`priority` 加价换排在标准流量之前的
@@ -96,9 +96,9 @@ Cloud(`-m gemini/gemini-3.6-flash`)。
 
 模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
 `QIRA_MODEL` 环境变量 > 内置默认值
-`gemini-vertex/gemini-3.6-flash`。只写 provider 名会选用该
+`gemini-vertex/gemini-3.8-flash`。只写 provider 名会选用该
 provider 的默认模型(`gemini` →
-`gemini-3.6-flash`)。
+`gemini-3.8-flash`)。
 
 ## 退出码
 
@@ -160,7 +160,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 | 选项 | 默认值 | 作用 |
 |---|---|---|
 | `-n, --name` | 从指令推导 | HTML 报告中显示的运行名 |
-| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.6-flash` | 模型,格式 `{provider}/{model}`,provider 为 `gemini-vertex` / `gemini` 之一(见[配置](/zh/advanced/configuration)) |
+| `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.8-flash` | 模型,格式 `{provider}/{model}`,provider 为 `gemini-vertex` / `gemini` 之一(见[配置](/zh/advanced/configuration)) |
 | `--thinking-level` | 引擎默认 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini;`ultra_high` 需 Gemini 3 系列模型);调低可减少每步的图像 token |
 | `-l, --language` | 跟随指令语言 | 响应语言:语言标签(`zh`、`ja`、`de` 等)或任意语言名称 |

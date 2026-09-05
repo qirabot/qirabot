@@ -341,12 +341,12 @@ class TestRunInfo:
             tmp_path / "report.html",
             stats={"total_steps": 1, "ai_steps": 1, "input_tokens": 100,
                    "output_tokens": 50},
-            model="gemini-vertex/gemini-3.6-flash",
+            model="gemini-vertex/gemini-3.8-flash",
             tier="priority (served: standard)",
         )
         html = out.read_text(encoding="utf-8")
         # A reader should never have to work out what a bare string is.
-        assert "<dt>Model</dt><dd>gemini-vertex/gemini-3.6-flash</dd>" in html
+        assert "<dt>Model</dt><dd>gemini-vertex/gemini-3.8-flash</dd>" in html
         assert "<dt>Tier</dt><dd>priority (served: standard)</dd>" in html
         assert "<dt>Tokens</dt><dd>150 total — 100 prompt, 50 response</dd>" in html
 
@@ -377,7 +377,7 @@ class TestRunInfo:
             [_entry("a")],
             tmp_path / "report.html",
             stats={"total_steps": 1, "ai_steps": 1},
-            model="gemini-vertex/gemini-3.6-flash",
+            model="gemini-vertex/gemini-3.8-flash",
         )
         assert "<dt>Tier</dt>" not in out.read_text(encoding="utf-8")
 

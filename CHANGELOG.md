@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.4.1 (2026-09-05)
+
+### Default model is now `gemini-3.8-flash`
+
+- Both Gemini providers (`gemini`, `gemini-vertex`) default to
+  `gemini-3.8-flash` instead of `gemini-3.6-flash`. An explicit
+  `model=` or `QIRA_MODEL` is unaffected.
+- Docs and examples no longer mention `gemini-3.6-pro`, a model that
+  never existed; the two places that need a non-default model string
+  now use `gemini/gemini-3.8-flash`.
+
 ## 3.4.0 (2026-08-29)
 
 ### v2 migration aids retired

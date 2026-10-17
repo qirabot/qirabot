@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.4.2 (2026-10-17)
+
+### Explicit Vertex credentials
+
+- New `vertex_credentials=` constructor option: pass a
+  `google.auth.credentials.Credentials` object (service account,
+  impersonated, WIF, or `refresh_handler`-based short-lived tokens) for
+  `gemini-vertex` instead of resolving ADC — e.g. different identities per
+  `Qirabot` instance in one process. The cloud-platform scope is applied
+  automatically.
+- Passing it together with an explicit `vertex_api_key=`, with a
+  non-`gemini-vertex` model, or with an injected `provider=` raises a
+  config error; a `QIRA_VERTEX_API_KEY` in the environment is ignored
+  (logged) when it is set. (#5)
+
 ## 3.4.1 (2026-09-05)
 
 ### Default model is now `gemini-3.8-flash`

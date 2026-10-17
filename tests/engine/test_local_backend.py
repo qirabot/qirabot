@@ -606,3 +606,129 @@ class TestAuthSelection:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         with pytest.raises(ValueError, match="QIRA_GEMINI_API_KEY"):
             LocalBackend(model="gemini/gemini-test")
+
+    def test_explicit_vertex_credentials(self, monkeypatch, caplog) -> None:
+        import logging
+        import google.auth
+
+        class FakeCreds:
+            valid = False
+            token = "init"
+            project_id = "creds-proj"
+
+            def refresh(self, request: object) -> None:
+                self.token = "refreshed-tok"
+                self.valid = True
+
+        monkeypatch.setattr(
+            google.auth,
+            "default",
+            lambda *a, **kw: pytest.fail(
+                "ADC must not be called when vertex_credentials= is set"
+            ),
+        )
+        monkeypatch.setenv("QIRA_VERTEX_API_KEY", "ignored")
+        monkeypatch.delenv("QIRA_VERTEX_PROJECT", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+        with caplog.at_level(logging.INFO, logger="qirabot.engine"):
+            b = LocalBackend(
+                model="gemini-vertex/gemini-test", vertex_credentials=FakeCreds()
+            )
+        try:
+            assert b._engine._provider._project == "creds-proj"
+            assert b._engine._provider._tokens.token() == "refreshed-tok"
+            assert "QIRA_VERTEX_API_KEY ignored" in caplog.text
+        finally:
+            b.close()
+
+    def test_vertex_credentials_without_project_id(self, monkeypatch) -> None:
+        class ProjectlessCreds:
+            valid = True
+            token = "tok"
+
+        monkeypatch.delenv("QIRA_VERTEX_API_KEY", raising=False)
+        monkeypatch.delenv("QIRA_VERTEX_PROJECT", raising=False)
+        monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+
+        b = LocalBackend(
+            model="gemini-vertex/gemini-test",
+            vertex_project="explicit-proj",
+            vertex_credentials=ProjectlessCreds(),
+        )
+        try:
+            assert b._engine._provider._project == "explicit-proj"
+        finally:
+            b.close()
+
+        with pytest.raises(ValueError, match="no Google Cloud project configured"):
+            LocalBackend(
+                model="gemini-vertex/gemini-test",
+                vertex_credentials=ProjectlessCreds(),
+            )
+
+    def test_vertex_credentials_applies_cloud_platform_scope(self, monkeypatch) -> None:
+        import google.auth.credentials as gac
+
+        class UnscopedCreds(gac.Scoped):
+            valid = True
+            token = "scoped-tok"
+            project_id = "scoped-proj"
+
+            @property
+            def requires_scopes(self) -> bool:
+                return not self._scopes
+
+            def with_scopes(self, scopes, default_scopes=None):
+                clone = UnscopedCreds()
+                clone._scopes = scopes
+                return clone
+
+            def refresh(self, request: object) -> None:
+                pass
+
+        monkeypatch.delenv("QIRA_VERTEX_API_KEY", raising=False)
+        b = LocalBackend(
+            model="gemini-vertex/gemini-test",
+            vertex_credentials=UnscopedCreds(),
+        )
+        try:
+            scoped = b._engine._provider._tokens._credentials
+            assert scoped.scopes == ["https://www.googleapis.com/auth/cloud-platform"]
+        finally:
+            b.close()
+
+    def test_vertex_credentials_rejects_conflicting_config(self) -> None:
+        class FakeCreds:
+            valid = True
+            token = "tok"
+            project_id = "proj"
+
+        with pytest.raises(
+            ValueError, match="cannot pass both vertex_credentials and vertex_api_key"
+        ):
+            LocalBackend(
+                model="gemini-vertex/gemini-test",
+                vertex_api_key="explicit-key",
+                vertex_credentials=FakeCreds(),
+            )
+
+        with pytest.raises(
+            ValueError,
+            match='vertex_credentials is only supported with the "gemini-vertex" provider',
+        ):
+            LocalBackend(
+                model="gemini/gemini-test",
+                gemini_api_key="ai-studio-key",
+                vertex_credentials=FakeCreds(),
+            )
+
+        with pytest.raises(
+            ValueError,
+            match='vertex_credentials is only supported with the "gemini-vertex" provider',
+        ):
+            LocalBackend(
+                model="gemini-vertex/gemini-test",
+                vertex_credentials=FakeCreds(),
+                provider=FakeProvider(),
+            )

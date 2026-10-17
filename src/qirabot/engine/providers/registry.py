@@ -76,7 +76,7 @@ def resolve_default_model() -> str:
 
 def resolve_vertex_project(explicit: str, token_source: VertexTokenSource) -> str:
     """Project resolution: explicit param > QIRA_VERTEX_PROJECT >
-    GOOGLE_CLOUD_PROJECT > the ADC credentials' own project id."""
+    GOOGLE_CLOUD_PROJECT > the credentials' own project id."""
     for candidate in (
         explicit,
         os.environ.get("QIRA_VERTEX_PROJECT", ""),

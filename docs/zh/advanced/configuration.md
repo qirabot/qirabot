@@ -33,6 +33,7 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/区域 |
 | `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | 用 [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) 代替 ADC,无需配置 gcloud。仅对 `gemini-vertex` 有效,固定走全局端点,并覆盖 `vertex_project`/`vertex_location`。它不是 AI Studio key;`GOOGLE_API_KEY` 被刻意不读取 |
 | `gemini_api_key` | `QIRA_GEMINI_API_KEY`、`GEMINI_API_KEY` | `""` | `gemini` provider 使用的 [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key)(走 Gemini Developer API,不涉及 Google Cloud) |
+| `vertex_credentials` | — | `None` | 为 `gemini-vertex` 显式传入 `google.auth.credentials.Credentials` 凭据对象,代替默认 ADC 解析。用户凭据或模拟凭据(impersonated credentials)通常不自带 `project_id`,需同时传入 `vertex_project=` |
 | `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | 计费档位:`standard` / `flex` / `priority`([详见](#计费档位)) |
 | `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | 档位容量耗尽时向上升一档重试([详见](#计费档位)) |
 | `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
@@ -61,7 +62,9 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 [报告与录屏](/zh/advanced/reports)。
 
 **项目与 location 的解析顺序。**Vertex 项目:`vertex_project=` 参数 >
-`QIRA_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` > ADC 凭据自带的项目 id。
+`QIRA_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` > 凭据(`vertex_credentials`
+或 ADC)自带的 `project_id`(注意 `QIRA_VERTEX_PROJECT` /
+`GOOGLE_CLOUD_PROJECT` 仍优先于凭据自带的 `project_id`,且用户或模拟凭据通常不自带该项目 id,需显式传 `vertex_project=`)。
 location:`vertex_location=` 参数 > `QIRA_VERTEX_LOCATION` >
 `GOOGLE_CLOUD_LOCATION` > `"global"`。CLI 以全局参数暴露同一对配置,
 写在子命令之前:`qirabot --vertex-project my-proj --vertex-location

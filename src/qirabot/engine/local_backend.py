@@ -14,7 +14,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -26,6 +26,7 @@ from .providers.gemini_api import GeminiApiProvider
 from .providers.gemini_vertex import GeminiVertexProvider
 from .providers.registry import (
     PROVIDER_GEMINI,
+    PROVIDER_GEMINI_VERTEX,
     ModelSpec,
     check_tier_location,
     parse_model,
@@ -49,6 +50,9 @@ from .types import (
     TokenUsage,
     UnsupportedScreenshotError,
 )
+
+if TYPE_CHECKING:
+    from google.auth.credentials import Credentials
 
 logger = logging.getLogger("qirabot.engine")
 
@@ -168,6 +172,7 @@ class LocalBackend:
         vertex_location: str = "",
         vertex_api_key: str = "",
         gemini_api_key: str = "",
+        vertex_credentials: Credentials | None = None,
         thinking_level: str = "",
         media_resolution: str = "",
         locate_format: str = "",
@@ -185,6 +190,17 @@ class LocalBackend:
         self._trace: _Tracer | _NullTracer = _Tracer.from_env() or _NullTracer()
         tier = resolve_service_tier(service_tier)
         escalate = resolve_tier_escalation(tier_escalation)
+
+        if vertex_credentials is not None:
+            if provider is not None or self._spec.provider != PROVIDER_GEMINI_VERTEX:
+                raise ValueError(
+                    f"vertex_credentials is only supported with the "
+                    f'"{PROVIDER_GEMINI_VERTEX}" provider'
+                )
+            if vertex_api_key.strip():
+                raise ValueError(
+                    "cannot pass both vertex_credentials and vertex_api_key"
+                )
 
         if provider is None and self._spec.provider == PROVIDER_GEMINI:
             # Gemini Developer API (AI Studio keys): no ADC, no
@@ -209,11 +225,20 @@ class LocalBackend:
                 _tier_suffix(tier, escalate),
             )
         elif provider is None:
-            # gemini-vertex: a configured API key (param > QIRA_VERTEX_API_KEY)
-            # always wins over ADC — the variable is qirabot-scoped, so
-            # setting it is a deliberate choice, unlike project/location
-            # vars, which commonly linger from an ADC-era setup.
-            api_key = resolve_vertex_api_key(vertex_api_key)
+            # gemini-vertex auth precedence: explicit vertex_credentials= >
+            # vertex_api_key= / QIRA_VERTEX_API_KEY > ADC. A configured
+            # QIRA_VERTEX_API_KEY still beats ambient ADC — the variable is
+            # qirabot-scoped, so setting it is a deliberate choice, unlike
+            # project/location vars, which commonly linger from an ADC-era setup.
+            if vertex_credentials is not None:
+                if os.environ.get("QIRA_VERTEX_API_KEY", "").strip():
+                    logger.info(
+                        "QIRA_VERTEX_API_KEY ignored: explicit vertex_credentials "
+                        "takes precedence"
+                    )
+                api_key = ""
+            else:
+                api_key = resolve_vertex_api_key(vertex_api_key)
             if api_key:
                 if vertex_project.strip() or vertex_location.strip():
                     logger.info(
@@ -237,7 +262,7 @@ class LocalBackend:
                     _tier_suffix(tier, escalate),
                 )
             else:
-                tokens = VertexTokenSource()
+                tokens = VertexTokenSource(credentials=vertex_credentials)
                 location = resolve_vertex_location(vertex_location)
                 check_tier_location(tier, location)
                 project = resolve_vertex_project(vertex_project, tokens)

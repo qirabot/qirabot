@@ -9,8 +9,12 @@ credentials object and refreshed just before expiry.
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
 from .base import ErrorCategory, ProviderError
+
+if TYPE_CHECKING:
+    from google.auth.credentials import Credentials
 
 _CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
@@ -23,16 +27,25 @@ def vertex_base_url(location: str) -> str:
 
 
 class VertexTokenSource:
-    """Lazily resolves ADC and hands out fresh Bearer tokens.
+    """Wraps explicit google-auth credentials or lazily resolves ADC, handing
+    out fresh Bearer tokens.
 
     Thread-safe: the SDK's ai() loop is single-threaded, but heartbeat-style
     callers must not race a refresh.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, credentials: Credentials | None = None) -> None:
         self._lock = threading.Lock()
-        self._credentials: object | None = None
-        self._adc_project: str = ""
+        if credentials is not None:
+            import google.auth.credentials as gac
+
+            credentials = gac.with_scopes_if_required(  # type: ignore[no-untyped-call]
+                credentials, [_CLOUD_PLATFORM_SCOPE]
+            )
+        self._credentials: Credentials | None = credentials
+        self._credentials_project: str = (
+            getattr(credentials, "project_id", "") or ""
+        )
 
     def _load(self) -> None:
         try:
@@ -57,7 +70,7 @@ class VertexTokenSource:
                 category=ErrorCategory.AUTH,
             ) from exc
         self._credentials = credentials
-        self._adc_project = project or ""
+        self._credentials_project = project or ""
 
     def token(self) -> str:
         """Return a valid access token, refreshing if needed."""
@@ -74,7 +87,7 @@ class VertexTokenSource:
                     # surface with the same auth context as a refresh failure.
                     import google.auth.transport.requests
 
-                    credentials.refresh(  # type: ignore[attr-defined]
+                    credentials.refresh(  # type: ignore[no-untyped-call]
                         google.auth.transport.requests.Request()
                     )
                 except Exception as exc:
@@ -93,9 +106,9 @@ class VertexTokenSource:
             return token
 
     def adc_project(self) -> str:
-        """The project id carried by the ADC credentials, if any (used as the
-        last fallback when no project is configured explicitly)."""
+        """The project id carried by the credentials (explicit or ADC), if any
+        (used as the last fallback when no project is configured explicitly)."""
         with self._lock:
             if self._credentials is None:
                 self._load()
-            return self._adc_project
+            return self._credentials_project

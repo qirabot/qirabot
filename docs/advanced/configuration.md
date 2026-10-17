@@ -36,6 +36,7 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `vertex_location` | `QIRA_VERTEX_LOCATION` | `"global"` | Vertex location/region |
 | `vertex_api_key` | `QIRA_VERTEX_API_KEY` | `""` | [Vertex AI API key](https://cloud.google.com/vertex-ai/generative-ai/docs/start/api-keys) instead of ADC — no gcloud setup. `gemini-vertex` only, always the global endpoint, and it overrides `vertex_project`/`vertex_location`. Not an AI Studio key; `GOOGLE_API_KEY` is deliberately never read |
 | `gemini_api_key` | `QIRA_GEMINI_API_KEY`, `GEMINI_API_KEY` | `""` | [AI Studio API key](https://ai.google.dev/gemini-api/docs/api-key) for the `gemini` provider (Gemini Developer API, no Google Cloud involved) |
+| `vertex_credentials` | — | `None` | Explicit `google.auth.credentials.Credentials` object for `gemini-vertex` instead of resolving ADC. User/impersonated credentials usually carry no `project_id`, so pass `vertex_project=` as well |
 | `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | Consumption tier: `standard` / `flex` / `priority` ([details](#service-tier)) |
 | `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | Retry one rung up the tier ladder when a tier runs out of capacity ([details](#service-tier)) |
 | `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
@@ -65,7 +66,10 @@ where the file lands) is covered in [Reports & Recording](/advanced/reports).
 
 **Project and location resolution.** The Vertex project is resolved as:
 `vertex_project=` param > `QIRA_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` >
-the project id carried by the ADC credentials themselves. The location:
+the `project_id` carried by the credentials (`vertex_credentials` or ADC) —
+note that `QIRA_VERTEX_PROJECT` / `GOOGLE_CLOUD_PROJECT` still take precedence
+over the credentials' own `project_id`, and user/impersonated credentials
+usually carry none (pass `vertex_project=` explicitly). The location:
 `vertex_location=` param > `QIRA_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION`
 > `"global"`. The CLI exposes the same pair as global flags before the
 subcommand: `qirabot --vertex-project my-proj --vertex-location us-east5

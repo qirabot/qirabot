@@ -13,7 +13,10 @@ import uuid
 import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator, Literal
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
+
+if TYPE_CHECKING:
+    from google.auth.credentials import Credentials
 
 from qirabot._browser import launch_browser
 from qirabot._knowledge import resolve_knowledge
@@ -314,6 +317,7 @@ class Qirabot:
         vertex_location: str = "",
         vertex_api_key: str = "",
         gemini_api_key: str = "",
+        vertex_credentials: Credentials | None = None,
         service_tier: str = "",
         tier_escalation: bool | None = None,
         thinking_level: str = "",
@@ -350,6 +354,7 @@ class Qirabot:
                 vertex_location=vertex_location,
                 vertex_api_key=vertex_api_key,
                 gemini_api_key=gemini_api_key,
+                vertex_credentials=vertex_credentials,
                 service_tier=service_tier,
                 tier_escalation=tier_escalation,
                 thinking_level=thinking_level,

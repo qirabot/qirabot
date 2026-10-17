@@ -27,6 +27,7 @@ Common constructor options (all keyword):
 | `vertex_project` / `vertex_location` | ADC project / `global` | Google Cloud project/location for Vertex AI (env `QIRA_VERTEX_PROJECT` / `QIRA_VERTEX_LOCATION`, fallback `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`); ignored when an API key is set |
 | `vertex_api_key` | unset | Vertex AI API key auth instead of ADC (env `QIRA_VERTEX_API_KEY`); gemini-vertex only, global endpoint only |
 | `gemini_api_key` | unset | AI Studio key for the `gemini` provider — Gemini Developer API, no Google Cloud (env `QIRA_GEMINI_API_KEY` / `GEMINI_API_KEY`) |
+| `vertex_credentials` | `None` | explicit `google.auth.credentials.Credentials` object for `gemini-vertex` instead of ADC (`QIRA_VERTEX_PROJECT` / `GOOGLE_CLOUD_PROJECT` still override its `project_id`; user/impersonated credentials usually carry none, so pass `vertex_project=` too) |
 | `thinking_level` | model's setting | `minimal` \| `low` \| `medium` \| `high` — per-task thinking override; every action method also takes a per-call `thinking_level=`. Effective granularity depends on the underlying model (some levels may be merged or clamped). |
 | `language` | `"en"` | response language tag, e.g. `"zh"`, `"en"` |
 | `task_name` | `""` | shown in the run report header |

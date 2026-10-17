@@ -559,15 +559,18 @@ class TestQirabotInit:
         assert Path(bot.report_dir).parent.name == time.strftime("%Y-%m-%d")
 
     def test_backend_receives_model_config(self, make_bot):
+        creds = object()
         bot = make_bot(
             model="gemini-vertex/gemini-3-flash-preview",
             vertex_project="proj",
             vertex_location="us-central1",
+            vertex_credentials=creds,
         )
         kwargs = bot._backend.init_kwargs
         assert kwargs["model"] == "gemini-vertex/gemini-3-flash-preview"
         assert kwargs["vertex_project"] == "proj"
         assert kwargs["vertex_location"] == "us-central1"
+        assert kwargs["vertex_credentials"] is creds
 
     def test_media_resolution_param_passthrough(self, make_bot):
         bot = make_bot(media_resolution="medium")

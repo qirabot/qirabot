@@ -202,7 +202,7 @@ def build_request_body(
     }
 
     # Gemini 3 models cannot fully disable thinking: "disabled"/"none" clamps
-    # to the model's minimum level (pro → LOW, flash/flash-lite → MINIMAL).
+    # to the model's minimum level (pro/argon → LOW, flash/flash-lite → MINIMAL).
     thinking_level = request.param_str("thinking_level", "")
     if thinking_level:
         generation_config["thinkingConfig"] = {
@@ -256,11 +256,16 @@ def build_request_body(
     return body
 
 
+# Model-name markers for models whose minimum thinking level is LOW: they
+# reject MINIMAL with a 400, so the low end clamps to LOW for them.
+_NO_MINIMAL_THINKING_MARKERS = ("-pro", "-argon")
+
+
 def _map_thinking_level(level: str, model: str) -> str:
-    is_pro = "-pro" in model
+    no_minimal = any(m in model for m in _NO_MINIMAL_THINKING_MARKERS)
     lv = level.lower()
     if lv in ("disabled", "none", "minimal"):
-        return "LOW" if is_pro else "MINIMAL"
+        return "LOW" if no_minimal else "MINIMAL"
     if lv == "low":
         return "LOW"
     if lv == "medium":

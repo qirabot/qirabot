@@ -1,6 +1,6 @@
 ---
 title: 错误处理与运行结果
-description: Qirabot 的异常体系、ai() 运行的四种 result.status 结果、max_steps 重试模式、动作自动重试,以及失败在 HTML 报告中的呈现。
+description: Qirabot 的异常体系、ai() 运行的五种 result.status 结果、max_steps 重试模式、动作自动重试,以及失败在 HTML 报告中的呈现。
 ---
 
 # 错误处理
@@ -73,6 +73,7 @@ login`。
 | `"completed"` | 模型判定目标已达成 | `True` |
 | `"goal_failed"` | 模型判定目标不可达(登录墙、验证码) | `False` |
 | `"max_steps"` | 步数预算用尽;是截断,不是能力判定 | `False` |
+| `"max_duration"` | `max_duration` 时间预算用尽;同样是截断 | `False` |
 | `"error"` | 引擎遇到终止性错误(如模型调用失败) | `False` |
 
 `max_steps` 值得专门处理,它是预算问题,不是能力问题:
@@ -83,6 +84,9 @@ if result.status == "max_steps":
     # 不是真的失败——预算太小;加大步数重试
     result = bot.ai(page, "找到最便宜的航班并锁定", max_steps=50)
 ```
+
+`max_duration` 是时间预算上的同一类结果。两种截断下,`result.notes` 都保存着
+预算用完前模型用 `save_note` 记下的内容。
 
 `goal_failed` 通常意味着环境需要帮助,比如登录墙或验证码。可以考虑
 [人工介入的自定义工具](/zh/advanced/ai-tasks#人工介入-human-in-the-loop),

@@ -208,10 +208,13 @@ call.
 
 ```python
 ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
-   language="", custom_tools=None, exclude_tools=None, knowledge=None) -> RunResult
+   language="", custom_tools=None, exclude_tools=None, knowledge=None,
+   max_duration=None) -> RunResult
 ```
 
-The autonomous loop: screenshot → decide → act, until done or `max_steps`.
+The autonomous loop: screenshot → decide → act, until done, `max_steps`, or
+`max_duration` (seconds of wall clock, checked before each step; `None` = no
+cap; see [Configuration](/advanced/configuration#how-long-a-run-can-take)).
 `on_step` is called with a [`StepResult`](#stepresult) after each step.
 `custom_tools` registers your Python functions as callable tools;
 `exclude_tools` removes built-ins by action name; both are detailed in
@@ -361,9 +364,10 @@ Returned by `ai()`.
 | Field | Type | Meaning |
 |---|---|---|
 | `success` | `bool` | `True` iff `status == "completed"` |
-| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"error"`; see [Error Handling](/advanced/error-handling) |
+| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"max_duration"` / `"error"`; see [Error Handling](/advanced/error-handling) |
 | `output` | `str` | The model's final answer / summary |
 | `steps` | `list[StepResult]` | Every step taken |
+| `notes` | `list[str]` | What the model saved with `save_note`, deduplicated; returned on every status, including truncations |
 
 ### StepResult
 

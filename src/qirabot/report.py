@@ -225,6 +225,10 @@ def _badge(label: str, kind: str) -> str:
     return f'<span class="badge {kind}">{html.escape(label)}</span>'
 
 
+# Statuses that mean a budget ran out before the model finished: amber, and
+# tallied as "truncated" rather than failed.
+_TRUNCATED = frozenset({"max_steps", "max_duration"})
+
 # RunStatus -> (badge label, css class): one entry per qirabot.client.RunStatus
 # value — that Literal is the single status vocabulary, and a test keeps this
 # mapping in lockstep with it. Unknown statuses fall back to FAIL — a status
@@ -233,6 +237,7 @@ _STATUS_KINDS = {
     "completed": ("PASS", "pass"),
     "goal_failed": ("FAIL", "fail"),
     "max_steps": ("MAX STEPS", "warn"),
+    "max_duration": ("MAX DURATION", "warn"),
     "error": ("ERROR", "fail"),
     # A deliberate user abort (ESC hold / mouse-to-corner / Ctrl+C via
     # cancel()): amber, not red — the bot didn't fail, the user stopped it.
@@ -529,9 +534,10 @@ def write_html(
 
     # Overall tally, on its own line: the report's headline answer ("how many
     # tasks ran, how many passed"), kept clear of the per-task badges below.
-    # max_steps counts toward the total but not toward passed: a truncated run
-    # isn't a pass, but as long as nothing truly failed the tally is amber
-    # (raise the budget) rather than red (something broke). Each judged
+    # A truncation (max_steps / max_duration) counts toward the total but not
+    # toward passed: a truncated run isn't a pass, but as long as nothing
+    # truly failed the tally is amber (raise the budget) rather than red
+    # (something broke). Each judged
     # section counts once, even when its steps split across several timeline
     # groups (outcomes are keyed per section).
     judged: list[str] = []
@@ -542,7 +548,7 @@ def write_html(
             judged.append(name)
     statuses = [_normalize_status(outcomes[name]) for name in judged]
     passed = sum(1 for st in statuses if st == "completed")
-    truncated = sum(1 for st in statuses if st == "max_steps")
+    truncated = sum(1 for st in statuses if st in _TRUNCATED)
     total_judged = len(statuses)
     if total_judged:
         if passed == total_judged:
@@ -608,7 +614,7 @@ def write_html(
         sec_err = section_errors.get(sec) if last_group_of[sec] == gi else None
         if sec_err:
             status = _normalize_status(outcomes[sec]) if sec in outcomes else ""
-            if status == "max_steps":
+            if status in _TRUNCATED:
                 cls, mark = "notice", "⚠"
             else:
                 cls, mark = "notice error", "✗"

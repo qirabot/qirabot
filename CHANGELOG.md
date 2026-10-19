@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### `max_duration`: a wall-clock budget for `ai()`
+
+- New `bot.ai(..., max_duration=seconds)` (also on bound targets) and CLI
+  `--max-duration` (`300` / `90s` / `5m` / `1h30m`). Default `None`: no cap,
+  behaviour unchanged. Applies alongside `max_steps`; whichever runs out
+  first ends the run.
+- Running out ends the run with the new status `"max_duration"` — a
+  truncation like `"max_steps"`: `success=False`,
+  `output="max duration reached"`, `notes` returned. Report badge
+  `MAX DURATION` (amber, tallied as truncated); CLI line
+  `Failed: max duration reached (5m03s/5m)`, exit 1; the SDK warning is
+  tagged `qira_event="max_duration"` and filtered by the CLI.
+- A soft limit, checked before each step: a step already deciding runs to
+  completion (a `done` it returns counts), so a run can overshoot by up to
+  one step. A model-requested `wait` is cut to the time remaining. Invalid
+  values (`<= 0`, non-finite, non-numbers) raise before the run starts.
+- The `stream-json` start line gains `max_duration` (seconds or `null`).
+
 ### `save_note` data survives every ending
 
 - New `RunResult.notes`: the run's `save_note` contents, deduplicated

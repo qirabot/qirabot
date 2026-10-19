@@ -286,6 +286,7 @@ class _BoundQirabot:
         custom_tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
         exclude_tools: list[str] | None = None,
         knowledge: str | Path | list[str | Path] | None = None,
+        max_duration: float | None = None,
     ) -> "RunResult":
         return self._bot.ai(
             self._target,
@@ -297,6 +298,7 @@ class _BoundQirabot:
             custom_tools=custom_tools,
             exclude_tools=exclude_tools,
             knowledge=knowledge,
+            max_duration=max_duration,
         )
 
     def screenshot(self) -> Path | None:

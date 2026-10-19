@@ -137,14 +137,14 @@ human-readable output is suppressed; exit codes are unchanged):
 }
 ```
 
-`status` is `completed` / `goal_failed` / `max_steps` / `error` /
-`cancelled`: the same values as the SDK's `RunResult.status`, plus
+`status` is `completed` / `goal_failed` / `max_steps` / `max_duration` /
+`error` / `cancelled`: the same values as the SDK's `RunResult.status`, plus
 `cancelled` for Ctrl+C and the ESC kill switch. `success` is `true` only for
 `completed`. `notes` is the SDK's `RunResult.notes` — what the model recorded
 with `save_note`, deduplicated — on every status (an empty array on `error` /
-`cancelled`); on `max_steps` it is the data collected before the budget ran
-out. In the default text output those notes are printed under the `Failed:`
-line for `max_steps` / `goal_failed` runs. `report` is `null` when reporting
+`cancelled`); on `max_steps` / `max_duration` it is the data collected before
+the budget ran out. In the default text output those notes are printed under
+the `Failed:` line for `max_steps` / `max_duration` / `goal_failed` runs. `report` is `null` when reporting
 is off; the file itself is written as the process exits, so read it after the
 CLI returns.
 
@@ -152,7 +152,7 @@ CLI returns.
 per step, for tools that supervise a run live:
 
 ```
-{"type": "start", "task_id": "1a2b3c4d", "max_steps": 20}
+{"type": "start", "task_id": "1a2b3c4d", "max_steps": 20, "max_duration": null}
 {"type": "step", "step": 1, "action_type": "click", "params": {"locate": "Login button"}, "decision": "...", ...}
 {"type": "step", "step": 2, "action_type": "input", ...}
 {"type": "result", "success": true, ...}
@@ -177,6 +177,7 @@ a consumer always sees one terminal line.
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only; `ultra_high` needs a Gemini 3 model); lower it to cut image tokens per step |
 | `-l, --language` | instruction's language | Response language: a tag (`zh`, `ja`, `de`, …) or any language name |
 | `--max-steps` | `20` | Step budget for the AI task |
+| `--max-duration` | no limit | Time budget: seconds (`300`) or `90s` / `5m` / `1h30m`. Checked between steps, so a run can overshoot by up to one step; ends with `Failed: max duration reached (5m03s/5m)` |
 | `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs; fetch remote sources yourself first |
 | `--report / --no-report` | on | Write an HTML run report |
 | `--report-dir` | `./qira_runs/...` | Report output root (env `QIRA_REPORT_DIR`) |

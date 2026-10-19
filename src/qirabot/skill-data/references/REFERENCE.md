@@ -49,9 +49,19 @@ Common constructor options (all keyword):
 ```python
 result = bot.ai(target, instruction, max_steps=20, *, on_step=None,
                 thinking_level="", language="", custom_tools=None, exclude_tools=None,
-                knowledge=None)
+                knowledge=None, max_duration=None)
 # result.success -> bool, result.output -> str (final answer)
+# result.status  -> "completed" | "goal_failed" | "max_steps" | "max_duration"
+# result.notes   -> list[str]: what the model saved with save_note (deduplicated),
+#                   returned on every status — on a truncation it is the data
+#                   collected before the budget ran out
 ```
+
+`max_duration` (seconds, default `None` = no cap) bounds wall-clock time
+alongside `max_steps`; whichever runs out first ends the run. It is checked
+before each step, so it can overshoot by one step. Set it for CI and scheduled
+jobs, where a step count alone doesn't bound time (rate-limit waits can stretch
+one step to minutes).
 
 Runs the full perceive → decide → act loop locally in the SDK — each step
 sends a screenshot to your configured Vertex AI model, with step history

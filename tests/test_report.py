@@ -132,6 +132,17 @@ class TestSummaryBadge:
             encoding="utf-8"
         )
 
+    def test_max_duration_counts_as_truncated(self, tmp_path):
+        log = [_entry("a"), _entry("b")]
+        out = write_html(
+            log,
+            tmp_path / "report.html",
+            outcomes={"a": "max_steps", "b": "max_duration"},
+        )
+        html = out.read_text(encoding="utf-8")
+        assert '<span class="badge warn">0/2 passed · 2 truncated</span>' in html
+        assert '<h2>b <span class="badge warn">MAX DURATION</span></h2>' in html
+
     def test_only_truncation_is_amber(self, tmp_path):
         log = [_entry("a"), _entry("b")]
         out = write_html(

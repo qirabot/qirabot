@@ -133,20 +133,20 @@ provider 的默认模型(`gemini` →
 }
 ```
 
-`status` 取值 `completed` / `goal_failed` / `max_steps` / `error` /
-`cancelled`,与 SDK `RunResult.status` 相同,外加 Ctrl+C 和 ESC 中止对应的
+`status` 取值 `completed` / `goal_failed` / `max_steps` / `max_duration` /
+`error` / `cancelled`,与 SDK `RunResult.status` 相同,外加 Ctrl+C 和 ESC 中止对应的
 `cancelled`。`success` 仅在 `completed` 时为 `true`。`notes` 即 SDK 的
 `RunResult.notes`:模型用 `save_note` 记录、去重后的内容,所有状态都会带上
-(`error` / `cancelled` 时为空数组);`max_steps` 时它就是步数用完前已收集的
-数据。默认的文本输出在 `max_steps` / `goal_failed` 时也会把这些内容打印在
-`Failed:` 行下方。关闭报告时 `report` 为 `null`;报告文件在进程退出时写出,
+(`error` / `cancelled` 时为空数组);`max_steps` / `max_duration` 时它就是
+预算用完前已收集的数据。默认的文本输出在 `max_steps` / `max_duration` /
+`goal_failed` 时也会把这些内容打印在 `Failed:` 行下方。关闭报告时 `report` 为 `null`;报告文件在进程退出时写出,
 应在 CLI 返回后再读取。
 
 `--output-format stream-json` 输出 NDJSON,每行一个 JSON 对象、逐步 flush,
 适合实时监控运行的上层工具:
 
 ```
-{"type": "start", "task_id": "1a2b3c4d", "max_steps": 20}
+{"type": "start", "task_id": "1a2b3c4d", "max_steps": 20, "max_duration": null}
 {"type": "step", "step": 1, "action_type": "click", "params": {"locate": "登录按钮"}, "decision": "...", ...}
 {"type": "step", "step": 2, "action_type": "input", ...}
 {"type": "result", "success": true, ...}
@@ -170,6 +170,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini;`ultra_high` 需 Gemini 3 系列模型);调低可减少每步的图像 token |
 | `-l, --language` | 跟随指令语言 | 响应语言:语言标签(`zh`、`ja`、`de` 等)或任意语言名称 |
 | `--max-steps` | `20` | AI 任务的步数预算 |
+| `--max-duration` | 不限 | 时间预算:秒数(`300`)或 `90s` / `5m` / `1h30m`。在步与步之间检查,最多可能超出一步;结束时显示 `Failed: max duration reached (5m03s/5m)` |
 | `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL,远程内容请先自行下载 |
 | `--report / --no-report` | 开 | 写 HTML 运行报告 |
 | `--report-dir` | `./qira_runs/...` | 报告输出根目录(环境变量 `QIRA_REPORT_DIR`) |

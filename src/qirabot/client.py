@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import logging
+import math
 import os
 import signal
 import threading
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from google.auth.credentials import Credentials
 
 from qirabot._browser import launch_browser
+from qirabot._duration import format_duration
 from qirabot._knowledge import resolve_knowledge
 from qirabot._timeline import RunTimeline
 from qirabot._tools import build_tool_defs
@@ -199,7 +201,9 @@ class LocateResult:
 # "cancelled" — step-level failures raise ActionError and user aborts raise
 # QirabotError(code="user_abort") — but both occur as section outcomes, and
 # the CLI reports "cancelled" for Ctrl+C / the ESC kill switch.
-RunStatus = Literal["completed", "goal_failed", "max_steps", "error", "cancelled"]
+RunStatus = Literal[
+    "completed", "goal_failed", "max_steps", "max_duration", "error", "cancelled"
+]
 
 
 @dataclass
@@ -227,6 +231,8 @@ class RunResult:
       captcha, frozen app)
     - ``"max_steps"``: step budget ran out before the model finished — a
       truncation, not a capability verdict; consider raising ``max_steps``
+    - ``"max_duration"``: the ``max_duration`` time budget ran out before the
+      model finished — a truncation like ``"max_steps"``
     - ``"error"``: reserved for terminal engine errors; step-level failures
       raise :class:`~qirabot.exceptions.ActionError` instead of returning
     - ``"cancelled"``: never returned either — a user abort raises
@@ -236,12 +242,12 @@ class RunResult:
     ``success`` is True iff ``status == "completed"``.
 
     ``notes`` holds what the model recorded with ``save_note`` during the run,
-    on every status — most usefully on ``"max_steps"``, where it is the data
-    collected before the budget ran out. It is the engine's deduplicated set
-    (a note fully contained in a later one is replaced by it), in the order
-    each surviving note was saved, each entry the model's raw string (often
-    JSON; not parsed here). The raw per-call contents remain in
-    ``steps[i].params["content"]``.
+    on every status — most usefully on ``"max_steps"`` / ``"max_duration"``,
+    where it is the data collected before the budget ran out. It is the
+    engine's deduplicated set (a note fully contained in a later one is
+    replaced by it), in the order each surviving note was saved, each entry
+    the model's raw string (often JSON; not parsed here). The raw per-call
+    contents remain in ``steps[i].params["content"]``.
     """
 
     success: bool
@@ -1108,10 +1114,20 @@ class Qirabot:
         custom_tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
         exclude_tools: list[str] | None = None,
         knowledge: str | Path | list[str | Path] | None = None,
+        max_duration: float | None = None,
     ) -> RunResult:
         """AI-powered multi-step operation.
 
         Steps run by this call are grouped under ``instruction`` in the report.
+
+        ``max_duration`` caps the run's wall-clock time, in seconds (``None``,
+        the default, means no cap). It applies alongside ``max_steps`` —
+        whichever runs out first ends the run, here with status
+        ``"max_duration"``: a truncation, notes returned. It is a soft limit,
+        checked before each step: a step already deciding runs to completion
+        (and a ``done`` it returns is honoured), so a run can overshoot by up
+        to one step's time. A ``wait`` the model asks for is cut to the time
+        that remains.
 
         ``custom_tools`` registers your own functions as tools the model can
         call mid-task (e.g. a GM-command sender in game testing). Pass named
@@ -1134,6 +1150,7 @@ class Qirabot:
         Hard limits (e.g. "GM may be used once") belong in the custom tool's
         handler code, not here — prompts persuade, code enforces.
         """
+        _validate_max_duration(max_duration)
         if self._user_aborted:
             # A previous run on this client was aborted by the user. Don't
             # light the glow, don't take a screenshot, don't touch the
@@ -1158,6 +1175,7 @@ class Qirabot:
                 custom_tools=custom_tools,
                 exclude_tools=exclude_tools,
                 knowledge=knowledge,
+                max_duration=max_duration,
             )
             self._timeline.record_outcome(result.status)
             self._overlay_finish(result.success, result.output or result.status)
@@ -1210,6 +1228,7 @@ class Qirabot:
         custom_tools: list[Callable[..., Any] | dict[str, Any]] | None = None,
         exclude_tools: list[str] | None = None,
         knowledge: str | Path | list[str | Path] | None = None,
+        max_duration: float | None = None,
     ) -> RunResult:
         adapter = self._get_adapter(target)
         steps: list[StepResult] = []
@@ -1235,8 +1254,34 @@ class Qirabot:
         except ValueError as e:
             raise ActionError(str(e)) from e
 
+        # The time budget covers everything from here on: screenshots,
+        # decides, actions, settles, waits, custom tools.
+        started = time.monotonic()
+        deadline = started + max_duration if max_duration is not None else None
+
         for step_num in range(1, max_steps + 1):
             self._raise_if_user_abort()
+            # Checked BEFORE the step, never after it: a step that started
+            # deciding runs to completion, so a done it returns is honoured
+            # rather than discarded for crossing the line mid-call. The cost
+            # is overshoot of up to one step's time (soft limit).
+            if deadline is not None and time.monotonic() >= deadline:
+                assert max_duration is not None
+                elapsed = time.monotonic() - started
+                logger.warning(
+                    "stopped: time budget exhausted (%s/%s)",
+                    format_duration(elapsed),
+                    format_duration(max_duration),
+                    extra={"qira_event": "max_duration"},
+                )
+                # Output string mirrors "max steps reached": stable, matchable.
+                return RunResult(
+                    success=False,
+                    output="max duration reached",
+                    steps=steps,
+                    status="max_duration",
+                    notes=run.notes,
+                )
             # After save_note the device hasn't moved: reuse the previous
             # frame instead of capturing again (the engine still needs the
             # bytes — history replay keeps one screenshot per step).
@@ -1353,7 +1398,10 @@ class Qirabot:
                         ret = tool_handlers[action_type](**action_params)
                         last_action_result = "ok" if ret is None else str(ret)
                     else:
-                        self._execute_action(adapter, action_type, action_params)
+                        exec_params = action_params
+                        if action_type == "wait" and deadline is not None:
+                            exec_params = _clamp_wait(action_params, deadline)
+                        self._execute_action(adapter, action_type, exec_params)
                         last_action_result = "ok"
                 except Exception as e:
                     if type(e).__name__ == "FailSafeException":
@@ -2125,5 +2173,42 @@ def _extract_end_coords(
     if x is not None and y is not None:
         return (float(x), float(y))
     return None
+
+
+def _validate_max_duration(max_duration: float | None) -> None:
+    """ai()'s max_duration: None (no cap) or a positive, finite number of
+    seconds. Checked before the run opens a report section or touches the
+    device, so a bad argument costs nothing."""
+    if max_duration is None:
+        return
+    # bool is an int subclass; True would silently mean "one second".
+    if isinstance(max_duration, bool) or not isinstance(max_duration, (int, float)):
+        raise TypeError(
+            f"max_duration must be a number of seconds or None, got {max_duration!r}"
+        )
+    if not math.isfinite(max_duration) or max_duration <= 0:
+        raise ValueError(f"max_duration must be greater than zero, got {max_duration!r}")
+
+
+def _clamp_wait(params: dict[str, Any], deadline: float) -> dict[str, Any]:
+    """A wait's params with ``duration`` (ms) cut to the time left before
+    ``deadline``, so the next step's budget check fires on time instead of
+    after a sleep the run can't afford. Returns a copy — the recorded step
+    keeps the model's own value. Unparsable durations pass through untouched
+    (the adapter reports them as it always has)."""
+    try:
+        requested = int(params.get("duration", 1000))  # the adapter's default
+    except (TypeError, ValueError):
+        return params
+    remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
+    if requested <= remaining_ms:
+        return params
+    logger.info(
+        "wait cut from %dms to %dms: max_duration has %s left",
+        requested,
+        remaining_ms,
+        format_duration(remaining_ms / 1000),
+    )
+    return {**params, "duration": remaining_ms}
 
 

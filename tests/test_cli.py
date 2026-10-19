@@ -1699,6 +1699,99 @@ class TestOutputFormats:
         assert "Failed: max steps reached (5/5)" in capsys.readouterr().out
         assert bot.failed == ["max steps reached"]
 
+    def test_max_duration_passed_to_ai(self):
+        from qirabot.cli import main as cli_main
+
+        seen = {}
+        bot = self._bot()
+
+        def ai(*a, **k):
+            seen.update(k)
+            return self._run_result(True, "ok", "completed")
+
+        bot.ai = ai
+        cli_main._run_local(bot, object(), "task", max_steps=5, max_duration=90.0)
+        assert seen["max_duration"] == 90.0
+
+    def test_text_max_duration_line_shows_elapsed(self, capsys, monkeypatch):
+        from qirabot.cli import main as cli_main
+
+        ticks = iter([100.0, 403.0])  # started, then the Failed: line
+        monkeypatch.setattr("qirabot.cli.main.time.monotonic", lambda: next(ticks))
+        bot = self._bot(ai=self._run_result(
+            False, "max duration reached", "max_duration", notes=["item 1"],
+        ))
+        with pytest.raises(SystemExit) as exc:
+            cli_main._run_local(bot, object(), "task", max_steps=50, max_duration=300.0)
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert "Failed: max duration reached (5m03s/5m)" in out
+        assert "Saved notes (1):" in out
+        assert bot.failed == ["max duration reached"]
+
+    def test_json_max_duration_status(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(False, "max duration reached", "max_duration"))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(
+                bot, object(), "task", max_steps=5, output_format="json", max_duration=60.0,
+            )
+        (res,) = self._lines(capsys)
+        assert res["status"] == "max_duration"
+        assert res["output"] == "max duration reached"
+
+    def test_sdk_max_duration_warning_filtered(self):
+        import logging
+
+        from qirabot.cli import main as cli_main
+
+        sdk = logging.getLogger("qirabot")
+        seen = []
+
+        class _Grab(logging.Handler):
+            def emit(self, record):
+                seen.append(record.getMessage())
+
+        grab = _Grab(level=logging.WARNING)
+        sdk.addHandler(grab)
+        try:
+            def ai(*a, **k):
+                sdk.warning("stopped: time", extra={"qira_event": "max_duration"})
+                return self._run_result(True, "ok", "completed")
+
+            bot = self._bot()
+            bot.ai = ai
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+            assert seen == []
+        finally:
+            sdk.removeHandler(grab)
+
+    @pytest.mark.parametrize("value, seconds", [
+        ("", None), ("300", 300.0), ("90s", 90.0), ("5m", 300.0), ("1h30m", 5400.0),
+    ])
+    def test_duration_option_parses(self, value, seconds):
+        from qirabot.cli import main as cli_main
+
+        assert cli_main._duration_option(None, None, value) == seconds
+
+    @pytest.mark.parametrize("value", ["abc", "0", "-5", "5x"])
+    def test_duration_option_rejects(self, value):
+        import click
+
+        from qirabot.cli import main as cli_main
+
+        with pytest.raises(click.BadParameter):
+            cli_main._duration_option(None, None, value)
+
+    def test_max_duration_listed_after_max_steps_in_help(self):
+        from click.testing import CliRunner
+
+        from qirabot.cli.main import cli
+
+        out = CliRunner().invoke(cli, ["browser", "--help"]).output
+        assert out.index("--max-steps") < out.index("--max-duration") < out.index("--knowledge")
+
     def test_json_max_steps_output_unchanged(self, capsys):
         from qirabot.cli import main as cli_main
 
@@ -1823,7 +1916,9 @@ class TestOutputFormats:
 
         lines = self._lines(capsys)
         assert [ln["type"] for ln in lines] == ["start", "step", "step", "result"]
-        assert lines[0] == {"type": "start", "task_id": "abc12345", "max_steps": 5}
+        assert lines[0] == {
+            "type": "start", "task_id": "abc12345", "max_steps": 5, "max_duration": None,
+        }
         # Step lines mirror StepResult's fields verbatim.
         assert lines[1]["action_type"] == "click"
         assert lines[1]["params"] == {"locate": "Login"}

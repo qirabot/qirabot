@@ -32,7 +32,7 @@ bot.close()
 ```
 
 How the run ended is recorded in `result.status`. See
-[Error Handling](/advanced/error-handling) for the four outcomes and the
+[Error Handling](/advanced/error-handling) for the five outcomes and the
 `max_steps` retry pattern.
 
 ## Custom tools: let the model call your code

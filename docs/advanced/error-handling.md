@@ -1,6 +1,6 @@
 ---
 title: Error Handling & Run Outcomes
-description: Qirabot's exception hierarchy, the four ai() run outcomes in result.status, the max_steps retry pattern, action retries, and how failures appear in the HTML report.
+description: Qirabot's exception hierarchy, the five ai() run outcomes in result.status, the max_steps retry pattern, action retries, and how failures appear in the HTML report.
 ---
 
 # Error Handling
@@ -79,6 +79,7 @@ different things:
 | `"completed"` | model declared the goal achieved | `True` |
 | `"goal_failed"` | model concluded the goal is unreachable (login wall, captcha) | `False` |
 | `"max_steps"` | step budget ran out; a truncation, not a capability verdict | `False` |
+| `"max_duration"` | the `max_duration` time budget ran out; also a truncation | `False` |
 | `"error"` | the engine hit a terminal error (e.g. a failed model call) | `False` |
 
 The `max_steps` case deserves special handling: it's a budget problem, not
@@ -90,6 +91,10 @@ if result.status == "max_steps":
     # not a real failure — the budget was too small; retry with headroom
     result = bot.ai(page, "Find the cheapest flight and hold it", max_steps=50)
 ```
+
+`max_duration` is the same kind of outcome for the time budget. On either
+truncation, `result.notes` holds what the model saved with `save_note` before
+the budget ran out.
 
 `goal_failed` usually means the environment needs help, such as a login
 wall or captcha. Consider a

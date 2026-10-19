@@ -381,6 +381,123 @@ class TestAiLoopStatus:
         result = bot.ai(object(), "do thing", max_steps=1)
         assert result.notes == []
 
+    @staticmethod
+    def _clock(monkeypatch, start=1000.0):
+        """A fake monotonic clock the test advances by hand."""
+        now = [start]
+        monkeypatch.setattr("qirabot.client.time.monotonic", lambda: now[0])
+        return now
+
+    def test_max_duration_stops_before_next_step(self, make_bot, monkeypatch):
+        now = self._clock(monkeypatch)
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "save_note",
+            "params": {"content": "item 1"},
+        })
+        bot._backend.results.extend([
+            {"success": True, "finished": False, "actionType": "scroll",
+             "params": {"direction": "down", "amount": 500}},
+        ])
+
+        def tick(step):  # each step "takes" 10s
+            now[0] += 10
+
+        result = bot.ai(object(), "do thing", max_steps=10, on_step=tick, max_duration=15)
+        # t=0 step 1, t=10 step 2, t=20 >= 15 -> stop before step 3.
+        assert result.status == "max_duration"
+        assert result.success is False
+        assert result.output == "max duration reached"
+        assert len(result.steps) == 2
+        assert result.notes == ["item 1"]
+        assert bot._timeline.section_outcomes["do thing"] == "max_duration"
+
+    def test_done_on_the_step_that_crosses_the_limit_is_honoured(self, make_bot, monkeypatch):
+        now = self._clock(monkeypatch)
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": True, "actionType": "done",
+            "params": {"result": "answer", "success": True}, "output": "answer",
+        })
+
+        def slow(step):  # the deciding step itself blows the budget
+            now[0] += 100
+
+        result = bot.ai(object(), "do thing", max_steps=5, on_step=slow, max_duration=5)
+        assert result.status == "completed"
+        assert result.output == "answer"
+
+    def test_max_steps_wins_when_it_runs_out_first(self, make_bot, monkeypatch):
+        self._clock(monkeypatch)
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "wait", "params": {},
+        }, repeat=2)
+        result = bot.ai(object(), "do thing", max_steps=2, max_duration=3600)
+        assert result.status == "max_steps"
+
+    def test_wait_cut_to_remaining_time(self, make_bot, monkeypatch):
+        now = self._clock(monkeypatch)
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "wait",
+            "params": {"duration": 10_000},
+        })
+        executed = []
+
+        def execute(adapter, action, params):  # "sleeps" on the fake clock
+            executed.append(params)
+            now[0] += params["duration"] / 1000
+
+        bot._execute_action = execute
+
+        def tick(step):  # 8s of the 10s budget gone before the wait runs
+            now[0] += 8
+
+        result = bot.ai(object(), "do thing", max_steps=5, on_step=tick, max_duration=10)
+        assert executed[0]["duration"] == 2_000
+        # The recorded step keeps the model's own value.
+        assert result.steps[0].params["duration"] == 10_000
+        # The cut wait lands exactly on the deadline: step 2 never starts.
+        assert result.status == "max_duration"
+        assert len(result.steps) == 1
+
+    def test_short_wait_untouched(self, make_bot, monkeypatch):
+        self._clock(monkeypatch)
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "wait",
+            "params": {"duration": 500},
+        })
+        executed = []
+        bot._execute_action = lambda adapter, action, params: executed.append(params)
+        bot.ai(object(), "do thing", max_steps=3, max_duration=60)
+        assert executed[0]["duration"] == 500
+
+    def test_max_duration_warning_carries_event_tag(self, make_bot, monkeypatch, caplog):
+        now = self._clock(monkeypatch)
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "wait", "params": {},
+        })
+
+        def tick(step):
+            now[0] += 90
+
+        with caplog.at_level(logging.WARNING, logger="qirabot"):
+            bot.ai(object(), "do thing", max_steps=5, on_step=tick, max_duration=60)
+        (rec,) = [r for r in caplog.records if "time budget exhausted" in r.getMessage()]
+        assert rec.qira_event == "max_duration"
+        assert "(1m30s/1m)" in rec.getMessage()
+
+    @pytest.mark.parametrize("bad, exc", [
+        (0, ValueError), (-5, ValueError), (float("nan"), ValueError),
+        (float("inf"), ValueError), (True, TypeError), ("5m", TypeError),
+    ])
+    def test_invalid_max_duration_rejected_before_run(self, make_bot, bad, exc):
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": True, "actionType": "done", "params": {},
+        })
+        with pytest.raises(exc):
+            bot.ai(object(), "do thing", max_steps=3, max_duration=bad)
+        # Nothing opened: no section, no engine call.
+        assert "do thing" not in bot._timeline.section_outcomes
+        assert bot._backend.requests == []
+
     def test_max_steps_records_outcome_not_step(self, make_bot):
         # A max-steps ending is a section-level outcome, NOT a synthetic step
         # entry — synthetic steps made the report's step count disagree with

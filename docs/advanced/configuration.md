@@ -168,9 +168,19 @@ look alike but mean opposite things.
 
 ### How long a run can take
 
-Nothing caps an `ai()` run in wall clock. `max_steps` (default 20) is the
-bound, so budget with it: a step costs at most two model calls — the
-decision, plus one re-ask if the reply comes back unusable.
+By default nothing caps an `ai()` run in wall clock: `max_steps` (default
+20) is the bound, and a step costs at most two model calls — the decision,
+plus one re-ask if the reply comes back unusable. That does not convert to a
+reliable time: a step is normally a few seconds, but rate-limit waits and a
+slow model call can stretch one to minutes.
+
+When the clock matters (CI, scheduled jobs), pass `max_duration` in seconds
+(CLI: `--max-duration 5m`). Whichever of the two budgets runs out first ends
+the run, with status `"max_duration"` for the time cap — a truncation, with
+`result.notes` returned. It is a soft limit, checked before each step: a step
+already deciding runs to completion (a `done` it returns still counts), so a
+run can overshoot by up to one step. A `wait` the model asks for is cut to the
+time that remains.
 
 ## Service tier
 

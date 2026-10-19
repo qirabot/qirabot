@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar
@@ -15,6 +16,7 @@ import click
 from click.core import ParameterSource
 
 from qirabot._browser import launch_browser
+from qirabot._duration import format_duration, parse_duration
 from qirabot._dotenv import load_dotenv
 from qirabot._optional import extra_install_hint, package_install_hint, require
 from qirabot.cli.skill import skill
@@ -187,6 +189,7 @@ def _run_local(
     max_steps: int,
     knowledge: str = "",
     output_format: str = "text",
+    max_duration: float | None = None,
 ) -> None:
     from rich.console import Console
     from rich.markup import escape
@@ -199,7 +202,10 @@ def _run_local(
     if bot.task_id and not machine:
         console.print(f"[dim]Run:[/dim] {bot.task_id}")
     if stream:
-        _emit_json({"type": "start", "task_id": bot.task_id, "max_steps": max_steps})
+        _emit_json({
+            "type": "start", "task_id": bot.task_id,
+            "max_steps": max_steps, "max_duration": max_duration,
+        })
 
     def on_step_text(step: Any) -> None:
         if step.action_type == "done":
@@ -254,16 +260,17 @@ def _run_local(
     # exit path — Done, Failed, Error and both Cancelled forms (sys.exit's
     # SystemExit passes through it). A cancelled run's tokens are still spent.
     # (Machine formats skip it: usage is inside the JSON result object.)
-    # The SDK's max-steps warning is dropped for the run: the Failed: line
-    # below carries the same fact, step count included.
+    # The SDK's budget warnings are dropped for the run: the Failed: line
+    # below carries the same fact, step count / elapsed time included.
     sdk_logger = logging.getLogger("qirabot")
-    drop_reported = _DropQiraEvents("max_steps")
+    drop_reported = _DropQiraEvents("max_steps", "max_duration")
     sdk_logger.addFilter(drop_reported)
+    started = time.monotonic()
     try:
         try:
             result = bot.ai(
                 target, instruction, max_steps=max_steps, on_step=on_step,
-                knowledge=knowledge or None,
+                knowledge=knowledge or None, max_duration=max_duration,
             )
         except KeyboardInterrupt:
             # Ctrl+C raises KeyboardInterrupt, which is a BaseException — NOT
@@ -314,11 +321,14 @@ def _run_local(
             # fail()). For the CLI an unfinished task is a failure, so it goes
             # in the run log as one.
             bot.fail(result.output)
-            # The step count stands in for the SDK warning filtered above;
-            # display only — output/the JSON keep "max steps reached" verbatim.
+            # The budget figures stand in for the SDK warning filtered above;
+            # display only — output/the JSON keep the SDK's string verbatim.
             shown = result.output
             if result.status == "max_steps":
                 shown += f" ({max_steps}/{max_steps})"
+            elif result.status == "max_duration" and max_duration is not None:
+                elapsed = format_duration(time.monotonic() - started)
+                shown += f" ({elapsed}/{format_duration(max_duration)})"
             # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
             # bypasses the caller's `except Exception` and still runs its finally.
             finish(
@@ -419,10 +429,22 @@ def _resolve_knowledge_cb(
         raise click.BadParameter(str(e)) from None
 
 
+def _duration_option(ctx: click.Context, param: click.Parameter, value: str) -> float | None:
+    """--max-duration: "" (unset) -> None, else seconds via parse_duration
+    (300 / 90s / 5m / 1h30m); malformed input is a usage error (exit 2)."""
+    if not value:
+        return None
+    try:
+        return parse_duration(value)
+    except ValueError as e:
+        raise click.BadParameter(str(e)) from None
+
+
 def _task_options(f: _FC) -> _FC:
     """Task options shared by browser/android/ios/desktop. Applied in reverse so
     --help lists them in reading order (name, model, thinking-level,
-    media-resolution, language, max-steps, knowledge, output-format)."""
+    media-resolution, language, max-steps, max-duration, knowledge,
+    output-format)."""
     f = _option(
         "--output-format", group=_TASK_GROUP, default="text",
         type=click.Choice(["text", "json", "stream-json"]),
@@ -438,6 +460,11 @@ def _task_options(f: _FC) -> _FC:
         type=click.Path(exists=True, dir_okay=False, path_type=Path),
         callback=_resolve_knowledge_cb,
         help="Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total)",
+    )(f)
+    f = _option(
+        "--max-duration", group=_TASK_GROUP, default="", callback=_duration_option,
+        help="Time budget for the run, e.g. 300, 90s, 5m, 1h30m; checked "
+        "between steps (default: no limit)",
     )(f)
     f = _option("--max-steps", group=_TASK_GROUP, default=20, help="Max steps for AI")(f)
     f = _option("--language", "-l", group=_TASK_GROUP, default="", help="Response language: a tag (zh, ja, de) or any language name; default follows the instruction's language")(f)
@@ -973,6 +1000,7 @@ def browser(
     media_resolution: str,
     language: str,
     max_steps: int,
+    max_duration: float | None,
     knowledge: str,
     output_format: str,
     url: str,
@@ -998,7 +1026,8 @@ def browser(
     opts = _TaskOpts(
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
-        language=language, max_steps=max_steps, knowledge=knowledge,
+        language=language, max_steps=max_steps, max_duration=max_duration,
+        knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )
@@ -1016,6 +1045,7 @@ def browser(
         _run_local(
             bot, page, instruction, max_steps,
             knowledge=knowledge, output_format=output_format,
+            max_duration=max_duration,
         )
     except Exception as e:
         # Only setup (bot.open) reaches here: _run_local reports its own errors
@@ -1054,6 +1084,7 @@ class _TaskOpts:
     report: bool
     report_dir: str
     annotate: bool
+    max_duration: float | None = None
 
 
 def _task_bot(opts: _TaskOpts, **record_kwargs: Any) -> Any:
@@ -1096,6 +1127,7 @@ def _run_appium(opts: _TaskOpts, appium_url: str, options: Any, record: bool = F
             _run_local(
                 bot, driver, opts.instruction, opts.max_steps,
                 knowledge=opts.knowledge, output_format=opts.output_format,
+                max_duration=opts.max_duration,
             )
         finally:
             # The Appium recording lives in the session: flush it to disk
@@ -1142,6 +1174,7 @@ def _run_direct(
         _run_local(
             bot, target, opts.instruction, opts.max_steps,
             knowledge=opts.knowledge, output_format=opts.output_format,
+            max_duration=opts.max_duration,
         )
     finally:
         bot.close()
@@ -1181,7 +1214,7 @@ def _adb_launch_app(dev: Any, package: str, activity: str) -> None:
 @_option("--record", group="Android options", is_flag=True, help="Record the device screen to report-dir/recording.mp4 (direct engine: adb screenrecord, ffmpeg merges runs over 3 min; Appium engine: Appium's recording API)")
 @_debug_options(record=False)
 @click.pass_context
-def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, knowledge: str, output_format: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an Android device (direct over adb; --appium-url for Appium).
 
     \b
@@ -1202,7 +1235,8 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
     opts = _TaskOpts(
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
-        language=language, max_steps=max_steps, knowledge=knowledge,
+        language=language, max_steps=max_steps, max_duration=max_duration,
+        knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )
@@ -1299,7 +1333,7 @@ def _check_mjpeg_ready(mjpeg_url: str) -> None:
 @_option("--mjpeg-url", group="iOS options", default="", help="WDA MJPEG stream URL for --record (default: --wda-url's host on port 9100; direct engine only)")
 @_debug_options(record=False)
 @click.pass_context
-def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, knowledge: str, output_format: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an iOS device (direct via WDA; --appium-url/--device for Appium).
 
     \b
@@ -1321,7 +1355,8 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
     opts = _TaskOpts(
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
-        language=language, max_steps=max_steps, knowledge=knowledge,
+        language=language, max_steps=max_steps, max_duration=max_duration,
+        knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )
@@ -1384,7 +1419,7 @@ def _launch_desktop_app(app: str, app_wait: float) -> None:
 @_option("--app-wait", group="Desktop options", default=2.0, type=float, help="Seconds to wait after --app launch for the window to appear")
 @_debug_options()
 @click.pass_context
-def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, knowledge: str, output_format: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
+def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, knowledge: str, output_format: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
     """Run an AI task on the desktop (pyautogui; --window-title/--hwnd for one Windows window).
 
     \b
@@ -1406,7 +1441,8 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
     opts = _TaskOpts(
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
-        language=language, max_steps=max_steps, knowledge=knowledge,
+        language=language, max_steps=max_steps, max_duration=max_duration,
+        knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )

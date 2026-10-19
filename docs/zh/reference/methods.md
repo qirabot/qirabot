@@ -192,10 +192,12 @@ key_up(target, key) -> target
 
 ```python
 ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
-   language="", custom_tools=None, exclude_tools=None, knowledge=None) -> RunResult
+   language="", custom_tools=None, exclude_tools=None, knowledge=None,
+   max_duration=None) -> RunResult
 ```
 
-自主循环:截图 → 决策 → 执行,直到完成或达到 `max_steps`。每步之后以
+自主循环:截图 → 决策 → 执行,直到完成、达到 `max_steps` 或 `max_duration`
+(墙钟秒数,每步开始前检查;`None` 表示不限时;见[配置](/zh/advanced/configuration#一次运行能跑多久))。每步之后以
 [`StepResult`](#stepresult) 为参数调用 `on_step`。`custom_tools` 把你的
 Python 函数注册为可调用工具;`exclude_tools` 按动作名移除内置工具。
 两者详见 [AI 任务与自定义工具](/zh/advanced/ai-tasks)。`knowledge` 为本次
@@ -335,9 +337,10 @@ stop_recording() -> str | None       # 返回保存路径
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `success` | `bool` | 当且仅当 `status == "completed"` 时为 `True` |
-| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"error"`,见[错误处理](/zh/advanced/error-handling) |
+| `status` | `str` | `"completed"` / `"goal_failed"` / `"max_steps"` / `"max_duration"` / `"error"`,见[错误处理](/zh/advanced/error-handling) |
 | `output` | `str` | 模型的最终回答/总结 |
 | `steps` | `list[StepResult]` | 执行过的每一步 |
+| `notes` | `list[str]` | 模型用 `save_note` 记下的内容(已去重);所有状态都会返回,包括截断 |
 
 ### StepResult
 

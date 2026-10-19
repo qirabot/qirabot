@@ -30,7 +30,7 @@ print(result.success, result.output)
 bot.close()
 ```
 
-运行如何结束记录在 `result.status` 里。四种结果和 `max_steps` 重试模式见
+运行如何结束记录在 `result.status` 里。五种结果和 `max_steps` 重试模式见
 [错误处理](/zh/advanced/error-handling)。
 
 ## 自定义工具:让模型调用你的代码

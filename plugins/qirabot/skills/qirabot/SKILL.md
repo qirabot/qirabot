@@ -113,7 +113,8 @@ script** — over-specifying ("click Search, then type X, then…") fights the
 model, locks in a brittle path, and burns steps; write what success looks
 like. **Always pass `on_step`** — without it the run is a black box until it
 returns; the printed `decision` trace is how a stuck or looping run gets
-debugged from stdout.
+debugged from stdout. For CI or scheduled jobs, also pass `max_duration`
+(seconds) — `max_steps` bounds steps, not time.
 
 If you `bind()` a stable target first (as the android/ios/bolt_on templates
 do), drop the leading arg: `bot.ai("...")`, `bot.click("...")`. Keep the

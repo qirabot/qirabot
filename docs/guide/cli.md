@@ -120,6 +120,7 @@ human-readable output is suppressed; exit codes are unchanged):
   "success": true,
   "status": "completed",
   "output": "Signed in and reached the dashboard",
+  "notes": [],
   "task_id": "1a2b3c4d",
   "usage": {
     "ai_steps": 6,
@@ -139,8 +140,13 @@ human-readable output is suppressed; exit codes are unchanged):
 `status` is `completed` / `goal_failed` / `max_steps` / `error` /
 `cancelled`: the same values as the SDK's `RunResult.status`, plus
 `cancelled` for Ctrl+C and the ESC kill switch. `success` is `true` only for
-`completed`. `report` is `null` when reporting is off; the file itself is
-written as the process exits, so read it after the CLI returns.
+`completed`. `notes` is the SDK's `RunResult.notes` — what the model recorded
+with `save_note`, deduplicated — on every status (an empty array on `error` /
+`cancelled`); on `max_steps` it is the data collected before the budget ran
+out. In the default text output those notes are printed under the `Failed:`
+line for `max_steps` / `goal_failed` runs. `report` is `null` when reporting
+is off; the file itself is written as the process exits, so read it after the
+CLI returns.
 
 `--output-format stream-json` emits NDJSON: one JSON object per line, flushed
 per step, for tools that supervise a run live:

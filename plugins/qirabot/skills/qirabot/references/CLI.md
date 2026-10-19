@@ -55,7 +55,7 @@ the report, not failed). Live per-step trace prints to stdout while running
 **Machine-readable output** — with `--output-format json`/`stream-json`,
 stdout carries only JSON (rich output is suppressed; exit codes unchanged).
 Every exit path ends with one result object:
-`{"type":"result","success":bool,"status":"completed|goal_failed|max_steps|error|cancelled","output":str,"task_id":str,"usage":{"ai_steps","input_tokens","output_tokens","thinking_tokens","cache_read_tokens","cache_write_tokens","step_duration_ms","total_tokens",…},"report":path|null}`.
+`{"type":"result","success":bool,"status":"completed|goal_failed|max_steps|error|cancelled","output":str,"notes":[str],"task_id":str,"usage":{"ai_steps","input_tokens","output_tokens","thinking_tokens","cache_read_tokens","cache_write_tokens","step_duration_ms","total_tokens",…},"report":path|null}`.
 `report` is the `report.html` path, written when the process exits — read it
 after the CLI returns. `stream-json` additionally prints, one JSON object per
 line: `{"type":"start","task_id",…,"max_steps":…}` first, then a

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### `save_note` data survives every ending
+
+- New `RunResult.notes`: the run's `save_note` contents, deduplicated
+  the same way the model sees them (a note fully contained in a later one
+  is replaced). Returned on every status — including `"max_steps"`, where
+  it is the data collected before the budget ran out. `output` and
+  `status` are unchanged (`"max steps reached"` / `"max_steps"`).
+- CLI: when a run ends `max_steps` / `goal_failed`, the text output prints
+  the saved notes under the `Failed:` line (step lines only show the
+  reason, so the collected data never reached the terminal before). The
+  `--output-format json` / `stream-json` result object gains a `notes`
+  array on every exit path (empty on `error` / `cancelled`).
+
 ## 3.4.2 (2026-10-17)
 
 ### Explicit Vertex credentials

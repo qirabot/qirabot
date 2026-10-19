@@ -369,6 +369,24 @@ class TestSaveNoteAndDone:
         tool_msgs = [m for m in fake.requests[1].messages if m.role == "tool"]
         assert tool_msgs[0].tool_results[0].content.startswith("ok\n")
 
+    def test_run_notes_exposes_deduplicated_copy(self) -> None:
+        # AIRun.notes is what RunResult.notes / the report show: the
+        # session's deduplicated set, not the raw per-call contents.
+        fake = FakeProvider(
+            tool_resp("save_note", {"content": '[{"t": "A"}]', "reason": "1"}),
+            tool_resp("save_note", {"content": '[{"t": "A"}, {"t": "B"}]', "reason": "2"}),
+            tool_resp("save_note", {"content": "page 3 failed", "reason": "3"}),
+        )
+        run = start_run(backend(fake))
+        assert run.notes == []
+        step(run)
+        step(run, PNG, "ok")
+        step(run, PNG, "ok")
+        assert run.notes == ['[{"t": "A"}, {"t": "B"}]', "page 3 failed"]
+        # A copy: mutating it can't change what the next decide is shown.
+        run.notes.append("tampered")
+        assert "tampered" not in run.notes
+
     def test_7b_cumulative_resave_replaces_subsumed_notes(self) -> None:
         # A model re-saving the whole accumulated list each time must leave a
         # single copy in Saved notes, while the history triads keep replaying

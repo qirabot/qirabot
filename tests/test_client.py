@@ -349,6 +349,38 @@ class TestAiLoopStatus:
             bot.ai(object(), "do thing", max_steps=3)
         assert bot._timeline.section_outcomes["do thing"] == "error"
 
+    def test_max_steps_returns_collected_notes(self, make_bot):
+        # The point of RunResult.notes: a truncated run still hands back
+        # what it saved.
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "save_note",
+            "params": {"content": "item 1"},
+        })
+        bot._backend.results.append({
+            "success": True, "finished": False, "actionType": "wait", "params": {},
+        })
+        result = bot.ai(object(), "do thing", max_steps=2)
+        assert result.status == "max_steps"
+        assert result.output == "max steps reached"
+        assert result.notes == ["item 1"]
+
+    def test_completed_returns_notes(self, make_bot):
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "save_note",
+            "params": {"content": "item 1"},
+        })
+        # ... then the fixture's default terminal done step.
+        result = bot.ai(object(), "do thing", max_steps=3)
+        assert result.status == "completed"
+        assert result.notes == ["item 1"]
+
+    def test_no_notes_returns_empty_list(self, make_bot):
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "wait", "params": {},
+        }, repeat=1)
+        result = bot.ai(object(), "do thing", max_steps=1)
+        assert result.notes == []
+
     def test_max_steps_records_section_error_not_step(self, make_bot):
         # A max-steps ending is a section-level banner, NOT a synthetic step
         # entry — synthetic steps made the report's step count disagree with

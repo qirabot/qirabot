@@ -120,6 +120,13 @@ class AIRun:
         self._backend = backend
         self._session = session
 
+    @property
+    def notes(self) -> list[str]:
+        """The run's save_note contents so far, deduplicated by the session
+        (see ``note_subsumed_by``). A copy: callers can't mutate what the
+        next decide call is shown."""
+        return list(self._session.notes)
+
     def step(
         self,
         screenshot: bytes,

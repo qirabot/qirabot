@@ -234,12 +234,21 @@ class RunResult:
       value is part of the shared vocabulary for section badges and the CLI
 
     ``success`` is True iff ``status == "completed"``.
+
+    ``notes`` holds what the model recorded with ``save_note`` during the run,
+    on every status — most usefully on ``"max_steps"``, where it is the data
+    collected before the budget ran out. It is the engine's deduplicated set
+    (a note fully contained in a later one is replaced by it), in the order
+    each surviving note was saved, each entry the model's raw string (often
+    JSON; not parsed here). The raw per-call contents remain in
+    ``steps[i].params["content"]``.
     """
 
     success: bool
     output: str = ""
     steps: list[StepResult] = field(default_factory=list)
     status: RunStatus = "completed"
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1323,6 +1332,7 @@ class Qirabot:
                     output=output,
                     steps=steps,
                     status="completed" if goal_ok else "goal_failed",
+                    notes=run.notes,
                 )
 
             if action_type and action_type != "done":
@@ -1379,8 +1389,14 @@ class Qirabot:
         logger.warning("stopped: step budget exhausted (%d/%d)", max_steps, max_steps)
         self._timeline.record_outcome("max_steps", error=f"max steps reached ({max_steps})")
         # Output string is load-bearing: callers may match "max steps reached".
+        # notes are the data collected before the budget ran out — returned
+        # here so a truncated extraction run doesn't lose what it gathered.
         return RunResult(
-            success=False, output="max steps reached", steps=steps, status="max_steps"
+            success=False,
+            output="max steps reached",
+            steps=steps,
+            status="max_steps",
+            notes=run.notes,
         )
 
     def screenshot(self, target: Any) -> Path | None:

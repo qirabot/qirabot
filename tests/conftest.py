@@ -44,6 +44,9 @@ class _FakeRun:
     def __init__(self, backend):
         self._backend = backend
         self._steps = 0
+        # Mirrors AIRun.notes; plain append (dedup is the real session's job
+        # and is tested there).
+        self.notes: list[str] = []
 
     def step(self, screenshot, action_result="", device_width=0, device_height=0):
         from qirabot.engine.session import StepError, StepOutcome
@@ -66,9 +69,12 @@ class _FakeRun:
         if d.get("success", True) is False:
             raise StepError(d.get("error", "step failed"), usage=_usage_from(d))
         self._steps += 1
+        params = d.get("params") or {}
+        if d.get("actionType") == "save_note" and params.get("content"):
+            self.notes.append(params["content"])
         return StepOutcome(
             action_type=d.get("actionType", ""),
-            params=d.get("params") or {},
+            params=params,
             decision=d.get("decision", ""),
             output=d.get("output", ""),
             finished=d.get("finished", False),

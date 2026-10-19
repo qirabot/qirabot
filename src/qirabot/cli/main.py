@@ -123,13 +123,17 @@ def _emit_json(obj: dict[str, Any]) -> None:
     print(json.dumps(obj, ensure_ascii=False), flush=True)
 
 
-def _json_result(bot: Any, *, success: bool, status: str, output: str) -> dict[str, Any]:
+def _json_result(
+    bot: Any, *, success: bool, status: str, output: str, notes: list[str] | None = None
+) -> dict[str, Any]:
     """The terminal JSON object of a run — one schema on every exit path
     (done / failed / error / cancelled), so scripts parse a single shape.
 
     ``status`` is the SDK's RunStatus verbatim (``"cancelled"`` for Ctrl+C or
     the ESC kill switch). Field names mirror the SDK's public attributes verbatim
     (``task_id``, SessionUsage's fields) so the two surfaces never drift.
+    ``notes`` is RunResult.notes — always an array, empty on the error and
+    cancel paths, which have no RunResult.
     ``report`` is the path close() writes on exit — the emit happens *before*
     that write, so consumers should read the file after the process exits.
     ``bot`` is None only when engine construction itself failed.
@@ -154,6 +158,7 @@ def _json_result(bot: Any, *, success: bool, status: str, output: str) -> dict[s
         "success": success,
         "status": status,
         "output": output,
+        "notes": list(notes or []),
         "task_id": task_id,
         "usage": usage,
         "report": report,
@@ -201,14 +206,31 @@ def _run_local(
 
     on_step = on_step_stream if stream else None if machine else on_step_text
 
-    def finish(*, success: bool, status: str, output: str, code: int, text: str) -> NoReturn | None:
+    def finish(
+        *, success: bool, status: str, output: str, code: int, text: str,
+        notes: list[str] | None = None,
+    ) -> NoReturn | None:
         """One terminal line per run: the JSON result object in the machine
         formats, the colored outcome line otherwise. code=0 returns so the
-        caller's finally (close → report write) still runs before exit 0."""
+        caller's finally (close → report write) still runs before exit 0.
+
+        ``notes`` always ride the JSON object. In text mode they are printed
+        under the outcome line only for an unfinished run (max_steps /
+        goal_failed): the step lines show reasons, not note contents, so the
+        collected data would otherwise never reach the screen. A completed
+        run's Done line is the model's own answer, which already uses them."""
         if machine:
-            _emit_json(_json_result(bot, success=success, status=status, output=output))
+            _emit_json(
+                _json_result(bot, success=success, status=status, output=output, notes=notes)
+            )
         else:
             console.print(text)
+            if notes and not success:
+                console.print(f"[bold]Saved notes ({len(notes)}):[/bold]")
+                for i, note in enumerate(notes, 1):
+                    # Continuation lines align under the first line's text.
+                    body = escape(note).replace("\n", "\n     ")
+                    console.print(f"  {i}. {body}")
         if code:
             sys.exit(code)
         return None
@@ -264,6 +286,7 @@ def _run_local(
             finish(
                 success=True, status=result.status, output=result.output,
                 code=0, text=f"[bold green]Done:[/bold green] {result.output}",
+                notes=result.notes,
             )
         else:
             # goal_failed / max_steps end the command without an exception, and
@@ -276,6 +299,7 @@ def _run_local(
             finish(
                 success=False, status=result.status, output=result.output,
                 code=1, text=f"[bold red]Failed:[/bold red] {result.output}",
+                notes=result.notes,
             )
     finally:
         if not machine:

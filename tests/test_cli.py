@@ -1497,7 +1497,7 @@ class TestRunLocalUsageSummary:
     def _result(success, output, status):
         from types import SimpleNamespace
 
-        return SimpleNamespace(success=success, output=output, status=status)
+        return SimpleNamespace(success=success, output=output, status=status, notes=[])
 
     def test_success_prints_summary_after_done(self, capsys):
         from qirabot.cli import main as cli_main
@@ -1642,10 +1642,51 @@ class TestOutputFormats:
         return [json.loads(ln) for ln in raw]
 
     @staticmethod
-    def _run_result(success, output, status):
+    def _run_result(success, output, status, notes=()):
         from qirabot.client import RunResult
 
-        return RunResult(success=success, output=output, status=status)
+        return RunResult(success=success, output=output, status=status, notes=list(notes))
+
+    def test_json_result_carries_notes(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(
+            False, "max steps reached", "max_steps", notes=["item 1", "item 2"],
+        ))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+        (res,) = self._lines(capsys)
+        assert res["notes"] == ["item 1", "item 2"]
+
+    def test_json_error_has_empty_notes(self, capsys):
+        # One schema on every exit path: no RunResult, still an array.
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=RuntimeError("boom"))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+        (res,) = self._lines(capsys)
+        assert res["notes"] == []
+
+    def test_text_max_steps_prints_notes(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(
+            False, "max steps reached", "max_steps", notes=["视频一 [247.9万]", "line1\nline2"],
+        ))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        assert out.index("max steps reached") < out.index("Saved notes (2):")
+        assert "1. 视频一 [247.9万]" in out  # brackets survive rich markup
+        assert "2. line1\n     line2" in out
+
+    def test_text_completed_does_not_print_notes(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(True, "all done", "completed", notes=["item 1"]))
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        assert "Saved notes" not in capsys.readouterr().out
 
     def test_json_success_emits_single_result_object(self, capsys):
         from qirabot.cli import main as cli_main

@@ -1688,6 +1688,58 @@ class TestOutputFormats:
         cli_main._run_local(bot, object(), "task", max_steps=5)
         assert "Saved notes" not in capsys.readouterr().out
 
+    def test_text_max_steps_line_shows_step_count(self, capsys):
+        # The count stands in for the SDK warning the CLI filters; the
+        # recorded output stays the load-bearing "max steps reached".
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(False, "max steps reached", "max_steps"))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+        assert "Failed: max steps reached (5/5)" in capsys.readouterr().out
+        assert bot.failed == ["max steps reached"]
+
+    def test_json_max_steps_output_unchanged(self, capsys):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._run_result(False, "max steps reached", "max_steps"))
+        with pytest.raises(SystemExit):
+            cli_main._run_local(bot, object(), "task", max_steps=5, output_format="json")
+        (res,) = self._lines(capsys)
+        assert res["output"] == "max steps reached"
+
+    def test_sdk_max_steps_warning_filtered_during_run(self):
+        # Only the tagged record is dropped, only while the CLI runs.
+        import logging
+
+        from qirabot.cli import main as cli_main
+
+        sdk = logging.getLogger("qirabot")
+        seen = []
+
+        class _Grab(logging.Handler):
+            def emit(self, record):
+                seen.append(record.getMessage())
+
+        grab = _Grab(level=logging.WARNING)
+        sdk.addHandler(grab)
+        try:
+            def ai(*a, **k):
+                sdk.warning("stopped: budget", extra={"qira_event": "max_steps"})
+                sdk.warning("other warning")
+                return self._run_result(True, "ok", "completed")
+
+            bot = self._bot()
+            bot.ai = ai
+            cli_main._run_local(bot, object(), "task", max_steps=5)
+            assert seen == ["other warning"]
+            # Filter removed afterwards: SDK callers in the same process
+            # get the warning again.
+            sdk.warning("stopped: budget", extra={"qira_event": "max_steps"})
+            assert seen == ["other warning", "stopped: budget"]
+        finally:
+            sdk.removeHandler(grab)
+
     def test_json_success_emits_single_result_object(self, capsys):
         from qirabot.cli import main as cli_main
 

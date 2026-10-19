@@ -381,8 +381,8 @@ class TestAiLoopStatus:
         result = bot.ai(object(), "do thing", max_steps=1)
         assert result.notes == []
 
-    def test_max_steps_records_section_error_not_step(self, make_bot):
-        # A max-steps ending is a section-level banner, NOT a synthetic step
+    def test_max_steps_records_outcome_not_step(self, make_bot):
+        # A max-steps ending is a section-level outcome, NOT a synthetic step
         # entry — synthetic steps made the report's step count disagree with
         # the engine's. One real step ran, so exactly one step is recorded.
         bot = self._bot_returning(make_bot, {
@@ -392,7 +392,21 @@ class TestAiLoopStatus:
         bot._record_step = lambda *a, **k: recorded.append(k) or None
         bot.ai(object(), "do thing", max_steps=1)
         assert len(recorded) == 1
-        assert bot._timeline.section_errors["do thing"] == "max steps reached (1)"
+        # No banner either: the section's MAX STEPS badge already says it.
+        assert bot._timeline.section_outcomes["do thing"] == "max_steps"
+        assert "do thing" not in bot._timeline.section_errors
+
+    def test_max_steps_warning_carries_event_tag(self, make_bot, caplog):
+        # SDK callers still get the warning; the tag is what lets the CLI
+        # drop it without matching the message text.
+        bot = self._bot_returning(make_bot, {
+            "success": True, "finished": False, "actionType": "wait", "params": {},
+        })
+        with caplog.at_level(logging.WARNING, logger="qirabot"):
+            bot.ai(object(), "do thing", max_steps=1)
+        (rec,) = [r for r in caplog.records if "step budget exhausted" in r.getMessage()]
+        assert rec.levelno == logging.WARNING
+        assert rec.qira_event == "max_steps"
 
     def test_repeat_instruction_gets_numbered_section_key(self, make_bot):
         # Two ai() runs with the same instruction must NOT share a section
@@ -431,9 +445,9 @@ class TestAiLoopStatus:
         })
         with pytest.raises(ActionError):
             bot.ai(object(), "do thing", max_steps=1)
-        assert bot._timeline.section_errors["do thing"] == "max steps reached (1)"
         assert bot._timeline.section_outcomes["do thing"] == "max_steps"
         assert bot._timeline.section_outcomes["do thing #2"] == "error"
+        assert "decide exploded" in bot._timeline.section_errors["do thing #2"]
 
     def test_step_error_records_no_step(self, make_bot):
         # A failed step committed nothing engine-side, so none is recorded

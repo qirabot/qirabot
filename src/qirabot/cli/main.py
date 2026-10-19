@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import os
 import sys
 from collections.abc import Callable
@@ -115,6 +116,20 @@ def _print_usage(console: Any, bot: Any) -> None:
 # start line and one NDJSON line per step. All rich/human output is suppressed
 # in these formats so stdout stays parseable by scripts and CI.
 _MACHINE_FORMATS = ("json", "stream-json")
+
+
+class _DropQiraEvents(logging.Filter):
+    """Drops SDK log records whose ``qira_event`` tag the CLI already reports
+    in its own output (e.g. the max-steps warning, which the Failed: line
+    repeats). Keyed on the tag, not the message text, so rewording the SDK
+    log line can't silently break the filter."""
+
+    def __init__(self, *events: str) -> None:
+        super().__init__()
+        self._events = frozenset(events)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return getattr(record, "qira_event", None) not in self._events
 
 
 def _emit_json(obj: dict[str, Any]) -> None:
@@ -239,6 +254,11 @@ def _run_local(
     # exit path — Done, Failed, Error and both Cancelled forms (sys.exit's
     # SystemExit passes through it). A cancelled run's tokens are still spent.
     # (Machine formats skip it: usage is inside the JSON result object.)
+    # The SDK's max-steps warning is dropped for the run: the Failed: line
+    # below carries the same fact, step count included.
+    sdk_logger = logging.getLogger("qirabot")
+    drop_reported = _DropQiraEvents("max_steps")
+    sdk_logger.addFilter(drop_reported)
     try:
         try:
             result = bot.ai(
@@ -294,14 +314,20 @@ def _run_local(
             # fail()). For the CLI an unfinished task is a failure, so it goes
             # in the run log as one.
             bot.fail(result.output)
+            # The step count stands in for the SDK warning filtered above;
+            # display only — output/the JSON keep "max steps reached" verbatim.
+            shown = result.output
+            if result.status == "max_steps":
+                shown += f" ({max_steps}/{max_steps})"
             # Non-zero exit so scripts/CI can detect an unfinished task; SystemExit
             # bypasses the caller's `except Exception` and still runs its finally.
             finish(
                 success=False, status=result.status, output=result.output,
-                code=1, text=f"[bold red]Failed:[/bold red] {result.output}",
+                code=1, text=f"[bold red]Failed:[/bold red] {shown}",
                 notes=result.notes,
             )
     finally:
+        sdk_logger.removeFilter(drop_reported)
         if not machine:
             _print_usage(console, bot)
 

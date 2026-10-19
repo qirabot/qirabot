@@ -459,9 +459,11 @@ def write_html(
 ) -> Path:
     """Render ``log`` to a self-contained HTML report at ``path``.
 
-    ``section_errors`` maps a section to its failure text (max-steps
-    truncation / terminal server error), rendered as a banner above that
-    section's step table — these are section-level outcomes, not steps.
+    ``section_errors`` maps a section to its failure text (e.g. a terminal
+    server error), rendered as a banner above that section's step table —
+    these are section-level outcomes, not steps. The client records none for
+    a max-steps truncation (the badge says it all); text a caller passes for
+    a ``max_steps`` section still renders, amber rather than red.
 
     ``recording_start`` is the epoch time the embedded recording began; when
     set (and a recording is present), each step's elapsed offset becomes a
@@ -557,8 +559,10 @@ def write_html(
     # the task name. A section name can be an entire ai() instruction, so the
     # name is CSS-truncated with the full text on hover; unjudged (manual)
     # groups stay out of the summary — their step counts already show in the
-    # stats line and on each section header.
-    if judged:
+    # stats line and on each section header. A single judged task gets no
+    # summary: its one row would repeat the section header right below it,
+    # and the tally above already gives the headline.
+    if len(judged) > 1:
         parts.append("<div class='summary'>")
         for name in judged:
             status = _normalize_status(outcomes[name])

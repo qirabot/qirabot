@@ -48,7 +48,8 @@ class RunTimeline:
         # report (completed / goal_failed / max_steps / error / cancelled).
         self.section_outcomes: dict[str, str] = {}
         # ai() section key -> failure text, rendered as a banner above the
-        # section's step table (max-steps truncation / run-ending error).
+        # section's step table (run-ending error; a max-steps truncation has
+        # nothing to add to its badge, so it records none).
         self.section_errors: dict[str, str] = {}
         # Session-wide totals for the report header. Token/timing data rides
         # in each ai() step result, not in the entries, so it accumulates
@@ -93,8 +94,7 @@ class RunTimeline:
         here to keep this module import-light); the report renders it as the
         section's badge. ``error``, when non-empty, becomes the banner above
         the section's step table — and is left untouched otherwise, so a
-        later outcome update (ai() recording "max_steps" after the loop
-        already noted the truncation banner) cannot erase it.
+        later status-only update cannot erase a reason already recorded.
         """
         self.section_outcomes[self.current_section] = status
         if error:

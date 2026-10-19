@@ -64,7 +64,7 @@ class TestSectionBadges:
         out = write_html(
             [_entry("a")], tmp_path / "report.html", outcomes={"a": "someday-new"}
         )
-        assert '<span class="badge fail">FAIL</span><span class="tname" title="a">' in (
+        assert '<h2>a <span class="badge fail">FAIL</span></h2>' in (
             out.read_text(encoding="utf-8")
         )
 
@@ -159,13 +159,25 @@ class TestSummaryBadge:
     def test_manual_groups_stay_out_of_summary(self, tmp_path):
         # Manual step counts are process detail (stats line + section
         # headers), not outcomes — they no longer get summary chips.
-        log = [_entry("setup"), _entry("a"), _entry("setup")]
+        log = [_entry("setup"), _entry("a"), _entry("setup"), _entry("b")]
         out = write_html(
-            log, tmp_path / "report.html", outcomes={"a": "completed"}
+            log, tmp_path / "report.html", outcomes={"a": "completed", "b": "completed"}
         )
         html = out.read_text(encoding="utf-8")
         assert "manual: 1 steps" not in html
         assert '<span class="tname" title="a">a</span>' in html
+        assert 'title="manual"' not in html
+
+    def test_single_task_has_no_summary(self, tmp_path):
+        # One judged task: its summary row would only repeat the section
+        # header below it. The tally stays as the headline.
+        out = write_html(
+            [_entry("a")], tmp_path / "report.html", outcomes={"a": "max_steps"}
+        )
+        html = out.read_text(encoding="utf-8")
+        assert "<div class='summary'>" not in html
+        assert "<div class='tally'>" in html
+        assert '<h2>a <span class="badge warn">MAX STEPS</span></h2>' in html
 
     def test_any_real_failure_is_red(self, tmp_path):
         log = [_entry("a"), _entry("b"), _entry("c")]

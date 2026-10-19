@@ -1383,11 +1383,18 @@ class Qirabot:
             last_was_save_note = action_type == "save_note"
 
         # A truncation, not an error: the budget ran out before the model
-        # finished. warning-level, and surfaced as an amber section banner
-        # rather than a synthetic step entry — the report's step count must
-        # match the steps that actually ran.
-        logger.warning("stopped: step budget exhausted (%d/%d)", max_steps, max_steps)
-        self._timeline.record_outcome("max_steps", error=f"max steps reached ({max_steps})")
+        # finished. warning-level for SDK callers, whose logs are the only
+        # place they'd notice; the CLI filters this record by its
+        # ``qira_event`` tag, its own Failed: line already saying the same.
+        # No synthetic step entry (the report's step count must match the
+        # steps that actually ran) and no section banner — ai() records the
+        # "max_steps" outcome, and the section badge alone carries it.
+        logger.warning(
+            "stopped: step budget exhausted (%d/%d)",
+            max_steps,
+            max_steps,
+            extra={"qira_event": "max_steps"},
+        )
         # Output string is load-bearing: callers may match "max steps reached".
         # notes are the data collected before the budget ran out — returned
         # here so a truncated extraction run doesn't lose what it gathered.

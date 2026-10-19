@@ -15,6 +15,19 @@
   `--output-format json` / `stream-json` result object gains a `notes`
   array on every exit path (empty on `error` / `cancelled`).
 
+### Less repetition when a run hits `max_steps`
+
+- `report.html`: a `max_steps` section no longer gets the
+  `⚠ max steps reached (N)` banner — its `MAX STEPS` badge already says
+  so, and the step count is in the header. Banners remain for `error`.
+  A report with a single judged task also drops the one-row task summary,
+  which only repeated the section header; the tally stays.
+- CLI: the SDK's `stopped: step budget exhausted (N/N)` warning is no
+  longer printed during a CLI run; the result line now reads
+  `Failed: max steps reached (N/N)`. SDK callers still get the warning
+  (now tagged `extra={"qira_event": "max_steps"}` so it can be filtered).
+  `RunResult.output` and the JSON `output` stay `"max steps reached"`.
+
 ## 3.4.2 (2026-10-17)
 
 ### Explicit Vertex credentials

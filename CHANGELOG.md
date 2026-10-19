@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.4.3 (2026-10-19)
 
 ### `max_duration`: a wall-clock budget for `ai()`
 
@@ -45,6 +45,12 @@
   `Failed: max steps reached (N/N)`. SDK callers still get the warning
   (now tagged `extra={"qira_event": "max_steps"}` so it can be filtered).
   `RunResult.output` and the JSON `output` stay `"max steps reached"`.
+
+### Fixes
+
+- `gemini-4-argon` rejects `thinkingLevel: MINIMAL` like the pro models do:
+  `thinking_level` `disabled` / `none` / `minimal` now map to `LOW` for
+  model names containing `-argon`.
 
 ## 3.4.2 (2026-10-17)
 

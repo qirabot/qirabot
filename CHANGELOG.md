@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.4.5 (2026-10-24)
 
 ### Fallback model (same provider)
 

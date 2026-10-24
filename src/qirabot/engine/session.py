@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,6 +18,7 @@ from . import actions
 from .engine import LocalEngine
 from .history import History, default_history_config
 from .prompts import NORMALIZED_COORD_RULE
+from .providers.base import ErrorCategory, ProviderError
 from .coords import rescale_point
 from .types import (
     Action,
@@ -35,6 +37,38 @@ logger = logging.getLogger("qirabot.engine")
 # BOTH failure kinds (unparsable response and unusable coordinates); the two
 # together get a single retry, not one each.
 MAX_GROUNDING_ATTEMPTS = 2
+
+# Extra decide attempts a step gets when the model call times out, separate
+# from the grounding budget above. The transport deliberately never retries
+# a timeout (see providers.base.RETRYABLE_CATEGORIES) because in general a
+# second ask costs another full budget. An ai() step is the exception: the
+# step has not committed, so the session is untouched and re-asking is safe,
+# and the alternative is throwing away every step the run already made. On
+# an overloaded endpoint the second ask usually lands. QIRA_TIMEOUT_RETRIES
+# overrides it; 0 restores fail-on-first-timeout.
+DEFAULT_TIMEOUT_RETRIES = 1
+
+
+def resolve_timeout_retries(explicit: int | None = None) -> int:
+    """Timeout-retry budget: explicit value > QIRA_TIMEOUT_RETRIES > default.
+    Raises ValueError on a malformed or negative value rather than silently
+    running with a budget the user did not ask for."""
+    if explicit is not None:
+        n = explicit
+    else:
+        raw = os.environ.get("QIRA_TIMEOUT_RETRIES", "").strip()
+        if not raw:
+            return DEFAULT_TIMEOUT_RETRIES
+        try:
+            n = int(raw)
+        except ValueError:
+            raise ValueError(
+                f'invalid QIRA_TIMEOUT_RETRIES "{raw}"; expected a non-negative '
+                "integer (timeout retries)"
+            ) from None
+    if n < 0:
+        raise ValueError(f"invalid timeout retries {n}; expected a non-negative integer")
+    return n
 
 _UNPARSABLE_HINT = (
     "Your previous response was empty or not a valid tool call. "
@@ -83,6 +117,7 @@ class LocalAISession:
         custom_tools: list[CustomToolDef] | None = None,
         exclude_tools: list[str] | None = None,
         annotate_for_model: bool = False,
+        timeout_retries: int | None = None,
     ) -> None:
         self.instruction = instruction
         self.platform = platform
@@ -93,6 +128,7 @@ class LocalAISession:
         self.custom_tools = custom_tools or []
         self.exclude_tools = exclude_tools or []
         self.annotate_for_model = annotate_for_model
+        self.timeout_retries = resolve_timeout_retries(timeout_retries)
         self.step_count = 0
         self.notes: list[str] = []
         self.history = History(default_history_config())
@@ -144,6 +180,7 @@ class LocalAISession:
         raw_params_json = ""
 
         attempt = 0
+        timeouts = 0
         while True:
             attempt += 1
             try:
@@ -165,6 +202,20 @@ class LocalAISession:
                         exclude_tools=self.exclude_tools,
                     )
                 )
+            except ProviderError as exc:
+                # A timed-out decide produced no answer, so it does not use
+                # up the grounding budget: re-ask the identical request.
+                if exc.category != ErrorCategory.TIMEOUT or timeouts >= self.timeout_retries:
+                    raise
+                timeouts += 1
+                attempt -= 1
+                logger.warning(
+                    "decision timed out; re-asking (timeout retry %d/%d): %s",
+                    timeouts,
+                    self.timeout_retries,
+                    exc,
+                )
+                continue
             except UnparsableResponseError as exc:
                 # The LLM call succeeded but the content was unusable —
                 # transient; re-decide once with corrective feedback, same

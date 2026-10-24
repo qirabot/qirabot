@@ -119,6 +119,7 @@ def run_chat(
     part_media_resolution: bool,
     service_tier: str = "",
     wait_out_quota: bool = True,
+    ride_out_outage: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     """Build the body and POST it (post: callable(body) -> response dict),
     falling back once when the endpoint rejects per-part mediaResolution
@@ -127,8 +128,8 @@ def run_chat(
     still believed supported) — callers keep that flag per provider instance
     so at most one request is ever wasted on the probe.
 
-    ``wait_out_quota`` decides whether a rate limit gets its own longer
-    schedule (see with_retry)."""
+    ``wait_out_quota`` / ``ride_out_outage`` decide whether a rate limit /
+    an outage gets its own longer schedule (see with_retry)."""
     body = build_request_body(
         request,
         part_media_resolution=part_media_resolution,
@@ -136,7 +137,11 @@ def run_chat(
     )
     try:
         return (
-            with_retry(lambda: post(body), wait_out_quota=wait_out_quota),
+            with_retry(
+                lambda: post(body),
+                wait_out_quota=wait_out_quota,
+                ride_out_outage=ride_out_outage,
+            ),
             part_media_resolution,
         )
     except ProviderError as exc:
@@ -153,7 +158,11 @@ def run_chat(
             request.model,
         )
         return (
-            with_retry(lambda: post(fallback), wait_out_quota=wait_out_quota),
+            with_retry(
+                lambda: post(fallback),
+                wait_out_quota=wait_out_quota,
+                ride_out_outage=ride_out_outage,
+            ),
             False,
         )
 

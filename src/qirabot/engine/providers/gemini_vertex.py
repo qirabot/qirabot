@@ -109,6 +109,7 @@ class GeminiVertexProvider:
             post,
             self._part_media_resolution,
             wait_out_quota=self._ladder.wait_out_quota(escalated),
+            ride_out_outage=self._ladder.ride_out_outage(tier, escalated),
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(

@@ -113,14 +113,16 @@ def escalate(tier: str, exc: ProviderError) -> str:
     """The next rung up the ladder, or "" when no other tier could help.
 
     Only capacity failures qualify — everything else is deterministic and
-    would fail the same way on any tier. For flex that set includes
-    timeouts: its characteristic failure is a queue that never reaches the
-    request, which expires the client budget instead of being refused, and
-    a queue is exactly the thing another tier fixes. On the tiers that are
-    served promptly a timeout means something else — a slow generation —
-    so it stays non-escalating there.
+    would fail the same way on any tier. Timeouts count on every tier. On
+    flex that is its characteristic failure: a queue that never reaches the
+    request, which expires the client budget instead of being refused. On
+    standard it is how an overloaded endpoint usually shows itself — the
+    request sits in a queue behind priority traffic until the budget runs
+    out — and jumping that queue is exactly what priority sells. A timeout
+    that really was a slow generation costs one more attempt, billed at the
+    higher rate only if priority is what serves it.
     """
-    capacity = _CAPACITY_FAILURES + ((ErrorCategory.TIMEOUT,) if tier == FLEX else ())
+    capacity = _CAPACITY_FAILURES + (ErrorCategory.TIMEOUT,)
     if exc.category not in capacity:
         return ""
     index = _LADDER.index(tier or STANDARD)
@@ -163,13 +165,31 @@ class TierLadder:
         it. No once escalated, because the tier below already spent a window
         and the tiers commonly share one bucket.
 
-        Nothing else needs a per-tier retry budget. The failure that would
-        be expensive to repeat on flex — a probe that burns its whole
-        timeout — is already non-retryable at the transport (see
-        RETRYABLE_CATEGORIES); a 503 comes back at once, so retrying it a
-        couple of times to stay on half-price capacity is nearly free.
+        The failure that would be expensive to repeat on flex — a probe
+        that burns its whole timeout — is already non-retryable at the
+        transport (see RETRYABLE_CATEGORIES); a 503 comes back at once, so
+        retrying it a couple of times to stay on half-price capacity is
+        nearly free. How long a 503 is retried is :meth:`ride_out_outage`.
         """
         return not escalated
+
+    def ride_out_outage(self, tier: str, escalated: bool) -> bool:
+        """Whether a 503 / unreachable endpoint on this call should sit
+        through the long outage schedule rather than the generic ~3s one.
+
+        Yes by default: a refused request is not billed, and a brown-out
+        that outlasts three quick tries would otherwise end the run. Two
+        exceptions, both where a better move exists than waiting:
+
+        - an escalated call — the tier below already rode one out, and the
+          tiers commonly fail together;
+        - a flex probe with escalation on — flex sheds load when its queue
+          is deep, which will not have drained in half a minute, and
+          standard is one rung away.
+        """
+        if escalated:
+            return False
+        return not (tier == FLEX and self._may_escalate())
 
     def timeout_for(self, tier: str, budget: float) -> float:
         """The client budget for one attempt at `tier`.

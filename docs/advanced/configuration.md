@@ -127,8 +127,8 @@ Two different layers retry, and they are easy to confuse because they use
 the same words. The `retry=` and `timeout=` options in the
 [Method Reference](/reference/methods) are **yours**: `timeout=` polls the
 screen until an element looks present, `retry=` repeats a whole action.
-Underneath, the engine's own model calls have fixed budgets you do not
-configure. This section is that lower layer.
+Underneath, the engine's own model calls have fixed budgets; the only knob
+is `QIRA_TIMEOUT_RETRIES` (below). This section is that lower layer.
 
 ### Per-call budgets
 
@@ -149,8 +149,8 @@ holding the whole budget.
 | Failure | Behaviour |
 |---|---|
 | Rate limit (429) | Backs off 5s → 10s → 20s → 30s, five attempts, about a minute |
-| Refusal (503), connect or pool failure | Backs off 1s → 2s, three attempts |
-| The model answered too slowly (read timeout, 504) | **Fails immediately** |
+| Refusal (503), connect or pool failure | Backs off 2s → 5s → 10s → 20s, five attempts, about half a minute |
+| The model answered too slowly (read timeout, 504) | Not retried in place; an `ai()` step re-asks once (see below) |
 | Bad request, auth, not found (400/401/403/404) | Fails immediately |
 | Empty or unparseable reply | Re-asked once with corrective feedback |
 
@@ -160,17 +160,29 @@ do not retry in lockstep and collide again.
 The two timing rules are worth knowing because they explain most of what you
 will see in a log. **Rate limits get a long wait** because quotas are rolling
 per-minute windows: waiting one out is free and usually works, and a run that
-died on its first quota brush would throw away all its progress. **A slow
-answer is never retried**, because the request did reach the model — asking
-the same question again costs another full budget to be told the same thing.
-That is the difference between a read timeout and a connect timeout, which
-look alike but mean opposite things.
+died on its first quota brush would throw away all its progress. **Outages
+get a medium wait** for the same reason: a refused or unreached request is
+not billed, and a short brown-out outlasts a few quick tries. **A slow answer
+is not retried at the transport**, because the request did reach the model —
+in general asking again costs another full budget. That is the difference
+between a read timeout and a connect timeout, which look alike but mean
+opposite things.
+
+The exception is an `ai()` step. A step that timed out has not committed
+anything, so re-asking the identical question is safe — and failing would
+throw away every step the run already made. So a timed-out step decision is
+re-asked once before the run fails (the re-ask does not use up the
+corrective re-ask for an unusable reply). Set `QIRA_TIMEOUT_RETRIES` to
+change that: `0` restores fail-on-first-timeout, `2` allows two re-asks.
+`extract()`, `verify()` and `locate()` are unaffected — their own `retry=`
+covers them.
 
 ### How long a run can take
 
 By default nothing caps an `ai()` run in wall clock: `max_steps` (default
-20) is the bound, and a step costs at most two model calls — the decision,
-plus one re-ask if the reply comes back unusable. That does not convert to a
+20) is the bound, and a step normally costs at most two model calls — the
+decision, plus one re-ask if the reply comes back unusable — plus one per
+timeout re-ask. That does not convert to a
 reliable time: a step is normally a few seconds, but rate-limit waits and a
 slow model call can stretch one to minutes.
 
@@ -275,7 +287,7 @@ billed at that rate` — and an unconfigured run gets no row at all.
 
 A downgrade is **not** a failure and does not trigger `tier_escalation`: the
 call succeeded, at standard price. Escalation reacts to capacity *failures*
-— a rate limit, a refusal, or a flex request still queued when its budget
+— a rate limit, a refusal, or a request still queued when its budget
 expires.
 
 ### Escalating on exhaustion
@@ -288,24 +300,33 @@ of the session**, instead of failing the run:
 bot = Qirabot(service_tier="standard", tier_escalation=True)
 ```
 
-Out of capacity means a rate limit (429), a refusal (503), or — on flex only
-— a request whose budget expires while still queued. Escalation happens after
+Out of capacity means a rate limit (429), a refusal (503), or a request whose
+budget expires while still queued (a timeout). On flex that is its
+characteristic failure; on standard it is how an overloaded endpoint
+usually shows itself — requests queue behind priority traffic until the
+budget runs out, and jumping that queue is what priority sells. Escalation
+happens after
 the ordinary retries for that failure ([When a call fails](#when-a-call-fails))
 are exhausted, so how soon the handoff comes depends on which failure it was:
 
 | Failure | Handoff |
 |---|---|
 | Rate limit | After the full quota window, roughly a minute |
-| Refusal | A few seconds |
-| Flex still queued | As soon as the call's timeout expires |
+| Refusal on standard | After the outage window, about half a minute |
+| Refusal on flex | A few seconds |
+| Timeout (any tier) | As soon as the call's timeout expires |
 
 Escalating is always the last move before a long `ai()` run dies and loses
 its accumulated progress, never the first response to a failure — the free
 remedies come first. That is why a rate limit waits: the window is rolling
 and costs nothing to sit through, while escalating raises the rate. The
 escalated call does not wait out a second window, though — the tiers commonly
-draw on the same quota, so another minute of sleeping would stall the run for
-capacity that is not coming.
+draw on the same quota and fail together, so another minute of sleeping would
+stall the run for capacity that is not coming.
+
+With escalation on, a timed-out `ai()` step therefore gets two more chances
+before the run fails: the escalated attempt one rung up, then the step's
+own timeout re-ask on that tier.
 
 Moving is permanent for the life of the bot because the alternative is
 paying to rediscover the same congestion on every step. A new `Qirabot`
@@ -314,10 +335,11 @@ probes again.
 It also changes what a flex attempt is worth waiting for. With escalation on
 it is a probe you are happy to abandon, so it gets a short leash rather than
 the widened budget; with escalation off it keeps the widened budget, since
-waiting is the only option left. Either way flex retries like any other tier
-— a refusal comes back at once, so trying again costs seconds while
-escalating doubles the rate. Only a probe that burns its whole budget hands
-off immediately, because repeating it is the one expensive move.
+waiting is the only option left. A flex probe also skips the outage window:
+flex refuses when its queue is deep, which will not drain in half a minute,
+so it hands off after a few quick tries (a refusal comes back at once, so
+those cost seconds). Only a probe that burns its whole budget hands off
+immediately, because repeating it is the one expensive move.
 
 The effect on a congested tier is the whole point. A 20-step run against a
 queued flex endpoint, standard healthy:

@@ -262,6 +262,88 @@ class TestGroundingLoop:
             step(start_run(backend(fake)))
 
 
+def _timeout() -> ProviderError:
+    return ProviderError("gemini-vertex", "request timed out", category=ErrorCategory.TIMEOUT)
+
+
+class TestTimeoutRetry:
+    """A timed-out decide is re-asked once by default: the step has not
+    committed, so the session is untouched, and failing would throw away
+    every step the run already made."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("QIRA_TIMEOUT_RETRIES", raising=False)
+
+    def test_timeout_then_success(self) -> None:
+        fake = FakeProvider(_timeout(), tool_resp("click", CLICK_ARGS))
+        outcome = step(start_run(backend(fake)))
+        assert outcome.action_type == "click"
+        assert outcome.step_number == 1
+        # The identical request is re-sent: no corrective hint, since the
+        # model never answered.
+        assert len(fake.requests) == 2
+        assert fake.requests[0].messages == fake.requests[1].messages
+
+    def test_retry_does_not_spend_the_grounding_budget(self) -> None:
+        # Timeout, then unparsable, then success: the corrective re-decide
+        # is still available after the timeout retry.
+        fake = FakeProvider(_timeout(), text_resp("garbage"), tool_resp("click", CLICK_ARGS))
+        outcome = step(start_run(backend(fake)))
+        assert outcome.action_type == "click"
+        assert len(fake.requests) == 3
+
+    def test_second_timeout_fails_the_step(self) -> None:
+        fake = FakeProvider(_timeout(), _timeout())
+        with pytest.raises(ProviderError) as ei:
+            step(start_run(backend(fake)))
+        assert ei.value.category is ErrorCategory.TIMEOUT
+        assert len(fake.requests) == 2
+
+    def test_mid_run_timeout_keeps_history(self) -> None:
+        fake = FakeProvider(
+            tool_resp("click", CLICK_ARGS),
+            _timeout(),
+            tool_resp("done", DONE_ARGS),
+        )
+        run = start_run(backend(fake))
+        step(run)
+        outcome = step(run, PNG, "ok")
+        assert outcome.finished is True
+        assert outcome.step_number == 2
+        # The retried request replays the first step exactly once, with the
+        # backfilled tool result not duplicated.
+        assert fake.requests[1].messages == fake.requests[2].messages
+        tool_msgs = [m for m in fake.requests[2].messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+
+    def test_other_provider_errors_are_not_retried_here(self) -> None:
+        fake = FakeProvider(
+            ProviderError("gemini-vertex", "bad", category=ErrorCategory.INVALID_REQUEST, status_code=400)
+        )
+        with pytest.raises(ProviderError):
+            step(start_run(backend(fake)))
+        assert len(fake.requests) == 1
+
+    def test_env_zero_restores_fail_fast(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_TIMEOUT_RETRIES", "0")
+        fake = FakeProvider(_timeout())
+        with pytest.raises(ProviderError):
+            step(start_run(backend(fake)))
+        assert len(fake.requests) == 1
+
+    def test_env_raises_the_budget(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("QIRA_TIMEOUT_RETRIES", "2")
+        fake = FakeProvider(_timeout(), _timeout(), tool_resp("click", CLICK_ARGS))
+        assert step(start_run(backend(fake))).action_type == "click"
+
+    @pytest.mark.parametrize("raw", ["-1", "two", "1.5"])
+    def test_bad_env_fails_at_start(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        monkeypatch.setenv("QIRA_TIMEOUT_RETRIES", raw)
+        with pytest.raises(ValueError, match="timeout retries"):
+            start_run(backend(FakeProvider()))
+
+
 class TestCoordinateResolution:
     def test_5_point_rescaled_to_device_pixels(self) -> None:
         fake = FakeProvider(tool_resp("click", CLICK_ARGS))

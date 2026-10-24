@@ -34,7 +34,10 @@ class ErrorCategory(str, Enum):
 # a blip. Each retry costs another full budget (minutes at the engine's
 # per-call timeouts) to ask a question that was already too slow once.
 # Failures that never reached the model — connect, pool, reset — are
-# classified UNAVAILABLE instead and stay retryable.
+# classified UNAVAILABLE instead and stay retryable. Two layers above the
+# transport do act on a timeout, where the trade is different: tier
+# escalation (a queue another tier jumps) and the ai() step loop (an
+# uncommitted step is safe to re-ask, and failing loses the whole run).
 RETRYABLE_CATEGORIES = frozenset(
     {ErrorCategory.RATE_LIMITED, ErrorCategory.UNAVAILABLE}
 )

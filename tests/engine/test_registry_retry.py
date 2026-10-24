@@ -157,8 +157,57 @@ class TestRetry:
 
         assert with_retry(fn, sleep=sleeps.append, jitter=_no_jitter) == "ok"
         assert calls["n"] == 3
-        # Linear backoff 1s → 2s (3rd attempt succeeds, no third sleep).
+        # Outage schedule 2s → 5s (3rd attempt succeeds, no third sleep).
+        assert sleeps == [2.0, 5.0]
+
+    def test_outage_rides_out_a_brown_out(self) -> None:
+        # A short provider brown-out outlasts the generic ~3s; a refused
+        # request is not billed, so the schedule spans about half a minute
+        # instead of killing an in-progress run.
+        sleeps: list[float] = []
+        calls = {"n": 0}
+
+        def fn() -> str:
+            calls["n"] += 1
+            raise ProviderError("p", "down", category=ErrorCategory.UNAVAILABLE, status_code=503)
+
+        with pytest.raises(ProviderError):
+            with_retry(fn, sleep=sleeps.append, jitter=_no_jitter)
+        assert calls["n"] == 5
+        assert sleeps == [2.0, 5.0, 10.0, 20.0]
+        assert sum(sleeps) >= 30.0
+
+    def test_outage_schedule_ignores_a_shortened_generic_budget(self) -> None:
+        sleeps: list[float] = []
+
+        def fn() -> str:
+            raise httpx.ConnectError("unreachable")
+
+        with pytest.raises(httpx.ConnectError):
+            with_retry(fn, attempts=1, sleep=sleeps.append, jitter=_no_jitter)
+        assert sleeps == [2.0, 5.0, 10.0, 20.0]
+
+    def test_outage_window_can_be_skipped(self) -> None:
+        # Callers with somewhere better to go (a tier one rung up) put
+        # outages back on the generic schedule.
+        sleeps: list[float] = []
+
+        def fn() -> str:
+            raise ProviderError("p", "down", category=ErrorCategory.UNAVAILABLE, status_code=503)
+
+        with pytest.raises(ProviderError):
+            with_retry(fn, sleep=sleeps.append, jitter=_no_jitter, ride_out_outage=False)
         assert sleeps == [1.0, 2.0]
+
+    def test_skipping_one_window_keeps_the_other(self) -> None:
+        sleeps: list[float] = []
+
+        def fn() -> str:
+            raise ProviderError("p", "busy", category=ErrorCategory.RATE_LIMITED, status_code=429)
+
+        with pytest.raises(ProviderError):
+            with_retry(fn, sleep=sleeps.append, jitter=_no_jitter, ride_out_outage=False)
+        assert sleeps == [5.0, 10.0, 20.0, 30.0]
 
     def test_exhausts_attempts(self) -> None:
         def fn() -> str:

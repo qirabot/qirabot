@@ -204,7 +204,8 @@ class TestTimeoutClassification:
         with pytest.raises(ProviderError) as ei:
             _vertex(client).chat(_request(), 30.0)
         assert ei.value.category is ErrorCategory.UNAVAILABLE
-        assert attempts["n"] == 3
+        # Never reached the model, so it rides out the outage schedule.
+        assert attempts["n"] == len(retry.OUTAGE_DELAYS) + 1
 
 
 # -- served-tier self-check --------------------------------------------
@@ -300,12 +301,48 @@ class TestEscalate:
         exc = ProviderError("p", "slow", category=ErrorCategory.TIMEOUT)
         assert st.escalate("flex", exc) == "standard"
 
-    @pytest.mark.parametrize("tier", ["standard", "", "priority"])
-    def test_promptly_served_tiers_do_not_escalate_on_timeout(self, tier: str) -> None:
-        # There a timeout means a slow generation, which another tier will
-        # not fix.
+    @pytest.mark.parametrize("tier", ["standard", ""])
+    def test_standard_escalates_on_timeout(self, tier: str) -> None:
+        # An overloaded endpoint shows up as standard requests queued behind
+        # priority traffic until the budget runs out — jumping that queue is
+        # what priority sells.
         exc = ProviderError("p", "slow", category=ErrorCategory.TIMEOUT)
-        assert st.escalate(tier, exc) == ""
+        assert st.escalate(tier, exc) == "priority"
+
+    def test_priority_has_nowhere_to_go_on_timeout(self) -> None:
+        exc = ProviderError("p", "slow", category=ErrorCategory.TIMEOUT)
+        assert st.escalate("priority", exc) == ""
+
+    def test_a_timed_out_standard_call_moves_to_priority(self) -> None:
+        tiers: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            tier = request.headers.get(st.VERTEX_TIER_HEADER, "standard")
+            tiers.append(tier)
+            if tier == "standard":
+                raise httpx.ReadTimeout("queued behind priority")
+            return httpx.Response(200, json=_ok("ON_DEMAND_PRIORITY"))
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        provider = _vertex(client, tier_escalation=True)
+        provider.chat(_request(), 30.0)
+        provider.chat(_request(), 30.0)
+        # One standard attempt (a timeout is never retried in place), then
+        # parked on priority for the rest of the session.
+        assert tiers == ["standard", "priority", "priority"]
+
+    def test_a_timed_out_standard_call_fails_without_escalation(self) -> None:
+        tiers: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            tiers.append(request.headers.get(st.VERTEX_TIER_HEADER, "standard"))
+            raise httpx.ReadTimeout("slow")
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        with pytest.raises(ProviderError) as ei:
+            _vertex(client).chat(_request(), 30.0)
+        assert ei.value.category is ErrorCategory.TIMEOUT
+        assert tiers == ["standard"]
 
     def test_disabled_by_default(self) -> None:
         client, seen = _client([httpx.Response(429, json={"error": "quota"})])
@@ -537,11 +574,38 @@ class TestRetryBudget:
         assert seen[0].headers[st.VERTEX_TIER_HEADER] == "flex"
 
     def test_flex_without_escalation_keeps_retrying(self) -> None:
-        # Nowhere to hand off to, so the retries are all the caller has.
+        # Nowhere to hand off to, so it rides out the full outage schedule.
         client, seen = _client([httpx.Response(503, json={"error": "at capacity"})])
         with pytest.raises(ProviderError):
             _vertex(client, service_tier="flex").chat(_request(), 30.0)
-        assert len(seen) == 3
+        assert len(seen) == len(retry.OUTAGE_DELAYS) + 1
+
+    def test_standard_rides_out_an_outage_before_escalating(self) -> None:
+        # Waiting is free and escalating is not, so standard sits through
+        # the outage schedule first; the escalated call then gets the short
+        # generic budget, since the tiers commonly fail together.
+        client, seen = _client([httpx.Response(503, json={"error": "overloaded"})])
+        with pytest.raises(ProviderError):
+            _vertex(client, tier_escalation=True).chat(_request(), 30.0)
+        tiers = [r.headers.get(st.VERTEX_TIER_HEADER, "standard") for r in seen]
+        assert tiers == ["standard"] * (len(retry.OUTAGE_DELAYS) + 1) + ["priority"] * 3
+
+    @pytest.mark.parametrize(
+        ("tier", "escalation", "escalated", "want"),
+        [
+            ("", False, False, True),
+            ("", True, False, True),
+            ("flex", False, False, True),
+            ("flex", True, False, False),
+            ("", True, True, False),
+            ("priority", True, False, True),
+        ],
+    )
+    def test_ride_out_outage(
+        self, tier: str, escalation: bool, escalated: bool, want: bool
+    ) -> None:
+        ladder = st.TierLadder(tier, escalation, "p")
+        assert ladder.ride_out_outage(tier, escalated) is want
 
     def test_a_timed_out_flex_call_escalates_instead_of_retrying(self) -> None:
         attempts: list[str] = []

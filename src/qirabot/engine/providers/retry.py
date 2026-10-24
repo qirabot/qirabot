@@ -13,7 +13,12 @@ quota brush, losing all accumulated progress. A rejected 429 request is not
 billed, so waiting out the window costs nothing but wall-clock;
 RATE_LIMIT_DELAYS spans a full minute cumulatively.
 
-Every delay is jittered: both schedules are fixed, so concurrent qirabot
+Outages (503/5xx, connect/pool failures) get a schedule of their own for the
+same reason: a short provider brown-out outlasts the generic ~3s and would
+kill an in-progress run. A refused or unreached request is not billed either,
+so OUTAGE_DELAYS rides out roughly half a minute before giving up.
+
+Every delay is jittered: the schedules are fixed, so concurrent qirabot
 processes that brush the same quota (a CI matrix, a multi-device run) would
 otherwise retry in lockstep and keep colliding.
 """
@@ -34,6 +39,7 @@ logger = logging.getLogger("qirabot.engine")
 
 DEFAULT_ATTEMPTS = 3
 RATE_LIMIT_DELAYS = (5.0, 10.0, 20.0, 30.0)
+OUTAGE_DELAYS = (2.0, 5.0, 10.0, 20.0)
 JITTER_FRACTION = 0.2
 
 T = TypeVar("T")
@@ -65,17 +71,27 @@ def with_retry(
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[float], float] = jitter,
     wait_out_quota: bool = True,
+    ride_out_outage: bool = True,
 ) -> T:
-    """Execute fn, retrying retryable failures. Generic schedule: linear
-    1s→2s→3s (capped) backoff over `attempts` tries; rate limits follow
-    RATE_LIMIT_DELAYS instead (see module docstring) and are **not** capped
-    by `attempts` — waiting out a quota window is free, so callers who
-    shorten the generic budget still get the full window. Each delay passes
-    through `jitter` — tests inject the identity to assert the schedule.
+    """Execute fn, retrying retryable failures.
 
-    `wait_out_quota=False` puts rate limits on the generic schedule too, for
-    callers that have already spent a quota window elsewhere and would only
-    be stalling the run by spending a second one."""
+    Three schedules, picked per failure:
+
+    - rate limits follow RATE_LIMIT_DELAYS (about a minute);
+    - outages (every other retryable failure) follow OUTAGE_DELAYS (about
+      half a minute);
+    - with the matching flag off, either falls back to the generic linear
+      1s→2s→3s (capped) backoff over `attempts` tries.
+
+    The long schedules are **not** capped by `attempts` — waiting out an
+    unbilled failure is free, so callers who shorten the generic budget
+    still get the full window. Each delay passes through `jitter` — tests
+    inject the identity to assert the schedule.
+
+    `wait_out_quota=False` / `ride_out_outage=False` put that failure on the
+    generic schedule, for callers that have somewhere better to go (a tier
+    one rung up) or have already spent a window elsewhere and would only be
+    stalling the run by spending a second one."""
     delay = 1.0
     attempt = 0
     while True:
@@ -85,11 +101,17 @@ def with_retry(
         except Exception as exc:
             if not is_retryable(exc):
                 raise
-            if _is_rate_limited(exc) and wait_out_quota:
-                if attempt > len(RATE_LIMIT_DELAYS):
+            rate_limited = _is_rate_limited(exc)
+            schedule: tuple[float, ...] = ()
+            if rate_limited and wait_out_quota:
+                schedule = RATE_LIMIT_DELAYS
+            elif not rate_limited and ride_out_outage:
+                schedule = OUTAGE_DELAYS
+            if schedule:
+                if attempt > len(schedule):
                     raise
-                wait = RATE_LIMIT_DELAYS[attempt - 1]
-                budget = len(RATE_LIMIT_DELAYS) + 1
+                wait = schedule[attempt - 1]
+                budget = len(schedule) + 1
             else:
                 if attempt >= attempts:
                     raise

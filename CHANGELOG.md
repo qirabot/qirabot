@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Riding out an unstable model endpoint
+
+An overloaded Gemini endpoint used to end long `ai()` runs on the first slow
+or refused call, throwing away every step already made. Three changes, all
+aimed at keeping the run alive without retrying anything that is billed
+twice for nothing:
+
+- **A timed-out `ai()` step is re-asked once.** The step has not committed,
+  so the session is untouched and the identical request is re-sent. The
+  re-ask does not use up the corrective re-ask for an unusable reply.
+  `QIRA_TIMEOUT_RETRIES` sets the budget (default `1`; `0` restores
+  fail-on-first-timeout; invalid values fail at `ai()` start).
+  `extract()` / `verify()` / `locate()` are unchanged. The transport itself
+  still never retries a read timeout.
+- **Outages are ridden out longer.** 503/5xx and connect/pool failures now
+  back off 2s → 5s → 10s → 20s (five attempts, about half a minute) instead
+  of 1s → 2s. These requests are not billed. Exceptions: an escalated call,
+  and a flex probe with `tier_escalation` on, keep the short schedule — both
+  have a better move than waiting.
+- **`tier_escalation` now escalates standard on a timeout.** Previously only
+  flex did; standard timeouts failed outright. An overloaded endpoint shows
+  up as standard requests queued behind priority traffic, which priority
+  jumps. Still off by default, and still billed at priority only when
+  priority actually serves the request.
+
 ## 3.4.3 (2026-10-19)
 
 ### `max_duration`: a wall-clock budget for `ai()`

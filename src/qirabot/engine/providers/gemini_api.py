@@ -86,6 +86,7 @@ class GeminiApiProvider:
             self._part_media_resolution,
             service_tier=tier,
             wait_out_quota=self._ladder.wait_out_quota(escalated),
+            ride_out_outage=self._ladder.ride_out_outage(tier, escalated),
         )
         resp = parse_response(data, request.model)
         self._tier_check.observe(

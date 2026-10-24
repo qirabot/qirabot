@@ -94,6 +94,11 @@ Cloud(`-m gemini/gemini-3.8-flash`)。
 而不是让整次运行失败。两者都要求 global 端点和支持该档位的模型,详见
 [配置](/zh/advanced/configuration#计费档位)。
 
+`--fallback-model`(或 `QIRA_FALLBACK_MODEL`)指定同一 provider 下的兜底
+模型(`--fallback-model gemini-3.5-flash`)。主模型在所有重试之后仍超时或
+容量耗尽时,由兜底模型接手本次运行剩下的部分,详见
+[配置](/zh/advanced/configuration#兜底模型)。
+
 模型是任务命令上的选项(`-m/--model`,见下),解析顺序:`-m` 参数 >
 `QIRA_MODEL` 环境变量 > 内置默认值
 `gemini-vertex/gemini-3.8-flash`。只写 provider 名会选用该

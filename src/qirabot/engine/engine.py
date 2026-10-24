@@ -49,9 +49,9 @@ logger = logging.getLogger("qirabot.engine")
 # Per-call ceilings, not a step or run budget: `max_steps` and the optional
 # `max_duration` bound an ai() run. A step normally costs at most two of
 # these (the session layer re-decides once on an unparsable reply), plus one
-# more per timeout retry (session.DEFAULT_TIMEOUT_RETRIES, and one escalated
-# attempt with tier_escalation on), which is what to reason about when
-# picking max_steps.
+# more per timeout retry (session.DEFAULT_TIMEOUT_RETRIES, one escalated
+# attempt with tier_escalation on, and one fallback-model attempt with
+# fallback_model set), which is what to reason about when picking max_steps.
 DECIDE_TIMEOUT = 120.0
 # Half of decide, because the session layer retries a locate once: two locate
 # shots should cost about what one decide shot does.

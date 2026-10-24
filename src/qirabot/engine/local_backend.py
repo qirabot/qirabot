@@ -21,6 +21,7 @@ import httpx
 from . import actions
 from .engine import LocalEngine
 from .providers.base import Provider, ProviderError
+from .providers.fallback import FallbackProvider
 from .providers.service_tier import tier_label
 from .providers.gemini_api import GeminiApiProvider
 from .providers.gemini_vertex import GeminiVertexProvider
@@ -31,6 +32,7 @@ from .providers.registry import (
     check_tier_location,
     parse_model,
     resolve_gemini_api_key,
+    resolve_fallback_model,
     resolve_service_tier,
     resolve_tier_escalation,
     resolve_vertex_api_key,
@@ -186,9 +188,11 @@ class LocalBackend:
         annotate_for_model: bool = False,
         service_tier: str = "",
         tier_escalation: bool | None = None,
+        fallback_model: str = "",
         provider: Provider | None = None,
     ) -> None:
         self._spec: ModelSpec = parse_model(model)
+        fallback = resolve_fallback_model(fallback_model, self._spec)
         self._thinking_level = thinking_level
         self._media_resolution = media_resolution
         self._locate_format = locate_format
@@ -292,11 +296,29 @@ class LocalBackend:
                 )
         self._provider = provider
         self._tier = tier
-        self._engine = LocalEngine(provider, self._spec.model)
+        # Same-provider fallback: a wrapper that swaps the model name on a
+        # capacity failure. The raw provider stays in self._provider for
+        # provider-level reporting (served tiers).
+        self._fallback: FallbackProvider | None = None
+        engine_provider: Provider = provider
+        if fallback:
+            self._fallback = FallbackProvider(provider, fallback, self._spec.provider)
+            engine_provider = self._fallback
+            logger.info("local engine: fallback model=%s/%s", self._spec.provider, fallback)
+        self._engine = LocalEngine(engine_provider, self._spec.model)
 
     @property
     def model_label(self) -> str:
-        return f"{self._spec.provider}/{self._spec.model}"
+        """The model line of the run report. Names the fallback only when it
+        actually answered something — a configured but unused fallback is
+        noise, while one that served calls changes what the run cost and
+        which model made the decisions."""
+        label = f"{self._spec.provider}/{self._spec.model}"
+        fb = self._fallback
+        if fb is not None and fb.fallback_calls:
+            n = fb.fallback_calls
+            label += f" — {n} call{'s' if n != 1 else ''} served by fallback {fb.fallback_model}"
+        return label
 
     @property
     def tier_label(self) -> str:
@@ -358,6 +380,10 @@ class LocalBackend:
         for invalid instruction/tools/knowledge."""
         if not isinstance(instruction, str) or not instruction:
             raise ValueError("ai requires a non-empty instruction")
+        # Each ai() run gives the primary model a fresh chance; within a run
+        # a switch to the fallback is sticky (see providers.fallback).
+        if self._fallback is not None:
+            self._fallback.reset()
         platform = _normalize_platform(platform)
         tools = parse_custom_tools(custom_tools) if custom_tools else []
         excludes = parse_exclude_tools(exclude_tools, platform) if exclude_tools else []

@@ -74,6 +74,36 @@ def resolve_default_model() -> str:
     return os.environ.get("QIRA_MODEL", "").strip() or DEFAULT_MODEL
 
 
+def resolve_fallback_model(explicit: str, primary: ModelSpec) -> str:
+    """Fallback model resolution: explicit param > QIRA_FALLBACK_MODEL.
+
+    Returns the bare model name, or "" when none is configured. Accepts
+    either "{provider}/{model}" or a bare model name (taken to be on the
+    primary's provider). The fallback must share the primary's provider —
+    it reuses the primary's auth and endpoint — and must differ from the
+    primary model; both are rejected here rather than discovered mid-run.
+    """
+    value = explicit.strip() or os.environ.get("QIRA_FALLBACK_MODEL", "").strip()
+    if not value:
+        return ""
+    if "/" in value or value in SUPPORTED_PROVIDERS:
+        spec = parse_model(value)
+        if spec.provider != primary.provider:
+            raise ValueError(
+                f'fallback model "{value}" must use the same provider as the '
+                f'primary model ("{primary.provider}")'
+            )
+        model = spec.model
+    else:
+        model = value
+    if model == primary.model:
+        raise ValueError(
+            f'fallback model "{value}" is the same as the primary model; '
+            "pick a different model or leave it unset"
+        )
+    return model
+
+
 def resolve_vertex_project(explicit: str, token_source: VertexTokenSource) -> str:
     """Project resolution: explicit param > QIRA_VERTEX_PROJECT >
     GOOGLE_CLOUD_PROJECT > the credentials' own project id."""

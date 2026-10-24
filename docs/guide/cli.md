@@ -98,6 +98,12 @@ instead of failing the run. Both need the global endpoint and a model that
 supports them; see
 [Configuration](/advanced/configuration#service-tier).
 
+`--fallback-model` (or `QIRA_FALLBACK_MODEL`) names a second model on the
+same provider (`--fallback-model gemini-3.5-flash`). When the primary times
+out or runs out of capacity after all retries, the fallback serves the rest
+of that run; see
+[Configuration](/advanced/configuration#fallback-model).
+
 The model is a task-command option (`-m/--model`, below) and resolves:
 `-m` flag > `QIRA_MODEL` env var > the built-in default
 `gemini-vertex/gemini-3.8-flash`. A bare provider name selects that

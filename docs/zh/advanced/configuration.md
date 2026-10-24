@@ -36,6 +36,7 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `vertex_credentials` | — | `None` | 为 `gemini-vertex` 显式传入 `google.auth.credentials.Credentials` 凭据对象,代替默认 ADC 解析。用户凭据或模拟凭据(impersonated credentials)通常不自带 `project_id`,需同时传入 `vertex_project=` |
 | `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | 计费档位:`standard` / `flex` / `priority`([详见](#计费档位)) |
 | `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | 档位容量耗尽时向上升一档重试([详见](#计费档位)) |
+| `fallback_model` | `QIRA_FALLBACK_MODEL` | `""` | 同一 provider 下的兜底模型,主模型超时或容量耗尽时接手([详见](#兜底模型)) |
 | `thinking_level` | — | `"low"` | 所有操作的思考深度:`minimal` / `low` / `medium` / `high`([详情](#思考深度)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini;`ultra_high` 需 Gemini 3 系列模型);调低可减少每步的图像 token |
 | `language` | — | 跟随指令语言 | 响应语言:语言标签(`"zh"`、`"ja"`、`"de"` 等)或任意语言名称 |
@@ -160,11 +161,42 @@ token 究竟花在哪里、本页哪些开关能真正影响它们,见
 `QIRA_TIMEOUT_RETRIES` 可以调整:`0` 恢复首次超时即失败,`2` 允许重问两次。
 `extract()`、`verify()`、`locate()` 不受影响,它们由各自的 `retry=` 负责。
 
+### 兜底模型
+
+`fallback_model` 指定**同一 provider** 下的第二个模型 —— 复用主模型的
+凭据、端点和档位。主模型的调用在上面所有重试(以及开启时的档位升级)
+都用完后,仍然因超时、限流或拒绝而失败时,同一个调用会改发给兜底模型:
+
+```python
+bot = Qirabot(
+    model="gemini-vertex/gemini-3.8-flash",
+    fallback_model="gemini-3.5-flash",  # 或 "gemini-vertex/gemini-3.5-flash"
+)
+```
+
+(CLI:`--fallback-model`,写在子命令之前。)
+
+- **本次 `ai()` 运行剩下的部分都留在兜底模型上。** 刚烧掉一整个预算的
+  主模型,每一步再去探测一次,就要每步再付一次这个代价。下一次 `ai()`
+  运行会重新从主模型开始。
+- **历史会延续。** 运行的对话与模型无关,兜底模型能在运行中途接着干。
+- **只有容量类失败才切换。** 请求错误、认证失败、安全拦截换哪个模型都
+  一样失败。
+- **确认兜底模型和其他设置兼容。** 它必须接受同样的 `media_resolution`
+  (`ultra_high` 需要 Gemini 3)和同样的 `service_tier`;不兼容会得到
+  `400`,而 `400` 不会触发切换。
+- 它的第一次调用吃不到 provider 的提示词缓存(缓存按模型区分),那一步
+  按全价付输入 token。
+- 兜底模型实际回答过调用时,运行报告的模型一行会写明。
+
+不支持跨 provider(例如 Vertex → Gemini Developer API):兜底模型必须和
+主模型同一 provider,不一致会在创建 bot 时直接报错。
+
 ### 一次运行能跑多久
 
 默认情况下没有任何东西限制 `ai()` 的墙钟时长:`max_steps`(默认 20)
 是上界,一步通常最多两次模型调用 —— 决策本身,加上响应不可用时的一次
-重问 —— 每次超时重问再加一次。
+重问 —— 每次超时重问再加一次,兜底模型接手时再加一次。
 但它换算不成可靠的时间:正常一步几秒钟,遇到限流等待或慢调用,单步可能
 拖到几分钟。
 

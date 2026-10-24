@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fallback model (same provider)
+
+- New `Qirabot(fallback_model=...)` / `QIRA_FALLBACK_MODEL` / CLI
+  `--fallback-model`: a second model on the same provider. When a call to
+  the primary still fails with a timeout, rate limit or refusal after the
+  transport retries and tier escalation, it is re-sent to the fallback,
+  which serves the rest of that `ai()` run; the next run starts on the
+  primary again. Applies to `extract()` / `verify()` / `locate()` too.
+- Accepts `"{provider}/{model}"` or a bare model name. A different provider,
+  or the primary model itself, is rejected at construction.
+- Only capacity failures switch; deterministic ones (400/401/403, safety)
+  do not. The report's model line names the fallback when it answered any
+  calls (`… — 3 calls served by fallback gemini-3.5-flash`).
+
 ## 3.4.4 (2026-10-24)
 
 ### Riding out an unstable model endpoint

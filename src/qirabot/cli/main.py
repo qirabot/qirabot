@@ -52,6 +52,7 @@ def _make_bot(
             gemini_api_key=ctx.obj.get("gemini_api_key", ""),
             service_tier=ctx.obj.get("service_tier", ""),
             tier_escalation=ctx.obj.get("tier_escalation"),
+            fallback_model=ctx.obj.get("fallback_model", ""),
             thinking_level=thinking_level,
             media_resolution=media_resolution,
             language=language,
@@ -542,6 +543,14 @@ def _debug_options(record: bool = True) -> Callable[[_FC], _FC]:
     help="On a tier running out of capacity, retry once one rung up "
     "(flex -> standard -> priority) instead of failing the run",
 )
+@click.option(
+    "--fallback-model",
+    envvar="QIRA_FALLBACK_MODEL",
+    default="",
+    help="Second model on the same provider, used when the primary times out "
+    "or runs out of capacity (e.g. gemini-3.5-flash); serves the rest of "
+    "that ai() run",
+)
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -551,6 +560,7 @@ def cli(
     gemini_api_key: str,
     service_tier: str | None,
     tier_escalation: bool | None,
+    fallback_model: str,
 ) -> None:
     """Qirabot CLI — AI automation tool.
 
@@ -563,7 +573,7 @@ def cli(
     QIRA_GEMINI_API_KEY or GEMINI_API_KEY).
 
     Global options (--vertex-project/--vertex-location/--vertex-api-key/
-    --gemini-api-key/--service-tier) go before the subcommand, e.g.
+    --gemini-api-key/--service-tier/--fallback-model) go before the subcommand, e.g.
     `qirabot --vertex-project my-proj browser "..."`.
     """
     ctx.ensure_object(dict)
@@ -573,6 +583,7 @@ def cli(
     ctx.obj["gemini_api_key"] = gemini_api_key
     ctx.obj["service_tier"] = service_tier or ""
     ctx.obj["tier_escalation"] = tier_escalation
+    ctx.obj["fallback_model"] = fallback_model
 
 
 @cli.command()

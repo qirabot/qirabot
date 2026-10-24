@@ -316,6 +316,12 @@ class Qirabot:
     ``tier_escalation=True`` a tier that runs out of capacity is retried once
     one rung up (flex → standard → priority) instead of failing the run.
 
+    ``fallback_model=`` (or ``QIRA_FALLBACK_MODEL``) names a second model on
+    the same provider: when the primary times out or runs out of capacity
+    after all retries, the call is re-sent to the fallback, which then
+    serves the rest of that ``ai()`` run. The next ``ai()`` run starts on
+    the primary again.
+
     Usage::
 
         bot = Qirabot(model="gemini-vertex/gemini-3.8-flash")
@@ -335,6 +341,7 @@ class Qirabot:
         vertex_credentials: Credentials | None = None,
         service_tier: str = "",
         tier_escalation: bool | None = None,
+        fallback_model: str = "",
         thinking_level: str = "",
         media_resolution: str = "",
         language: str = "",
@@ -372,6 +379,7 @@ class Qirabot:
                 vertex_credentials=vertex_credentials,
                 service_tier=service_tier,
                 tier_escalation=tier_escalation,
+                fallback_model=fallback_model,
                 thinking_level=thinking_level,
                 media_resolution=media_resolution
                 or os.environ.get("QIRA_MEDIA_RESOLUTION", ""),

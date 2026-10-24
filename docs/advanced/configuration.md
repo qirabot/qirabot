@@ -39,6 +39,7 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `vertex_credentials` | — | `None` | Explicit `google.auth.credentials.Credentials` object for `gemini-vertex` instead of resolving ADC. User/impersonated credentials usually carry no `project_id`, so pass `vertex_project=` as well |
 | `service_tier` | `QIRA_SERVICE_TIER` | `"standard"` | Consumption tier: `standard` / `flex` / `priority` ([details](#service-tier)) |
 | `tier_escalation` | `QIRA_TIER_ESCALATION` | `False` | Retry one rung up the tier ladder when a tier runs out of capacity ([details](#service-tier)) |
+| `fallback_model` | `QIRA_FALLBACK_MODEL` | `""` | Second model on the same provider, used when the primary times out or runs out of capacity ([details](#fallback-model)) |
 | `thinking_level` | — | `"low"` | Thinking level for all operations: `minimal` / `low` / `medium` / `high` ([details](#thinking-level)) |
 | `media_resolution` | `QIRA_MEDIA_RESOLUTION` | `"high"` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only; `ultra_high` needs a Gemini 3 model); lower it to cut image tokens per step |
 | `language` | — | instruction's language | Response language: a tag (`"zh"`, `"ja"`, `"de"`, …) or any language name |
@@ -177,12 +178,47 @@ change that: `0` restores fail-on-first-timeout, `2` allows two re-asks.
 `extract()`, `verify()` and `locate()` are unaffected — their own `retry=`
 covers them.
 
+### Fallback model
+
+`fallback_model` names a second model on the **same provider** — it reuses
+the primary's credentials, endpoint and tier. When a call to the primary
+fails with a timeout, a rate limit or a refusal *after* every retry above
+(and after tier escalation, if on), the same call is re-sent to the
+fallback:
+
+```python
+bot = Qirabot(
+    model="gemini-vertex/gemini-3.8-flash",
+    fallback_model="gemini-3.5-flash",  # or "gemini-vertex/gemini-3.5-flash"
+)
+```
+
+(CLI: `--fallback-model`, before the subcommand.)
+
+- **It stays on the fallback for the rest of that `ai()` run.** Re-probing a
+  primary that just burned a full budget would cost that budget again on
+  every step. The next `ai()` run starts on the primary again.
+- **History carries over.** The run's conversation is model-agnostic, so the
+  fallback picks up mid-run where the primary left off.
+- **Only capacity failures switch.** Bad requests, auth failures and safety
+  blocks would fail the same way on any model.
+- **Check the fallback against your other settings.** It must accept the
+  same `media_resolution` (`ultra_high` needs Gemini 3) and the same
+  `service_tier`; a mismatch is a `400`, which does not switch back.
+- Its first call misses the provider's prompt cache, which is per model, so
+  that step pays full input price.
+- The run report's model line names the fallback when it answered any calls.
+
+A different provider (say, Vertex → Gemini Developer API) is not supported:
+the fallback must use the primary's provider, and a mismatch is rejected
+when the bot is created.
+
 ### How long a run can take
 
 By default nothing caps an `ai()` run in wall clock: `max_steps` (default
 20) is the bound, and a step normally costs at most two model calls — the
 decision, plus one re-ask if the reply comes back unusable — plus one per
-timeout re-ask. That does not convert to a
+timeout re-ask, and one more if a fallback model takes over. That does not convert to a
 reliable time: a step is normally a few seconds, but rate-limit waits and a
 slow model call can stretch one to minutes.
 

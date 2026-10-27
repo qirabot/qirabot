@@ -12,6 +12,8 @@ import inspect
 import re
 from typing import Any, Callable
 
+from qirabot.engine.custom_tools import parse_custom_tools
+
 _TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_TOOLS = 16
 _MAX_DESC_LEN = 1024
@@ -30,9 +32,12 @@ def build_tool_defs(
     function) or dicts carrying an explicit schema alongside a ``handler``
     callable (escape hatch for schemas introspection can't express, e.g.
     enums or per-parameter descriptions). Raises ``ValueError`` on invalid
-    input so mistakes surface before any model call; the engine applies the
-    same rules (plus collision/reserved-name checks) authoritatively in
-    :func:`qirabot.engine.custom_tools.parse_custom_tools`.
+    input so mistakes surface before any model call. The checks here give
+    Python-flavored messages for the common slips; the engine's
+    authoritative validator (:func:`qirabot.engine.custom_tools.parse_custom_tools`:
+    built-in name collisions, schema shapes, the reason/step_reason rule,
+    total size) then runs too, so every invalid definition fails here the
+    same way instead of later, from the engine, as an ``ActionError``.
     """
     if len(custom_tools) > _MAX_TOOLS:
         raise ValueError(f"custom_tools: at most {_MAX_TOOLS} tools allowed, got {len(custom_tools)}")
@@ -59,6 +64,11 @@ def build_tool_defs(
 
         defs.append(tool_def)
         handlers[name] = handler
+
+    try:
+        parse_custom_tools(defs)
+    except ValueError as e:
+        raise ValueError(f"custom_tools: {e}") from None
     return defs, handlers
 
 

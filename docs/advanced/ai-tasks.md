@@ -71,7 +71,9 @@ credentials behind it.
 - A docstring is required; it becomes the tool description the model reads.
   Parameter types come from annotations (`str`/`int`/`float`/`bool`; anything
   else falls back to string); parameters without defaults are required.
-  Lambdas and `*args`/`**kwargs` are rejected. At most 16 tools per call.
+  Lambdas and `*args`/`**kwargs` are rejected. At most 16 tools per call,
+  and a tool may not share a built-in tool's name (`wait`, `click`, …). An
+  invalid definition raises `ValueError` from `ai()` before the run starts.
 - Parameter names are free, including ones the engine uses internally
   (`reason`, `x`, `y`, `locate`, …); they reach the handler unchanged. The
   one exception is declaring both `reason` and `step_reason` on one tool.

@@ -65,7 +65,9 @@ result = bot.ai(
 
 - **docstring 必填**:它就是模型阅读的工具描述。参数类型来自注解
   (`str`/`int`/`float`/`bool`;其他类型退化为字符串);无默认值的参数标记
-  为必填。lambda 和 `*args`/`**kwargs` 会被拒绝。每次调用最多 16 个工具。
+  为必填。lambda 和 `*args`/`**kwargs` 会被拒绝。每次调用最多 16 个工具,
+  工具名不能与内置工具重名(`wait`、`click` 等)。定义不合法时,`ai()` 在
+  运行开始前抛出 `ValueError`。
 - **参数名不受限**:引擎内部也在用的名字(`reason`、`x`、`y`、`locate` 等)
   同样可以用,会原样传给你的函数。唯一的例外是同一个工具同时声明
   `reason` 和 `step_reason`。

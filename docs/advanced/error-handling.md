@@ -36,6 +36,8 @@ model in `model="{provider}/{model}"`, and a missing Google Cloud project,
 raise `ValueError` with a configuration hint; missing or unusable Google
 Cloud credentials raise with a message pointing at
 `GOOGLE_APPLICATION_CREDENTIALS` / `gcloud auth application-default login`.
+An invalid `custom_tools` definition likewise raises `ValueError`, from
+`ai()` before the run starts.
 
 Everything in the exception hierarchy derives from `QirabotError`, so a
 single `except QirabotError` is always a safe catch-all:

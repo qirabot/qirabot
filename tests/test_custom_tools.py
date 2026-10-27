@@ -121,6 +121,51 @@ class TestBuildToolDefs:
         with pytest.raises(ValueError, match="explicit parameters"):
             build_tool_defs([spread])
 
+    @pytest.mark.parametrize(
+        ("tool", "match"),
+        [
+            (
+                {"name": "click", "description": "d"},
+                'custom_tools: tool "click": name conflicts with a built-in tool',
+            ),
+            (
+                {"name": "bad_schema", "description": "d", "parameters": {"properties": {"a": "str"}}},
+                'tool "bad_schema": property "a" must be an object',
+            ),
+            (
+                {
+                    "name": "both",
+                    "description": "d",
+                    "parameters": {
+                        "properties": {"reason": {"type": "string"}, "step_reason": {"type": "string"}},
+                    },
+                },
+                'property name "step_reason" is reserved when "reason" is also declared',
+            ),
+        ],
+    )
+    def test_engine_rules_enforced_at_build(self, tool, match):
+        # The engine's validator runs here too, so these fail at the bot.ai()
+        # call as ValueError instead of from the engine as an ActionError.
+        with pytest.raises(ValueError, match=match):
+            build_tool_defs([{**tool, "handler": print}])
+
+    def test_builtin_name_collision_from_function(self):
+        def wait(seconds: int) -> str:
+            """Sleep on the game server."""
+            return "ok"
+
+        with pytest.raises(ValueError, match='tool "wait": name conflicts with a built-in tool'):
+            build_tool_defs([wait])
+
+    def test_engine_owned_param_names_accepted(self):
+        def report_unreachable(reason: str, x: int = 0) -> str:
+            """Report that the target cannot be reached."""
+            return "ok"
+
+        defs, _ = build_tool_defs([report_unreachable])
+        assert set(defs[0]["parameters"]["properties"]) == {"reason", "x"}
+
 
 class _ToolLoopHarness:
     """Drives the ai() loop against scripted FakeBackend responses.
@@ -222,6 +267,19 @@ class TestAiLoopCustomTools:
             h.bot.ai(object(), "do it", max_steps=3, custom_tools=[lambda x: x])
         h.bot.close()
         assert h.bodies == []  # nothing reached the engine
+
+    def test_engine_rule_violation_raises_before_registration(self):
+        # Used to pass the SDK checks and fail in the engine's start_ai,
+        # surfacing as an ActionError that reads like a runtime failure.
+        def wait(seconds: int) -> str:
+            """Sleep on the game server."""
+            return "ok"
+
+        h = _ToolLoopHarness([DONE])
+        with pytest.raises(ValueError, match="conflicts with a built-in tool"):
+            h.bot.ai(object(), "do it", max_steps=3, custom_tools=[wait])
+        h.bot.close()
+        assert h.bot._backend.start_calls == []
 
     def test_coordinate_params_reach_handler_without_crosshair(self, make_bot):
         # A custom tool's x/y are its own arguments (here a grid cell, not

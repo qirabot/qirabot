@@ -16,6 +16,12 @@
   longer reserved either. A custom tool's params are never grounded, so a
   game's `teleport(x, y)` gets its world coordinates verbatim, and the
   report draws no crosshair for that step.
+- Every invalid custom tool definition now raises `ValueError` from `ai()`
+  before the run is registered, the way lambdas or a missing docstring
+  already did. Cases only the engine caught (a tool named like a built-in,
+  e.g. `wait`; a malformed dict-form schema) used to surface as an
+  `ActionError`, which read like a runtime failure. `except QirabotError`
+  no longer catches them, as with the other configuration errors.
 
 ## 3.4.5 (2026-10-24)
 

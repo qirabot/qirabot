@@ -34,7 +34,8 @@ except QirabotError as e:
 或缺少模型,以及缺少 Google Cloud 项目,会抛出带配置提示的
 `ValueError`;Google Cloud 凭据缺失或不可用时,错误消息会指向
 `GOOGLE_APPLICATION_CREDENTIALS` / `gcloud auth application-default
-login`。
+login`。`custom_tools` 定义不合法时同样抛出 `ValueError`,在 `ai()`
+开始运行之前。
 
 所有异常都派生自 `QirabotError`,所以单独一个
 `except QirabotError` 永远是安全的兜底:

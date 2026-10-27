@@ -407,10 +407,13 @@ class TestEscalate:
 class TestTierLabel:
     """What the run report says was billed."""
 
-    def test_an_unconfigured_run_says_nothing(self) -> None:
-        # Standard is the default; naming it on every report is noise.
-        assert st.tier_label("", ()) == ""
-        assert st.tier_label("", ("standard",)) == ""
+    def test_an_unconfigured_run_names_the_default(self) -> None:
+        # The tier sets the price, so the report always says which one.
+        assert st.tier_label("", ()) == "standard — default"
+        assert st.tier_label("", ("standard",)) == "standard — default"
+
+    def test_a_configured_standard_is_named_plainly(self) -> None:
+        assert st.tier_label("standard", ("standard",)) == "standard"
 
     def test_an_honoured_tier_is_named_plainly(self) -> None:
         assert st.tier_label("flex", ("flex",)) == "flex"
@@ -428,6 +431,18 @@ class TestTierLabel:
 
     def test_no_signal_falls_back_to_the_configured_tier(self) -> None:
         assert st.tier_label("flex", ()) == "flex"
+
+    def test_an_unconfigured_run_escalated_to_priority_says_so(self) -> None:
+        # standard + tier_escalation: the run asked for standard (by
+        # default), and part of the bill says priority.
+        assert st.tier_label("", ("standard", "priority")) == (
+            "standard — some calls served as priority, and billed at that rate"
+        )
+
+    def test_an_unconfigured_run_served_only_off_standard_says_so(self) -> None:
+        assert st.tier_label("", ("priority",)) == (
+            "standard — served as priority, and billed at that rate"
+        )
 
     def test_the_provider_records_distinct_tiers_in_order(self) -> None:
         client, _ = _client([

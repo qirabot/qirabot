@@ -854,18 +854,6 @@ class TestHelpers:
         # Scheme-less values (users paste host:port) still resolve the host.
         assert _wda_mjpeg_url("10.0.0.5:8100") == "http://10.0.0.5:9100"
 
-    def test_default_task_name_derives_and_truncates(self):
-        from qirabot.cli.main import _default_task_name
-
-        assert _default_task_name("Click login") == "Click login"
-        # first non-blank line, stripped
-        assert _default_task_name("  \n  Open the menu\nthen tap Save") == "Open the menu"
-        # capped at 60 chars
-        assert _default_task_name("x" * 100) == "x" * 60
-        # blank instruction falls back to a stable default
-        assert _default_task_name("   \n  ") == "cli"
-
-
 class TestRunOptionWiring:
     """--name derivation, --report/--record and the model/language/thinking
     task options are threaded to _make_bot; --max-steps reaches _run_local."""
@@ -884,13 +872,15 @@ class TestRunOptionWiring:
         monkeypatch.setattr(main, "_run_local", lambda *a, **k: None)
         return captured
 
-    def test_name_defaults_to_instruction(self, monkeypatch):
+    def test_no_name_leaves_the_title_to_the_report(self, monkeypatch):
+        # The report titles an unnamed run from its full instruction; a
+        # truncated copy passed as task_name would read as a chosen name.
         captured = self._capture_make_bot(monkeypatch)
 
         result = _invoke(["browser", "Find the cheapest flight to Tokyo"])
 
         assert result.exit_code == 0, result.output
-        assert captured["task_name"] == "Find the cheapest flight to Tokyo"
+        assert captured["task_name"] == ""
         assert captured["report"] is True
         assert captured["record"] is False
 
@@ -1925,6 +1915,29 @@ class TestOutputFormats:
         assert lines[1]["input_tokens"] == 500
         assert lines[2]["action_type"] == "done"
         assert lines[3]["type"] == "result"
+
+    def test_machine_output_carries_the_capacity_fields(self, capsys):
+        # Both surfaces mirror the dataclasses via asdict: nothing in the CLI
+        # had to change for the new fields to reach scripts.
+        from qirabot.cli import main as cli_main
+        from qirabot.client import StepResult
+
+        steps = [StepResult(step=1, action_type="done", finished=True,
+                            timeout_wait_ms=120_000, model_ms=3_000,
+                            model="gemini-3.5-flash", tier="priority")]
+        bot = self._bot(ai=self._run_result(True, "ok", "completed"), steps=steps)
+        cli_main._run_local(bot, object(), "task", max_steps=5, output_format="stream-json")
+
+        lines = self._lines(capsys)
+        step, result = lines[1], lines[-1]
+        assert (step["timeout_wait_ms"], step["model_ms"]) == (120_000, 3_000)
+        assert (step["model"], step["tier"]) == ("gemini-3.5-flash", "priority")
+        assert {
+            "model_ms", "rate_limit_wait_ms", "outage_wait_ms", "timeout_wait_ms",
+        } <= result["usage"].keys()
+        # Removed in 3.5.0 from both surfaces.
+        assert "llm_decision_duration_ms" not in step
+        assert "llm_decision_duration_ms" not in result["usage"]
 
     def test_text_mode_is_unchanged(self, capsys):
         from qirabot.cli import main as cli_main

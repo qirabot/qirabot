@@ -319,7 +319,9 @@ change will help. Swap the header for `flex` to check that tier.
 
 The run report gives the tier its own header row next to the model. When
 the two differ it says so in words — `priority — served as standard, and
-billed at that rate` — and an unconfigured run gets no row at all.
+billed at that rate`. A standard run (the default) gets a row only when some
+calls were served at another tier, such as `standard — some calls served as
+priority, and billed at that rate` after an escalation.
 
 A downgrade is **not** a failure and does not trigger `tier_escalation`: the
 call succeeded, at standard price. Escalation reacts to capacity *failures*

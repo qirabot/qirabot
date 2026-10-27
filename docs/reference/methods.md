@@ -129,7 +129,38 @@ included too; `ai_steps` counts successful calls only.
 | `cache_read_tokens` / `cache_write_tokens` | `int` | Prompt tokens served from Gemini's implicit cache, excluded from `input_tokens`. The engine never calls the explicit `cachedContent` API, so `cache_write_tokens` is always `0` and cache reads depend entirely on whether Google's implicit cache happens to hit — in practice, often not |
 | `output_tokens` / `thinking_tokens` | `int` | Gemini reports thinking separately and `output_tokens` already includes it, so a call's spend is `input_tokens + output_tokens` — never add `thinking_tokens` again |
 | `total_tokens` | `int` | `input + cache read/write + output` (thinking not added again) |
-| `step_duration_ms` / `llm_decision_duration_ms` | `int` | Accumulated timing |
+| `step_duration_ms` | `int` | Wall-clock time of every `ai()` step (failed ones included) and every single-step AI call, each from its screenshot to the end of its action and settle pause |
+| `model_ms` | `int` | Summed round-trip time of answered (HTTP 200) model requests. Includes request upload and response download, so it is not pure inference time |
+| `rate_limit_wait_ms` | `int` | Time lost to rate limits (429): backoff sleeps plus the time the 429 requests themselves took |
+| `outage_wait_ms` | `int` | Time lost to outages (5xx, connection failures): backoff sleeps plus the time the failed requests themselves took |
+| `timeout_wait_ms` | `int` | Time spent in requests that ended in a timeout (client read timeout, or HTTP 408/504). These are never retried by the transport, so there is no backoff in it |
+
+The five time fields cover the same calls, so
+`step_duration_ms - model_ms - rate_limit_wait_ms - outage_wait_ms - timeout_wait_ms`
+is the device side (screenshot, action, settle, custom tools) plus a little
+local overhead. Deterministic failures (400/401/403, an unparsable
+response) count in none of the four model buckets.
+
+The totals span the whole client. For one run, subtract two snapshots
+taken around it, the second in a `finally` block so a run that raises is
+still counted:
+
+```python
+steps = []
+before = bot.usage
+try:
+    result = bot.ai(page, "...", on_step=steps.append)
+finally:
+    run = bot.usage
+    run_ms = run.step_duration_ms - before.step_duration_ms
+    run_waits = run.rate_limit_wait_ms - before.rate_limit_wait_ms
+```
+
+A step that fails ends the run with an exception and produces no
+[`StepResult`](#stepresult). Its time and waits are the run's totals minus
+the sum of the committed steps received through `on_step`. The CLI's
+`--output-format json` result carries the same `usage` block, so the same
+subtraction works there.
 
 The CLI prints this summary after every task, and the HTML report header
 shows the same totals.
@@ -215,7 +246,9 @@ ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
 The autonomous loop: screenshot → decide → act, until done, `max_steps`, or
 `max_duration` (seconds of wall clock, checked before each step; `None` = no
 cap; see [Configuration](/advanced/configuration#how-long-a-run-can-take)).
-`on_step` is called with a [`StepResult`](#stepresult) after each step.
+`on_step` is called with a [`StepResult`](#stepresult) after each step's
+action and settle pause have finished (for the final `done` step, right
+after the decision).
 `custom_tools` registers your Python functions as callable tools;
 `exclude_tools` removes built-ins by action name; both are detailed in
 [AI Tasks & Custom Tools](/advanced/ai-tasks). `knowledge` mounts domain
@@ -382,7 +415,17 @@ One entry per `ai()` step; also what `on_step` receives.
 | `finished` | `bool` | `True` on the final step |
 | `decision` | `str` | The model's reasoning for this step |
 | `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | Token usage for this step |
-| `step_duration_ms` / `llm_decision_duration_ms` | `int` | Wall-clock timings |
+| `step_duration_ms` | `int` | Wall-clock time of the step: from its screenshot, through the model call, to the end of its action and settle pause. The final `done` step has no action and ends with the decision |
+| `model_ms` / `rate_limit_wait_ms` / `outage_wait_ms` / `timeout_wait_ms` | `int` | This step's model time and time lost to rate limits, outages and timeouts, as on [`usage`](#usage) |
+| `model` | `str` | The model that produced this step's decision; the fallback model's name once the run has switched to it |
+| `tier` | `str` | The consumption tier that served this step: `"standard"`, `"flex"` or `"priority"`, or `""` when the endpoint reported none. `"priority"` on a flex/standard run means tier escalation kicked in |
+
+The model time and wait fields cover this step's model requests, including
+timeout re-asks, tier escalation and fallback, so
+`step_duration_ms - model_ms - waits` is the device side of the step.
+Only committed steps produce a `StepResult`. A step that fails ends the run
+with an exception; its time and waits are only in [`bot.usage`](#usage)
+(see there for how to isolate them).
 
 ### ExtractResult
 

@@ -26,6 +26,18 @@ def default_done_response():
     }
 
 
+def _served_from(d):
+    """model / tier / ledger slice a scripted result carries (keys
+    ``model``, ``tier``, ``stats``), as the real outcomes report them."""
+    from qirabot.engine.providers.stats import StatsSnapshot
+
+    return {
+        "model": d.get("model", ""),
+        "tier": d.get("tier", ""),
+        "stats": d.get("stats") or StatsSnapshot(),
+    }
+
+
 def _usage_from(d):
     from qirabot.engine.types import TokenUsage
 
@@ -79,9 +91,10 @@ class _FakeRun:
             output=d.get("output", ""),
             finished=d.get("finished", False),
             step_number=self._steps,
+            model_used=d.get("model", ""),
+            tier=d.get("tier", ""),
+            stats=_served_from(d)["stats"],
             token_usage=_usage_from(d),
-            llm_decision_ms=d.get("llmDecisionDurationMs", 0),
-            step_duration_ms=d.get("stepDurationMs", 0),
         )
 
 
@@ -102,14 +115,24 @@ class FakeBackend:
 
     model_label = "fake/fake-model"
     tier_label = ""
+    # Where a failed call's spend is filed (LocalBackend.current_model).
+    current_model = "fake-model"
 
     def __init__(self, *args, **kwargs):
+        from qirabot.engine.providers.stats import StatsSnapshot
+
         self.init_args = args
         self.init_kwargs = kwargs
         self.start_calls = []
         self.requests = []
         self.results = []
         self.closed = False
+        # What stats_snapshot() returns (LocalBackend reads its provider
+        # ledger); set it to script capacity numbers.
+        self.provider_stats = StatsSnapshot()
+
+    def stats_snapshot(self):
+        return self.provider_stats
 
     def _next(self):
         if self.results:
@@ -167,6 +190,7 @@ class FakeBackend:
                 found=False,
                 error=d.get("error", "element not found"),
                 token_usage=_usage_from(d),
+                **{**_served_from(d), "model": d.get("model", self.current_model)},
             )
         p = d.get("params") or {}
         return LocateOutcome(
@@ -174,6 +198,7 @@ class FakeBackend:
             x=int(p.get("x", 0)),
             y=int(p.get("y", 0)),
             token_usage=_usage_from(d),
+            **_served_from(d),
         )
 
     def extract(self, screenshot, instruction, *, platform="", language="", thinking_level=""):
@@ -193,7 +218,9 @@ class FakeBackend:
         d = self._next()
         if d.get("success", True) is False:
             raise ValueError(d.get("error", "extract failed"))
-        return ExtractOutcome(result=d.get("output", ""), token_usage=_usage_from(d))
+        return ExtractOutcome(
+            result=d.get("output", ""), token_usage=_usage_from(d), **_served_from(d)
+        )
 
     def check_condition(
         self, screenshot, condition, *, platform="", language="", thinking_level=""
@@ -218,6 +245,7 @@ class FakeBackend:
             met=d.get("finished", False),
             reasoning=d.get("output", ""),
             token_usage=_usage_from(d),
+            **_served_from(d),
         )
 
     def close(self):

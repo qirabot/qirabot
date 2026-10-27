@@ -240,20 +240,22 @@ class TierLadder:
 def tier_label(configured: str, served: tuple[str, ...]) -> str:
     """Run-report text naming the tier that was billed.
 
-    Empty for an unconfigured run: standard is the default, and saying so on
-    every report is noise. When the tier asked for is not the one that ran,
-    the served side is spelled out rather than abbreviated — it is the side
-    that set the rate, and a reader should not have to decode it.
+    Never empty: the tier sets the price, so the report always names it. A
+    run that asked for nothing and got standard reads ``standard — default``.
+    When the tier asked for is not the one that ran, the served side is
+    spelled out rather than abbreviated — it is the side that set the rate,
+    and a reader should not have to decode it. That includes an unconfigured
+    run that escalation moved to priority: it asked for standard, and the
+    bill says otherwise.
     """
-    if not configured:
-        return ""
-    others = [t for t in dict.fromkeys(served) if t != configured]
+    asked = configured or STANDARD
+    others = [t for t in dict.fromkeys(served) if t != asked]
     if not others:
-        return configured
+        return configured or f"{STANDARD} — default"
     names = ", ".join(others)
-    if configured in served:
-        return f"{configured} — some calls served as {names}, and billed at that rate"
-    return f"{configured} — served as {names}, and billed at that rate"
+    if asked in served:
+        return f"{asked} — some calls served as {names}, and billed at that rate"
+    return f"{asked} — served as {names}, and billed at that rate"
 
 
 class TierCheck:

@@ -27,11 +27,44 @@ qira_runs/2026-06-07/192335-3f9ab2c1/
   recording.mp4        # if recording was on — embedded in the report
 ```
 
-Each `ai()` task gets an outcome badge matching `result.status`: green
-`PASS`, red `FAIL` / `ERROR`, amber `MAX STEPS` for step-budget truncations.
+### What the report shows
+
+**Header.** The title is `task_name` when you set one, else the first line
+of the only task's instruction, else "N tasks". A long or multi-line
+instruction is clamped to two lines with a "Full instruction" toggle. Below
+it: run time, platform and screen size, and the run ID. Then three panels:
+
+- **Outcome**: green when every `ai()` task passed, red when any failed,
+  amber when the only problem is truncation (`MAX STEPS` /
+  `MAX DURATION`) or cancellation; plus the pass tally and step count.
+- **Time**: total time in AI steps, split into model time, device time
+  (screenshot, action, settle, custom tools) and the time lost to capacity
+  (rate limits, outages, timeouts); the same numbers as `bot.usage`.
+- **Model & tokens**: the model (and fallback), the tier (and escalation),
+  and the token total. Click the total for a table by model × tier: AI
+  calls, prompt, cached, response, thinking and total. Failed calls are
+  included; when no response named a tier, the tier shows `—`. The table
+  prints expanded.
+
+**Task overview.** With two or more `ai()` tasks, one row per task: its
+badge, instruction, step count, time and time breakdown. Click a row to jump
+to the task.
+
+**Steps.** One table per task (headed "Steps" for a single task, "Task N"
+otherwise), with manual steps grouped where they ran. Each `ai()` task's
+badge matches `result.status`; a failure reason shows above the table.
+Columns: `# / Time / Action / Detail / Model / Duration / Waits /
+Screenshot`. Model is muted for the run's primary model, and a tier pill
+appears when a call was served at another tier. Duration carries a small
+model / device / wait bar, and a step that waited on capacity has its waits
+tagged and the row tinted. Manual (non-AI) steps show `—` in those three
+columns.
+
 `screenshot_annotate=True` (default) draws a red crosshair at the resolved
-click/type coordinates. `bot.report("path.html")` writes an extra copy on
-demand; `bot.screenshot(target)` grabs a one-off frame.
+click/type coordinates. Click a thumbnail to page through every screenshot;
+with a recording, the time column seeks the video. `bot.report("path.html")`
+writes an extra copy on demand; `bot.screenshot(target)` grabs a one-off
+frame.
 
 ## Host screen recording
 

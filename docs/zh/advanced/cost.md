@@ -134,5 +134,32 @@ print(u.ai_steps, u.input_tokens, u.output_tokens, u.total_tokens)
 `--output-format json` 的 `usage` 对象里。调优时想看逐次调用的明细,用
 `QIRA_ENGINE_TRACE=<dir>` 可为每次模型调用写一条 JSONL 记录。
 
+### 耗时与容量
+
+同一份快照还说明了时间花在哪里。`step_duration_ms` 是 AI 调用的墙钟时间,
+包括设备侧的操作。`model_ms` 是得到应答的模型请求的往返耗时(含上传和下载)。
+因容量损失的时间分三类:`rate_limit_wait_ms`(429)和 `outage_wait_ms`
+(5xx 与连接失败)都包括退避等待和失败请求本身的耗时;`timeout_wait_ms` 是
+以超时告终的请求的耗时。五个字段覆盖同一批调用,所以 `step_duration_ms`
+减去另外四项就是设备侧的耗时。
+
+```python
+before = bot.usage
+try:
+    bot.ai(page, "…")
+finally:
+    run = bot.usage    # 在这里读:失败的那一步不会生成 StepResult
+    print(run.model_ms - before.model_ms,
+          run.rate_limit_wait_ms - before.rate_limit_wait_ms,
+          run.outage_wait_ms - before.outage_wait_ms,
+          run.timeout_wait_ms - before.timeout_wait_ms)
+```
+
+计费跟随实际服务的档位。每个 `StepResult` 都带有服务它的 `tier`
+(`"standard"` / `"flex"` / `"priority"`)和应答的 `model`:升档的运行会出现
+`"priority"` 的步骤,切到兜底的运行会出现兜底模型名。
+旧版 qirabot 没有这些字段,需要同时兼容时用
+`getattr(bot.usage, "model_ms", None)` 读取。
+
 另见:[配置](/zh/advanced/configuration)(全部配置项及其环境变量) ·
 [AI 任务与自定义工具](/zh/advanced/ai-tasks)

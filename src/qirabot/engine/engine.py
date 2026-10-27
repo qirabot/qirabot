@@ -166,6 +166,7 @@ class LocalEngine:
             duration_ms=duration_ms,
             model_used=resp.model_used,
             raw_response=resp.content,
+            served_tier=resp.served_tier,
         )
 
     def extract(self, input: ExtractInput) -> ExtractResult:
@@ -238,6 +239,7 @@ class LocalEngine:
             token_usage=resp.token_usage,
             duration_ms=int((time.monotonic() - start) * 1000),
             model_used=resp.model_used,
+            served_tier=resp.served_tier,
         )
 
     def check_condition(self, input: ConditionInput) -> ConditionResult:
@@ -315,6 +317,7 @@ class LocalEngine:
             token_usage=resp.token_usage,
             duration_ms=int((time.monotonic() - start) * 1000),
             model_used=resp.model_used,
+            served_tier=resp.served_tier,
         )
 
     def locate(self, input: LocateInput) -> LocateResult:
@@ -363,6 +366,7 @@ class LocalEngine:
             token_usage=resp.token_usage,
             duration_ms=int((time.monotonic() - start) * 1000),
             model_used=resp.model_used,
+            served_tier=resp.served_tier,
         )
 
         if not resp.tool_calls:

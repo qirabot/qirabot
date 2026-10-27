@@ -25,6 +25,7 @@ from .providers.fallback import FallbackProvider
 from .providers.service_tier import tier_label
 from .providers.gemini_api import GeminiApiProvider
 from .providers.gemini_vertex import GeminiVertexProvider
+from .providers.stats import ProviderStats, StatsSnapshot
 from .providers.registry import (
     PROVIDER_GEMINI,
     PROVIDER_GEMINI_VERTEX,
@@ -71,8 +72,12 @@ class LocateOutcome:
     y: int = 0
     error: str = ""
     token_usage: TokenUsage = field(default_factory=TokenUsage)
-    llm_ms: int = 0
     coord_ms: int = 0
+    # Model that answered and tier that served it ("" when unknown or no
+    # answer), and this call's slice of the provider ledger.
+    model: str = ""
+    tier: str = ""
+    stats: StatsSnapshot = field(default_factory=StatsSnapshot)
 
 
 @dataclass
@@ -81,7 +86,9 @@ class ExtractOutcome:
 
     result: str
     token_usage: TokenUsage = field(default_factory=TokenUsage)
-    llm_ms: int = 0
+    model: str = ""  # as on LocateOutcome
+    tier: str = ""
+    stats: StatsSnapshot = field(default_factory=StatsSnapshot)
 
 
 @dataclass
@@ -93,7 +100,9 @@ class ConditionOutcome:
     met: bool
     reasoning: str = ""
     token_usage: TokenUsage = field(default_factory=TokenUsage)
-    llm_ms: int = 0
+    model: str = ""  # as on LocateOutcome
+    tier: str = ""
+    stats: StatsSnapshot = field(default_factory=StatsSnapshot)
 
 
 def _tier_suffix(tier: str, escalate: bool) -> str:
@@ -149,6 +158,7 @@ class AIRun:
         }
         if is_first_step:
             trace_req["instruction"] = sess.instruction
+        before = self._backend.stats_snapshot()
         try:
             outcome = sess.step(
                 self._backend._engine,
@@ -161,6 +171,10 @@ class AIRun:
         except (StepError, ProviderError) as exc:
             self._backend._trace.record("ai", screenshot, trace_req, {"error": str(exc)})
             raise
+        # Every request this step sent — timeout re-asks, escalated and
+        # fallback attempts included. A failed step never gets here; its
+        # time stays visible in the session totals, read off the ledger.
+        outcome.stats = self._backend.stats_snapshot() - before
         if not outcome.finished:
             # History replay needs one screenshot per committed step (save_note
             # steps re-send the previous frame; the duplicate keeps alignment).
@@ -321,13 +335,35 @@ class LocalBackend:
         return label
 
     @property
+    def current_model(self) -> str:
+        """The model the next call goes to: the fallback once this run has
+        switched to it, else the primary. Used to attribute the spend of a
+        failed call, which carries no answering model of its own."""
+        fb = self._fallback
+        if fb is not None and fb.active:
+            return fb.fallback_model
+        return self._spec.model
+
+    @property
     def tier_label(self) -> str:
         """Which consumption tier the run was billed at, for the report.
 
-        Empty unless a tier was configured. An injected provider need not
-        report what it served, so the served side is optional."""
+        Always names a tier (``standard — default`` when none was configured
+        and standard was served); an unconfigured run that escalation moved
+        to priority says so. An injected provider need not report what it
+        served, so the served side is optional."""
         served = getattr(self._provider, "served_tiers", ())
         return tier_label(self._tier, tuple(served))
+
+    def stats_snapshot(self) -> StatsSnapshot:
+        """Model time and capacity waits across every provider call this
+        backend has made (see providers.stats).
+
+        Read off the raw provider, which serves the primary and the fallback
+        model alike. An injected provider need not keep a ledger; it reads
+        as zeros, the same way tier_label treats served_tiers."""
+        stats = getattr(self._provider, "stats", None)
+        return stats.snapshot() if isinstance(stats, ProviderStats) else StatsSnapshot()
 
     def close(self) -> None:
         if self._http is not None:
@@ -427,10 +463,18 @@ class LocalBackend:
         not-found outcome carrying the real spend."""
         if not isinstance(locate, str) or not locate:
             raise ValueError("locate parameter required")
+        before = self.stats_snapshot()
+        outcome = self._locate(screenshot, locate, language=language, thinking_level=thinking_level)
+        outcome.stats = self.stats_snapshot() - before
+        return outcome
 
+    def _locate(
+        self, screenshot: bytes, locate: str, *, language: str, thinking_level: str
+    ) -> LocateOutcome:
+        """The body of :meth:`locate`, which takes its ledger slice."""
         start = time.monotonic()
+        answered: LocateResult | None = None
         usage = TokenUsage()
-        llm_ms = 0
         result: LocateResult | None = None
         error: Exception | None = None
 
@@ -470,21 +514,26 @@ class LocalBackend:
                 # Accumulate across attempts: a failed first attempt's spend
                 # is just as real as the successful second one.
                 usage.add(partial.token_usage)
-                llm_ms += partial.duration_ms
+                answered = partial
             if error is None:
                 break
             if attempt == 1:
                 logger.warning("vlm locate failed; retrying once: %s", error)
 
         coord_ms = int((time.monotonic() - start) * 1000)
+        # The last response that came back names the model and tier; with no
+        # response at all the spend (if any) goes to the current model.
+        model = answered.model_used if answered else self.current_model
+        tier = answered.served_tier if answered else ""
 
         if error is not None:
             outcome = LocateOutcome(
                 found=False,
                 error=str(error),
                 token_usage=usage,
-                llm_ms=llm_ms,
                 coord_ms=coord_ms,
+                model=model,
+                tier=tier,
             )
         else:
             assert result is not None
@@ -494,16 +543,18 @@ class LocalBackend:
                     x=result.x,
                     y=result.y,
                     token_usage=usage,
-                    llm_ms=llm_ms,
                     coord_ms=coord_ms,
+                    model=model,
+                    tier=tier,
                 )
             else:
                 outcome = LocateOutcome(
                     found=False,
                     error=result.not_found_reason or f"element not found: {locate}",
                     token_usage=usage,
-                    llm_ms=llm_ms,
                     coord_ms=coord_ms,
+                    model=model,
+                    tier=tier,
                 )
         return self._locate_done(screenshot, locate, outcome)
 
@@ -538,6 +589,7 @@ class LocalBackend:
         metered."""
         if not isinstance(instruction, str) or not instruction:
             raise ValueError("extract requires instruction parameter")
+        before = self.stats_snapshot()
         try:
             result = self._engine.extract(
                 ExtractInput(
@@ -562,7 +614,9 @@ class LocalBackend:
         return ExtractOutcome(
             result=result.result,
             token_usage=result.token_usage,
-            llm_ms=result.duration_ms,
+            model=result.model_used,
+            tier=result.served_tier,
+            stats=self.stats_snapshot() - before,
         )
 
     def check_condition(
@@ -577,6 +631,7 @@ class LocalBackend:
         """One assert/wait_for check. Raises like :meth:`extract`."""
         if not isinstance(condition, str) or not condition:
             raise ValueError("condition/assertion parameter required")
+        before = self.stats_snapshot()
         try:
             result = self._engine.check_condition(
                 ConditionInput(
@@ -606,7 +661,9 @@ class LocalBackend:
             met=result.met,
             reasoning=result.reasoning,
             token_usage=result.token_usage,
-            llm_ms=result.duration_ms,
+            model=result.model_used,
+            tier=result.served_tier,
+            stats=self.stats_snapshot() - before,
         )
 
 

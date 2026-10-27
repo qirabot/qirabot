@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import time
 import uuid
 from typing import Any, Callable
 
@@ -34,6 +35,7 @@ from .base import (
     map_finish_reason,
 )
 from .retry import with_retry
+from .stats import ProviderStats
 
 logger = logging.getLogger("qirabot.engine")
 
@@ -67,6 +69,7 @@ def post_json(
     provider: str,
     timeout: float,
     on_headers: Callable[[httpx.Headers], None] | None = None,
+    stats: ProviderStats | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """A ``post(body) -> response dict`` callable for :func:`run_chat`.
 
@@ -74,10 +77,11 @@ def post_json(
     ``headers`` may be a dict or a zero-arg callable — Vertex bearer tokens
     refresh per request, API keys are static. ``on_headers`` sees the response
     headers of every successful call, for metadata the body does not carry.
+    ``stats`` times every request and books it under its outcome (see
+    :mod:`.stats`) — failures included, before they propagate.
     """
 
-    def post(body: dict[str, Any]) -> dict[str, Any]:
-        hdrs = headers() if callable(headers) else headers
+    def send(body: dict[str, Any], hdrs: dict[str, str]) -> dict[str, Any]:
         try:
             # Only reading waits for the model. Giving the connect phase the
             # same budget would make an unreachable endpoint take minutes to
@@ -110,6 +114,22 @@ def post_json(
             raise ProviderError(provider, "non-object response body")
         return data
 
+    def post(body: dict[str, Any]) -> dict[str, Any]:
+        hdrs = headers() if callable(headers) else headers
+        if stats is None:
+            return send(body, hdrs)
+        # Timed from here: fetching a token is local overhead, not time the
+        # model or the endpoint's capacity cost. Other transport errors
+        # (connect, reset) escape send() unclassified, hence the broad catch.
+        start = time.monotonic()
+        try:
+            data = send(body, hdrs)
+        except Exception as exc:
+            stats.record_failure(exc, time.monotonic() - start)
+            raise
+        stats.record_ok(time.monotonic() - start)
+        return data
+
     return post
 
 
@@ -120,6 +140,7 @@ def run_chat(
     service_tier: str = "",
     wait_out_quota: bool = True,
     ride_out_outage: bool = True,
+    on_wait: Callable[[str, float], None] | None = None,
 ) -> tuple[dict[str, Any], bool]:
     """Build the body and POST it (post: callable(body) -> response dict),
     falling back once when the endpoint rejects per-part mediaResolution
@@ -129,7 +150,8 @@ def run_chat(
     so at most one request is ever wasted on the probe.
 
     ``wait_out_quota`` / ``ride_out_outage`` decide whether a rate limit /
-    an outage gets its own longer schedule (see with_retry)."""
+    an outage gets its own longer schedule (see with_retry). ``on_wait``
+    hears about every backoff, on both the first send and the fallback."""
     body = build_request_body(
         request,
         part_media_resolution=part_media_resolution,
@@ -141,6 +163,7 @@ def run_chat(
                 lambda: post(body),
                 wait_out_quota=wait_out_quota,
                 ride_out_outage=ride_out_outage,
+                on_wait=on_wait,
             ),
             part_media_resolution,
         )
@@ -162,6 +185,7 @@ def run_chat(
                 lambda: post(fallback),
                 wait_out_quota=wait_out_quota,
                 ride_out_outage=ride_out_outage,
+                on_wait=on_wait,
             ),
             False,
         )

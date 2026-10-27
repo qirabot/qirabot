@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 import weakref
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 
@@ -27,6 +27,7 @@ from qirabot._tools import build_tool_defs
 from qirabot.engine.local_backend import LocalBackend
 from qirabot.engine.providers.base import ProviderError
 from qirabot.engine.providers.registry import resolve_default_model
+from qirabot.engine.providers.stats import StatsSnapshot
 from qirabot.engine.session import StepError, StepOutcome
 from qirabot.engine.types import TokenUsage
 from qirabot.recording import RecordConfig, RecordingManager
@@ -79,7 +80,25 @@ def _suppress_sigint() -> Iterator[None]:
 
 @dataclass
 class StepResult:
-    """Result of a single step in bot.ai()."""
+    """Result of a single step in bot.ai().
+
+    ``step_duration_ms`` is the step's wall clock: from its screenshot,
+    through the model call, to the end of its action and settle pause (the
+    final ``done`` step, which has no action, ends with the decision).
+    ``model_ms`` and the three ``*_wait_ms`` fields mean what they do on
+    :class:`SessionUsage`, counted over this step's model requests —
+    timeout re-asks, escalated and fallback attempts included — so
+    ``step_duration_ms - model_ms - waits`` is the device side (screenshot,
+    action, settle, custom tool) plus a little local overhead.
+
+    ``model`` is the model that produced the committed decision (the
+    fallback model's name once a run has switched to it); ``tier`` is the
+    consumption tier that served it — ``"standard"``, ``"flex"`` or
+    ``"priority"``, or ``""`` when the endpoint reported none.
+
+    Only committed steps produce a StepResult. A step that fails ends the
+    run with an exception; its time and waits are in :attr:`Qirabot.usage`.
+    """
 
     step: int
     action_type: str
@@ -93,10 +112,17 @@ class StepResult:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     step_duration_ms: int = 0
-    llm_decision_duration_ms: int = 0
+    model_ms: int = 0
+    rate_limit_wait_ms: int = 0
+    outage_wait_ms: int = 0
+    timeout_wait_ms: int = 0
+    model: str = ""
+    tier: str = ""
 
     @classmethod
-    def from_outcome(cls, outcome: StepOutcome, step: int) -> StepResult:
+    def from_outcome(
+        cls, outcome: StepOutcome, step: int, step_duration_ms: int = 0
+    ) -> StepResult:
         u = outcome.token_usage
         return cls(
             step=step,
@@ -110,8 +136,10 @@ class StepResult:
             thinking_tokens=u.thinking_tokens,
             cache_read_tokens=u.cache_read_tokens,
             cache_write_tokens=u.cache_write_tokens,
-            step_duration_ms=outcome.step_duration_ms,
-            llm_decision_duration_ms=outcome.llm_decision_ms,
+            step_duration_ms=step_duration_ms,
+            model=outcome.model_used,
+            tier=outcome.tier,
+            **asdict(outcome.stats),
         )
 
 
@@ -217,6 +245,12 @@ class _SingleAction:
     output: str = ""
     finished: bool = False
     usage: TokenUsage = field(default_factory=TokenUsage)
+    # For the report: who answered, at what tier, the call's ledger slice,
+    # and the log entry to annotate once the call (and its action) is over.
+    model: str = ""
+    tier: str = ""
+    stats: StatsSnapshot = field(default_factory=StatsSnapshot)
+    entry: dict[str, Any] | None = None
 
 
 @dataclass
@@ -274,6 +308,24 @@ class SessionUsage:
     includes ``thinking_tokens`` (Anthropic semantics; the Gemini provider
     normalizes to match), so :attr:`total_tokens` is
     input + cache read/write + output — thinking is not added again.
+
+    Time: ``step_duration_ms`` is the wall clock of every ai() step (failed
+    ones included) and every single-step AI call, each from its screenshot
+    to the end of its action and settle. ``model_ms`` is the summed
+    round-trip time of answered model requests — request upload and
+    response download included, so not pure inference time.
+    ``rate_limit_wait_ms`` / ``outage_wait_ms`` are the time lost to 429s
+    and to 5xx or unreachable endpoints: backoff sleeps plus the failed
+    requests themselves. ``timeout_wait_ms`` is the time spent in requests
+    that timed out (408/504 included); the transport never retries those,
+    so there is no backoff in it. All five cover the same calls, so
+    ``step_duration_ms - model_ms - waits`` is the device side (screenshot,
+    action, settle, custom tools) plus a little local overhead.
+
+    The totals span the whole client, not one ai() call: subtract two
+    snapshots taken around the call (the second in a ``finally``) for one
+    run. A run that ends in an exception has no StepResult for its failed
+    step; that step is the run's total minus its committed steps.
     """
 
     ai_steps: int = 0
@@ -283,7 +335,10 @@ class SessionUsage:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     step_duration_ms: int = 0
-    llm_decision_duration_ms: int = 0
+    model_ms: int = 0
+    rate_limit_wait_ms: int = 0
+    outage_wait_ms: int = 0
+    timeout_wait_ms: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -397,6 +452,9 @@ class Qirabot:
         self._thinking_level = thinking_level
         self._language = language
         self._task_name = task_name
+        # Set while a _ledger_window is open, so nested AI calls (a custom
+        # tool calling bot.click inside ai()) are not folded in twice.
+        self._ledger_open = False
         self._closed = False
         # On-screen progress window (capture-excluded, click-through); a no-op
         # on unsupported platforms, so gating here is on intent alone.
@@ -515,13 +573,14 @@ class Qirabot:
 
     @property
     def usage(self) -> SessionUsage:
-        """Session-wide AI usage totals so far (tokens, AI steps, timing).
+        """Session-wide AI usage totals so far (tokens, AI steps, timing,
+        capacity waits).
 
         Covers every AI call on this client — ai() steps, AI-located actions
         (click()/type_text()/…) and standalone verify()/extract()/locate() —
         including the spend of failed calls and cancelled runs. Returns a
         frozen snapshot; read again for updated totals. See
-        :class:`SessionUsage` for the token-counting semantics.
+        :class:`SessionUsage` for the token-counting and timing semantics.
         """
         stats = self._timeline.stats
         return SessionUsage(
@@ -532,7 +591,9 @@ class Qirabot:
             cache_read_tokens=stats["cache_read_tokens"],
             cache_write_tokens=stats["cache_write_tokens"],
             step_duration_ms=stats["step_duration_ms"],
-            llm_decision_duration_ms=stats["llm_decision_duration_ms"],
+            # Read live off the provider ledger, which also saw the calls
+            # that failed before the client could fold anything in.
+            **asdict(self._backend.stats_snapshot()),
         )
 
     def bind(self, target: Any) -> _BoundQirabot:
@@ -1173,18 +1234,19 @@ class Qirabot:
         self._timeline.begin_section(instruction)
         self._overlay_begin(instruction, target)
         try:
-            result = self._ai_loop(
-                target,
-                instruction,
-                max_steps,
-                on_step=on_step,
-                thinking_level=thinking_level,
-                language=language,
-                custom_tools=custom_tools,
-                exclude_tools=exclude_tools,
-                knowledge=knowledge,
-                max_duration=max_duration,
-            )
+            with self._ledger_window():
+                result = self._ai_loop(
+                    target,
+                    instruction,
+                    max_steps,
+                    on_step=on_step,
+                    thinking_level=thinking_level,
+                    language=language,
+                    custom_tools=custom_tools,
+                    exclude_tools=exclude_tools,
+                    knowledge=knowledge,
+                    max_duration=max_duration,
+                )
             self._timeline.record_outcome(result.status)
             self._overlay_finish(result.success, result.output or result.status)
             return result
@@ -1290,6 +1352,11 @@ class Qirabot:
                     status="max_duration",
                     notes=run.notes,
                 )
+            # The step's wall clock starts here and runs through its action
+            # and settle: screenshot, decide, record, act. A failed step
+            # still adds what it spent to the session totals.
+            step_start = time.monotonic()
+
             # After save_note the device hasn't moved: reuse the previous
             # frame instead of capturing again (the engine still needs the
             # bytes — history replay keeps one screenshot per step).
@@ -1300,6 +1367,9 @@ class Qirabot:
                 screenshot_bytes = last_screenshot
             last_screenshot = screenshot_bytes
             device_info = adapter.device_info()
+            self._timeline.note_device(
+                device_info.platform, device_info.width, device_info.height
+            )
 
             try:
                 outcome = run.step(
@@ -1310,10 +1380,12 @@ class Qirabot:
                 )
             except StepError as e:
                 # The failed step's decide attempts are real spend — keep the
-                # tokens, but no step: none committed.
-                self._timeline.add_tokens(e.usage)
+                # tokens and the time, but no step: none committed.
+                self._timeline.add_tokens(e.usage, self._current_model(), "")
+                self._timeline.add_time(_ms_since(step_start))
                 raise ActionError(str(e)) from e
             except ProviderError as e:
+                self._timeline.add_time(_ms_since(step_start))
                 raise ActionError(str(e)) from e
 
             action_type = outcome.action_type
@@ -1360,18 +1432,19 @@ class Qirabot:
 
             step_result = StepResult.from_outcome(outcome, step_num)
             steps.append(step_result)
+            self._timeline.add_step_usage(outcome.token_usage, outcome.model_used, outcome.tier)
 
-            self._timeline.add_step_usage(
-                outcome.token_usage,
-                step_ms=outcome.step_duration_ms,
-                llm_ms=outcome.llm_decision_ms,
-            )
-
+            # The overlay announces what is about to happen, so it updates
+            # before the action; on_step reports what happened, so it waits
+            # for the action and settle and gets the step's full time.
             self._overlay_step(step_result, max_steps)
-            if on_step:
-                on_step(step_result)
 
             if finished:
+                step_result.step_duration_ms = _ms_since(step_start)
+                self._timeline.add_time(step_result.step_duration_ms)
+                self._annotate_entry(entry, step_result)
+                if on_step:
+                    on_step(step_result)
                 output = outcome.output
                 # The done action carries the model's own success flag: false
                 # means it concluded the goal is unreachable (login wall,
@@ -1439,6 +1512,12 @@ class Qirabot:
                         entry["output"] = (
                             f"{entry['output']}\n{err}" if entry["output"] else err
                         )
+
+            step_result.step_duration_ms = _ms_since(step_start)
+            self._timeline.add_time(step_result.step_duration_ms)
+            self._annotate_entry(entry, step_result)
+            if on_step:
+                on_step(step_result)
 
             last_was_save_note = action_type == "save_note"
 
@@ -1814,11 +1893,43 @@ class Qirabot:
         Every one-shot AI call funnels through here — AI-located actions
         (click/type_text/…), verify/extract/locate — so this is the one
         place their usage reaches the session totals. Failed calls (each
-        retry attempt lands here again) keep their tokens, just not a step.
+        retry attempt lands here again) keep their tokens and their time,
+        just not a step. The time runs from the screenshot to the end of the
+        action and its settle, whichever way the attempt ends.
         """
+        start = time.monotonic()
+        result: _SingleAction | None = None
+        with self._ledger_window():
+            try:
+                result = self._ai_action_attempt(
+                    target,
+                    action,
+                    thinking_level=thinking_level,
+                    language=language,
+                    execute_result=execute_result,
+                )
+                return result
+            finally:
+                ms = _ms_since(start)
+                self._timeline.add_time(ms)
+                if result is not None:
+                    self._timeline.annotate(
+                        result.entry, ms, result.stats, result.model, result.tier
+                    )
+
+    def _ai_action_attempt(
+        self,
+        target: Any,
+        action: dict[str, Any],
+        thinking_level: str = "",
+        language: str = "",
+        execute_result: bool = True,
+    ) -> _SingleAction:
+        """The body of :meth:`_ai_action_once`, which times it."""
         adapter = self._get_adapter(target)
         screenshot_bytes = adapter.screenshot(self._screenshot_config)
         device_info = adapter.device_info()
+        self._timeline.note_device(device_info.platform, device_info.width, device_info.height)
         tl = thinking_level or self._thinking_level
         lang = language or self._language
         action_type = str(action.get("type") or "")
@@ -1837,13 +1948,18 @@ class Qirabot:
                 raise ActionError(f"AI extract failed: {e}") from e
             except ProviderError as e:
                 raise ActionError(str(e)) from e
-            self._timeline.add_step_usage(extracted.token_usage, llm_ms=extracted.llm_ms)
+            self._timeline.add_step_usage(
+                extracted.token_usage, extracted.model, extracted.tier
+            )
             result = _SingleAction(
                 action_type="",
                 params=params,
                 output=extracted.result,
                 finished=True,
                 usage=extracted.token_usage,
+                model=extracted.model,
+                tier=extracted.tier,
+                stats=extracted.stats,
             )
         elif action_type in ("assert", "wait_for"):
             # The SDK itself always sends "assert" (wait_for polls via
@@ -1861,7 +1977,7 @@ class Qirabot:
                 raise ActionError(f"AI condition check failed: {e}") from e
             except ProviderError as e:
                 raise ActionError(str(e)) from e
-            self._timeline.add_step_usage(checked.token_usage, llm_ms=checked.llm_ms)
+            self._timeline.add_step_usage(checked.token_usage, checked.model, checked.tier)
             # finished carries the verdict — an unmet condition is a valid
             # result, not a failure; wait_for's polling depends on this.
             result = _SingleAction(
@@ -1870,6 +1986,9 @@ class Qirabot:
                 output=checked.reasoning,
                 finished=checked.met,
                 usage=checked.token_usage,
+                model=checked.model,
+                tier=checked.tier,
+                stats=checked.stats,
             )
         else:
             # Everything else resolves an element with one VLM locate call:
@@ -1884,9 +2003,9 @@ class Qirabot:
             except ValueError as e:
                 raise ActionError(str(e)) from e
             if not located.found:
-                self._timeline.add_tokens(located.token_usage, llm_ms=located.llm_ms)
+                self._timeline.add_tokens(located.token_usage, located.model, located.tier)
                 raise ActionError(located.error)
-            self._timeline.add_step_usage(located.token_usage, llm_ms=located.llm_ms)
+            self._timeline.add_step_usage(located.token_usage, located.model, located.tier)
             params["x"] = located.x
             params["y"] = located.y
             result = _SingleAction(
@@ -1894,10 +2013,13 @@ class Qirabot:
                 params=params,
                 finished=True,
                 usage=located.token_usage,
+                model=located.model,
+                tier=located.tier,
+                stats=located.stats,
             )
 
         coords = _extract_coords(result.params)
-        self._record_step(
+        result.entry = self._record_step(
             screenshot_bytes,
             result.action_type or action_type or "action",
             result.params,
@@ -1912,6 +2034,51 @@ class Qirabot:
             self._execute_action(adapter, result.action_type, result.params)
 
         return result
+
+    def _default_model_name(self) -> str:
+        """The run's configured primary model (bare name, as steps report
+        it), so the report can mute it and highlight the others."""
+        label = str(getattr(self._backend, "model_label", "") or "")
+        return label.split(" — ", 1)[0].split("/", 1)[-1]
+
+    def _current_model(self) -> str:
+        """The model a failed call's spend is filed under (it names no
+        answering model). An injected backend need not know it."""
+        return str(getattr(self._backend, "current_model", "") or "")
+
+    @contextlib.contextmanager
+    def _ledger_window(self) -> Iterator[None]:
+        """Fold the provider-ledger activity inside the block into the
+        current report section, failed calls included.
+
+        Outermost only: a single-step call made from a custom tool inside
+        ai() is already inside ai()'s window, and counting it again would
+        inflate that section."""
+        if self._ledger_open:
+            yield
+            return
+        self._ledger_open = True
+        before = self._backend.stats_snapshot()
+        try:
+            yield
+        finally:
+            self._ledger_open = False
+            self._timeline.add_ledger(self._backend.stats_snapshot() - before)
+
+    def _annotate_entry(self, entry: dict[str, Any] | None, step: StepResult) -> None:
+        """Copy a finished ai() step's timing, model and tier onto its log entry."""
+        self._timeline.annotate(
+            entry,
+            step.step_duration_ms,
+            StatsSnapshot(
+                model_ms=step.model_ms,
+                rate_limit_wait_ms=step.rate_limit_wait_ms,
+                outage_wait_ms=step.outage_wait_ms,
+                timeout_wait_ms=step.timeout_wait_ms,
+            ),
+            step.model,
+            step.tier,
+        )
 
     # -- overlay integration ---------------------------------------------
     # The overlay is optional and must never break a run (its own contract),
@@ -2060,10 +2227,20 @@ class Qirabot:
                 recording_start=self._recording.started_ts if recording else 0.0,
                 record_error=record_error,
                 # total_steps drives the stats line's headline count; the
-                # entry count is exactly the steps that ran.
-                stats={**timeline.stats, "total_steps": len(timeline.entries)},
+                # entry count is exactly the steps that ran. Model time and
+                # capacity waits come off the provider ledger, like usage.
+                stats={
+                    **timeline.stats,
+                    **asdict(self._backend.stats_snapshot()),
+                    "total_steps": len(timeline.entries),
+                },
                 model=self._backend.model_label,
                 tier=self._backend.tier_label,
+                instructions=timeline.instructions,
+                section_stats=timeline.section_stats,
+                tokens_by=timeline.tokens_by,
+                default_model=self._default_model_name(),
+                device=timeline.device,
             )
             logger.info("report written: %s", out)
             return out
@@ -2200,6 +2377,11 @@ def _validate_max_duration(max_duration: float | None) -> None:
         )
     if not math.isfinite(max_duration) or max_duration <= 0:
         raise ValueError(f"max_duration must be greater than zero, got {max_duration!r}")
+
+
+def _ms_since(start: float) -> int:
+    """Whole milliseconds elapsed since a ``time.monotonic()`` reading."""
+    return int((time.monotonic() - start) * 1000)
 
 
 def _clamp_wait(params: dict[str, Any], deadline: float) -> dict[str, Any]:

@@ -131,7 +131,10 @@ provider 的默认模型(`gemini` →
     "cache_read_tokens": 12040,
     "cache_write_tokens": 0,
     "step_duration_ms": 41830,
-    "llm_decision_duration_ms": 28510,
+    "model_ms": 27940,
+    "rate_limit_wait_ms": 0,
+    "outage_wait_ms": 0,
+    "timeout_wait_ms": 0,
     "total_tokens": 63370
   },
   "report": "qira_runs/2026-08-03/143012-1a2b3c4d/report.html"
@@ -147,6 +150,10 @@ provider 的默认模型(`gemini` →
 `goal_failed` 时也会把这些内容打印在 `Failed:` 行下方。关闭报告时 `report` 为 `null`;报告文件在进程退出时写出,
 应在 CLI 返回后再读取。
 
+`usage` 与 SDK 的 [`bot.usage`](/zh/reference/methods#usage) 一一对应:
+`step_duration_ms` 是这次运行的墙钟时间,`model_ms` 和三个 `*_wait_ms`
+说明其中多少花在模型上、多少损失在容量问题上。
+
 `--output-format stream-json` 输出 NDJSON,每行一个 JSON 对象、逐步 flush,
 适合实时监控运行的上层工具:
 
@@ -158,10 +165,13 @@ provider 的默认模型(`gemini` →
 ```
 
 `step` 行的字段与 SDK 的 `StepResult` 一致(`step`、`action_type`、
-`params`、`decision`、`output`、`finished` 及单步 token/耗时计数);末尾的
+`params`、`decision`、`output`、`finished`、单步 token 计数、此步的墙钟
+`step_duration_ms`、`model_ms` 与各项等待,以及服务这一步的 `model` /
+`tier`)。`step` 行在这一步的动作执行完后才输出。失败的那一步没有 `step`
+行,它的耗时等于 `result` 行的 `usage` 减去所有 `step` 行之和。末尾的
 `result` 行与 `json` 格式的对象相同。中断运行的错误(包括设备不可达等
-setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
-总能读到一条终止行。
+setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方总能
+读到一条终止行。
 
 ## 通用运行选项
 
@@ -169,7 +179,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方
 
 | 选项 | 默认值 | 作用 |
 |---|---|---|
-| `-n, --name` | 从指令推导 | HTML 报告中显示的运行名 |
+| `-n, --name` | 指令的第一行 | HTML 报告中显示的运行名 |
 | `-m, --model` | `QIRA_MODEL`,否则 `gemini-vertex/gemini-3.8-flash` | 模型,格式 `{provider}/{model}`,provider 为 `gemini-vertex` / `gemini` 之一(见[配置](/zh/advanced/configuration)) |
 | `--thinking-level` | 引擎默认 | 思考深度覆盖:`minimal` / `low` / `medium` / `high`(见[配置](/zh/advanced/configuration#思考深度)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`,否则 `high` | 模型看到的截图精细度:`low` / `medium` / `high` / `ultra_high`(仅 Gemini;`ultra_high` 需 Gemini 3 系列模型);调低可减少每步的图像 token |

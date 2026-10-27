@@ -34,6 +34,7 @@ from typing import TypeVar
 import httpx
 
 from .base import ErrorCategory, ProviderError
+from .stats import OUTAGE, RATE_LIMIT
 
 logger = logging.getLogger("qirabot.engine")
 
@@ -72,6 +73,7 @@ def with_retry(
     jitter: Callable[[float], float] = jitter,
     wait_out_quota: bool = True,
     ride_out_outage: bool = True,
+    on_wait: Callable[[str, float], None] | None = None,
 ) -> T:
     """Execute fn, retrying retryable failures.
 
@@ -91,7 +93,12 @@ def with_retry(
     `wait_out_quota=False` / `ride_out_outage=False` put that failure on the
     generic schedule, for callers that have somewhere better to go (a tier
     one rung up) or have already spent a window elsewhere and would only be
-    stalling the run by spending a second one."""
+    stalling the run by spending a second one.
+
+    `on_wait(category, seconds)` hears about every backoff just before it
+    is slept: `category` is "rate_limit" or "outage" (the same split as the
+    schedules), `seconds` the jittered wait. Providers use it to account
+    for the time (see providers.stats)."""
     delay = 1.0
     attempt = 0
     while True:
@@ -126,4 +133,6 @@ def with_retry(
                 wait,
                 exc,
             )
+            if on_wait is not None:
+                on_wait(RATE_LIMIT if rate_limited else OUTAGE, wait)
             sleep(wait)

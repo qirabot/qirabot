@@ -182,6 +182,9 @@ class DecisionResult:
     duration_ms: int = 0
     model_used: str = ""
     raw_response: str = ""
+    # Normalized tier that served the call ("standard"/"flex"/"priority"),
+    # "" when the endpoint gave no signal (see ChatResponse.served_tier).
+    served_tier: str = ""
 
 
 @dataclass
@@ -199,6 +202,7 @@ class ExtractResult:
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     duration_ms: int = 0
     model_used: str = ""
+    served_tier: str = ""  # as on DecisionResult
 
 
 @dataclass
@@ -222,6 +226,7 @@ class LocateResult:
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     duration_ms: int = 0
     model_used: str = ""
+    served_tier: str = ""  # as on DecisionResult
 
 
 @dataclass
@@ -240,6 +245,7 @@ class ConditionResult:
     token_usage: TokenUsage = field(default_factory=TokenUsage)
     duration_ms: int = 0
     model_used: str = ""
+    served_tier: str = ""  # as on DecisionResult
 
 
 def detect_image_mime(data: bytes) -> str:

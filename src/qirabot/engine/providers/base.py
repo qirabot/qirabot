@@ -162,6 +162,9 @@ class ChatResponse:
     # Consumption tier the endpoint actually served, in its own vocabulary
     # (Vertex: usageMetadata.trafficType). Empty when not reported.
     traffic_type: str = ""
+    # The same, normalized across transports: "standard" / "flex" /
+    # "priority", or "" when the endpoint gave no recognizable signal.
+    served_tier: str = ""
 
 
 class Provider(Protocol):

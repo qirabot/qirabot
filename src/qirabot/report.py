@@ -16,129 +16,275 @@ from __future__ import annotations
 import html
 import json
 import math
+import re
 import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TypeGuard
 
 _CSS = """
-:root { color-scheme: light dark; }
-body { font: 14px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-       margin: 0; padding: 24px; background: #f6f7f9; color: #1a1a1a; }
-h1 { font-size: 20px; margin: 0 0 4px; }
-/* Run facts as label/value pairs: the label column tells the reader what
-   each value is (see _render_run_info) and lets values grow. */
-.runinfo { display: grid; grid-template-columns: max-content minmax(0, 1fr);
-           gap: 4px 16px; font-size: 12px; color: #555; margin-bottom: 18px; }
-.runinfo dt { color: #888; }
-.runinfo dd { margin: 0; }
-.runinfo .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.tally { margin-bottom: 10px; }
-.tally .badge { font-size: 14px; padding: 5px 14px; }
-/* One judged task per grid row: status badge, then name. The status column
-   is max-content, so it auto-sizes to the widest badge and every badge (and
-   every name) lines up exactly, whatever width the font gives "MAX STEPS". */
-.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr);
-           gap: 6px 10px; align-items: center; justify-items: start;
-           margin-bottom: 20px; }
-.badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
-         white-space: nowrap; }
-.summary .badge { justify-self: stretch; text-align: center; }
-.summary .tname { font-size: 13px; max-width: 80ch; overflow: hidden;
-                  text-overflow: ellipsis; white-space: nowrap; }
-.pass { background: #d7f5dd; color: #06632b; }
-.fail { background: #fbdcdc; color: #8a1010; }
-.warn { background: #fdeec8; color: #7a5200; }
-.neutral { background: #e6e8eb; color: #444; }
-.notice { background: #fff4d6; color: #7a5200; padding: 10px 14px; border-radius: 8px;
-          margin-bottom: 18px; font-size: 13px; }
-.notice.error { background: #fbdcdc; color: #8a1010; }
-section .notice { margin: 10px 14px 4px; }
-section { background: #fff; border: 1px solid #e3e5e8; border-radius: 10px;
-          margin-bottom: 18px; overflow: hidden; }
-section > h2 { font-size: 15px; margin: 0; padding: 12px 16px; background: #fafbfc;
-              border-bottom: 1px solid #eceef0; display: flex; gap: 10px; align-items: center; }
-.steps { display: grid; grid-template-columns: 48px 96px 160px 1fr 200px; gap: 0; }
-.steps > div { padding: 10px 12px; border-bottom: 1px solid #f0f1f3; }
-.when { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
-        color: #888; white-space: nowrap; }
-.when a { color: #0b62d6; text-decoration: none; }
-.when a:hover { text-decoration: underline; }
-.head { font-weight: 600; color: #888; font-size: 11px; text-transform: uppercase;
-        background: #fcfcfd; }
-/* Custom tool names (e.g. capture_lqa_frame) can exceed the fixed column;
+:root { color-scheme: light; --bg:#f4f6fa; --card:#fff; --line:#e7eaf0; --text:#111827;
+  --muted:#6b7280; --faint:#9ca3af; --model:#4f46e5; --device:#94a3b8; --rate:#f59e0b;
+  --outage:#ef4444; --timeout:#a855f7; --pass:#059669; --passbg:#d1fae5; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", Roboto,
+  Helvetica, Arial, sans-serif; }
+.wrap { max-width:1400px; margin:0 auto; padding:28px 32px 60px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.model-bg { background:var(--model); } .device-bg { background:var(--device); }
+.rate-bg { background:var(--rate); } .outage-bg { background:var(--outage); }
+.timeout-bg { background:var(--timeout); }
+
+/* Header card: title, meta line, then one panel of three zones. */
+.hero { position:relative; background:var(--card); border:1px solid var(--line);
+  border-radius:16px; padding:22px 26px 20px; box-shadow:0 1px 2px rgba(16,24,40,.04);
+  margin-bottom:20px; }
+.eyebrow { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
+  font-weight:700; margin-bottom:6px; }
+.hero h1 { font-size:21px; margin:0; letter-spacing:-.01em; line-height:1.4; }
+/* Instructions can be paragraphs: titles and task lines show two lines at
+   most, and the full text sits behind a toggle (see _instruction_toggle). */
+.clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  overflow:hidden; overflow-wrap:anywhere; }
+.meta { color:var(--muted); font-size:12.5px; margin-top:4px; display:flex; gap:10px;
+  flex-wrap:wrap; }
+.meta .sep { color:#d1d5db; } .meta b { color:var(--text); font-weight:500; }
+details.instr { margin-top:6px; }
+details.instr.auto { display:none; }
+details.instr summary { cursor:pointer; font-size:12.5px; color:#4f46e5; font-weight:600;
+  list-style:none; display:inline-flex; align-items:center; gap:4px; user-select:none; }
+details.instr summary::-webkit-details-marker { display:none; }
+details.instr summary::before { content:"▸"; display:inline-block; transition:transform .15s; }
+details.instr[open] summary::before { transform:rotate(90deg); }
+details.instr pre { margin:8px 0 0; padding:12px 14px; background:#f8fafc;
+  border:1px solid var(--line); border-radius:10px; white-space:pre-wrap;
+  font:13px/1.6 -apple-system, "PingFang SC", sans-serif; color:#1f2937; max-height:320px;
+  overflow:auto; font-weight:400; }
+.panel { display:grid; grid-template-columns:220px minmax(0,1.7fr) minmax(0,1fr);
+  margin-top:18px; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.zone { padding:16px 18px; min-width:0; } .zone + .zone { border-left:1px solid var(--line); }
+.zl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;
+  font-weight:600; }
+.outcome { background:linear-gradient(180deg,#ecfdf5,#f6fefb); }
+.outcome.fail { background:linear-gradient(180deg,#fef2f2,#fffafa); }
+.outcome.warn { background:linear-gradient(180deg,#fffbeb,#fffdf5); }
+.outcome.neutral { background:#fafbfc; }
+.oc { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.oc .ic { width:34px; height:34px; border-radius:50%; background:var(--pass); color:#fff;
+  font-weight:800; display:flex; align-items:center; justify-content:center; font-size:18px;
+  flex:none; }
+.fail .oc .ic { background:#dc2626; } .warn .oc .ic { background:#d97706; }
+.neutral .oc .ic { background:#9ca3af; }
+.oc .t { font-size:22px; font-weight:750; color:#065f46; }
+.fail .oc .t { color:#991b1b; } .warn .oc .t { color:#92400e; } .neutral .oc .t { color:#374151; }
+.os { font-size:12.5px; color:var(--muted); margin-top:8px; }
+.os b { color:var(--text); font-weight:600; }
+.tn { display:flex; align-items:baseline; gap:12px; margin-top:4px; flex-wrap:wrap; }
+.tn .v { font-size:28px; font-weight:700; letter-spacing:-.02em; }
+.tn .lost { font-size:12.5px; color:#b45309; font-weight:600; }
+.bar { display:flex; height:10px; border-radius:5px; overflow:hidden; background:#eef0f4;
+  margin-top:10px; }
+.bar > span { display:block; height:100%; }
+.groups { display:flex; margin-top:8px; font-size:12px; color:var(--muted); gap:16px;
+  flex-wrap:wrap; }
+.grp { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.grp .gt { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--faint);
+  font-weight:600; }
+.grp.lostg { padding-left:14px; border-left:2px solid #fde68a; }
+.grp i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
+.grp b { color:var(--text); font-weight:600; margin-left:3px; }
+.grp .z, .grp .z b { color:#d1d5db; font-weight:500; }
+.kv { display:grid; grid-template-columns:58px minmax(0,1fr); gap:7px 10px; margin:8px 0 0;
+  font-size:12.5px; }
+.kv dt { color:var(--muted); } .kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+.kv .main { font-weight:600; }
+.kv .note { display:block; color:#b45309; font-size:11.5px; }
+.kv .note.plain { color:var(--faint); }
+
+/* Token popover: opened from the Tokens value, printed inline. */
+.tokbtn { font:inherit; font-weight:650; color:#4338ca; background:#eef2ff;
+  border:1px solid #c7d2fe; border-radius:8px; padding:1px 8px; cursor:pointer; }
+.tokbtn:hover { background:#e0e7ff; }
+.tokbtn .car { font-size:10px; display:inline-block; transition:transform .15s; }
+.tokbtn[aria-expanded='true'] .car { transform:rotate(180deg); }
+.tokpop { display:none; position:absolute; right:26px; z-index:20;
+  width:min(860px, calc(100% - 52px)); filter:drop-shadow(0 12px 32px rgba(16,24,40,.18)); }
+.tokpop.open { display:block; }
+.tokpop::before { content:""; position:absolute; top:-7px; right:var(--arrow, 60px);
+  width:12px; height:12px; background:#fafbfc; border-left:1px solid var(--line);
+  border-top:1px solid var(--line); transform:rotate(45deg); }
+.tok { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; }
+.tok .cap { display:flex; align-items:center; padding:10px 16px; background:#fafbfc;
+  border-bottom:1px solid var(--line); }
+.tokx { margin-left:auto; border:0; background:none; cursor:pointer; color:var(--faint);
+  font-size:14px; }
+.tokx:hover { color:var(--text); }
+.tok table { font-size:12.5px; min-width:0; }
+.tok th { background:#fff; font-size:10.5px; padding:8px 14px; }
+.tok td { padding:8px 14px; }
+.tok tfoot td { background:#fafbfc; font-weight:650; border-top:1px solid var(--line);
+  border-bottom:0; }
+.tok .foot { padding:8px 16px; font-size:11.5px; color:var(--faint);
+  border-top:1px solid var(--line); }
+.dim { color:#d1d5db; }
+.tier { display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px;
+  border-radius:6px; text-transform:uppercase; letter-spacing:.03em; background:#f3f4f6;
+  color:#4b5563; }
+.tier.flex { background:#eef2ff; color:#4338ca; }
+.tier.priority { background:#fae8ff; color:#86198f; }
+
+/* Task overview (two or more ai() tasks). */
+.tasks { margin-top:16px; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.tasks a { display:grid; grid-template-columns:26px 104px minmax(0,1fr) 76px 70px 120px;
+  gap:12px; align-items:center; padding:10px 16px; text-decoration:none; color:inherit;
+  font-size:13px; }
+.tasks a + a { border-top:1px solid #f1f3f6; }
+.tasks a:hover { background:#fafbff; }
+.tasks .i { color:var(--faint); font-weight:600; }
+.tasks .n { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tasks .r { text-align:right; color:var(--muted); font-size:12.5px; white-space:nowrap; }
+.mb { display:flex; height:6px; border-radius:3px; overflow:hidden; background:#eef0f4; }
+.mb span { display:block; }
+
+.badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:11.5px;
+  font-weight:700; white-space:nowrap; text-align:center; }
+.pass { background:var(--passbg); color:var(--pass); }
+.fail { background:#fee2e2; color:#b91c1c; }
+.warn { background:#fef3c7; color:#92400e; }
+.neutral { background:#eef0f3; color:#4b5563; }
+.notice { background:#fff7e0; color:#7a5200; padding:10px 20px; font-size:13px;
+  border-bottom:1px solid #fde68a; }
+.notice.error { background:#fef2f2; color:#991b1b; border-bottom-color:#fecaca; }
+.wrap > .notice { border:1px solid #fde68a; border-radius:10px; margin-bottom:18px; }
+video { max-width:100%; max-height:70vh; display:block; border-radius:12px; margin-bottom:18px; }
+
+/* Step sections. */
+section { background:var(--card); border:1px solid var(--line); border-radius:16px;
+  overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.04); margin-bottom:18px; }
+section > h2 { margin:0; padding:14px 20px; font-size:15px; border-bottom:1px solid var(--line); }
+section > h2 .row { display:flex; align-items:center; gap:10px; }
+section > h2 .sub { margin-left:auto; color:var(--muted); font-weight:400; font-size:12.5px;
+  white-space:nowrap; }
+section > h2 .ins { margin-top:6px; font-weight:400; font-size:12.5px; color:var(--muted); }
+.scroll { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; font-size:11px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.04em; padding:10px 12px; background:#fafbfc;
+  border-bottom:1px solid var(--line); white-space:nowrap; }
+th.num, td.num { text-align:right; }
+td { padding:12px; border-bottom:1px solid #f1f3f6; vertical-align:top; }
+.steps { min-width:980px; }
+.steps tr:hover td { background:#fafbff; }
+.steps tr.hot td { background:#fffbeb; }
+.steps tr.warn-row td { background:#fffaef; }
+.steps tr.fail-row td { background:#fff5f5; }
+.idx { color:var(--faint); font-weight:600; width:32px; }
+.when { font-size:11.5px; color:var(--muted); white-space:nowrap; width:1%; }
+.when span { display:block; color:var(--faint); }
+.when a { color:#4f46e5; text-decoration:none; }
+.when a:hover { text-decoration:underline; }
+/* Custom tool names (e.g. capture_lqa_frame) can exceed the column;
    underscores aren't break points, so allow breaking anywhere. */
-.act { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600;
-       overflow-wrap: anywhere; }
-.steps > div.fail-row { background: #fff5f5; }
-.steps > .act.fail-row { color: #8a1010; }
-.steps > div.warn-row { background: #fffaef; }
-.steps > .act.warn-row { color: #7a5200; }
-.detail { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-          color: #333; white-space: pre-wrap; word-break: break-word; }
-.detail .out { color: #555; }
-.detail .decision { display: block; color: #777; font-style: italic; font-size: 11px;
-                    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-                    margin-bottom: 4px; }
-.shot img { width: 100%; border-radius: 6px; border: 1px solid #e3e5e8; display: block;
-            transition: transform .08s ease; }
-.shot a { display: block; cursor: zoom-in; }
-.shot a:hover img { transform: scale(1.02); }
-.shot .reused { display: block; margin-top: 4px; color: #999; font-size: 10px;
-                font-style: italic; }
-video { max-width: 100%; max-height: 70vh; display: block; border-radius: 8px;
-        margin-bottom: 18px; }
-/* Lightbox */
-.lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.88);
-            display: none; }
-.lightbox.open { display: flex; flex-direction: column; }
-.lb-bar { display: flex; gap: 12px; align-items: baseline; padding: 12px 18px;
-          color: #f0f0f0; background: rgba(0,0,0,.45); }
-.lb-label { color: #9aa0a6; font-size: 12px; }
-.lb-act { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
-.lb-count { color: #9aa0a6; font-size: 12px; margin-left: auto; }
-.lb-close { cursor: pointer; font-size: 18px; line-height: 1; color: #f0f0f0; padding: 0 4px; }
-.lb-close:hover { color: #fff; }
-.lb-stage { flex: 1; position: relative; display: flex; align-items: center;
-            justify-content: center; overflow: auto; padding: 16px; }
-.lb-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px;
-                box-shadow: 0 10px 40px rgba(0,0,0,.5); }
-.lb-nav { position: absolute; top: 50%; transform: translateY(-50%); cursor: pointer;
-          font-size: 44px; line-height: 1; color: #fff; opacity: .55; user-select: none;
-          padding: 8px 14px; -webkit-user-select: none; }
-.lb-nav:hover { opacity: 1; }
-.lb-prev { left: 8px; }
-.lb-next { right: 8px; }
-.lb-caption { padding: 12px 18px; color: #d8dadd; background: rgba(0,0,0,.45);
-              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-              white-space: pre-wrap; word-break: break-word; max-height: 22vh; overflow: auto; }
-.lb-caption:empty { display: none; }
-.lb-caption .out { color: #a9c7ff; }
-/* Narrow screens: shrink the fixed columns and let the step table scroll
-   sideways instead of overflowing the page. */
-@media (max-width: 720px) {
-  body { padding: 12px; }
-  .steps { overflow-x: auto;
-           grid-template-columns: 36px 84px 96px minmax(180px, 1fr) 140px; }
+.act { font-weight:650; min-width:112px; max-width:200px; overflow-wrap:break-word; }
+.act .done { color:var(--pass); }
+.warn-row .act { color:#92400e; } .fail-row .act { color:#b91c1c; }
+.dec { color:var(--muted); font-size:12.5px; margin-bottom:4px; }
+.det { font-size:12.5px; white-space:pre-wrap; word-break:break-word; color:#1f2937; }
+.out { margin-top:6px; padding:6px 10px; background:#f6f8fb; border-radius:8px; font-size:12px;
+  white-space:pre-wrap; word-break:break-word; color:#374151; border-left:3px solid #c7d2fe; }
+.out.md { white-space:normal; font-size:12.5px; line-height:1.55; }
+.out.md p { margin:0 0 6px; } .out.md > :last-child { margin-bottom:0; }
+.out.md ul, .out.md ol { margin:2px 0 6px; padding-left:20px; } .out.md li { margin:1px 0; }
+.out.md li > ul, .out.md li > ol { margin:1px 0 2px; }
+.out.md strong { color:#111827; font-weight:650; }
+.out.md code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11.5px;
+  background:#e8ecf3; padding:0 4px; border-radius:4px; }
+.mdl { font-size:12px; white-space:nowrap; width:1%; }
+.mdl.same { color:var(--faint); } .mdl.diff { color:#b45309; font-weight:600; }
+.mdl .tier { margin-top:3px; }
+.dur { font-weight:650; white-space:nowrap; font-size:13px; }
+.minibar { display:flex; height:4px; border-radius:2px; overflow:hidden; background:#eef0f4;
+  margin:6px 0 0 auto; width:84px; }
+.minibar span { display:block; height:100%; }
+.waits { white-space:nowrap; width:140px; text-align:right; }
+.wchip { display:block; font-size:11.5px; font-weight:650; padding:1px 8px; border-radius:6px;
+  margin-bottom:3px; text-align:right; }
+.wchip.rate { background:#fef3c7; color:#92400e; }
+.wchip.outage { background:#fee2e2; color:#991b1b; }
+.wchip.timeout { background:#f3e8ff; color:#6b21a8; }
+.none { color:#d1d5db; }
+.shot { width:176px; }
+.shot img { width:160px; border-radius:8px; border:1px solid var(--line); display:block;
+  transition:transform .08s ease; }
+.shot a { display:block; cursor:zoom-in; }
+.shot a:hover img { transform:scale(1.02); }
+.shot .reused { display:block; margin-top:4px; color:var(--faint); font-size:10.5px;
+  font-style:italic; }
+
+/* Lightbox: the frame on the left, everything about the step in one fixed
+   panel on the right. Both keep their size from step to step, so paging
+   never makes anything jump. */
+.lightbox { position:fixed; inset:0; z-index:1000; display:none;
+  background:rgba(10,12,16,.94); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+.lightbox.open { display:flex; }
+.lb-stage { flex:1; min-width:0; position:relative; display:flex; align-items:center;
+  justify-content:center; padding:28px 72px; }
+.lb-stage img { max-width:100%; max-height:100%; object-fit:contain; border-radius:10px;
+  box-shadow:0 20px 60px rgba(0,0,0,.55); background:#fff; }
+.lb-nav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:44px;
+  border-radius:50%; border:0; cursor:pointer; display:flex; align-items:center;
+  justify-content:center; font-size:24px; line-height:1; color:#fff;
+  background:rgba(255,255,255,.1); transition:background .12s; user-select:none;
+  -webkit-user-select:none; }
+.lb-nav:hover { background:rgba(255,255,255,.22); }
+.lb-prev { left:16px; } .lb-next { right:16px; }
+.lb-side { width:400px; flex:none; display:flex; flex-direction:column; background:var(--card);
+  color:var(--text); box-shadow:-12px 0 40px rgba(0,0,0,.25); }
+.lb-head { display:flex; align-items:center; gap:10px; padding:14px 18px;
+  border-bottom:1px solid var(--line); }
+.lb-where { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+  font-weight:700; }
+.lb-count { margin-left:auto; font-size:12px; color:var(--muted);
+  font-variant-numeric:tabular-nums; }
+.lb-close { border:0; background:none; cursor:pointer; font-size:16px; color:var(--muted);
+  width:28px; height:28px; border-radius:8px; }
+.lb-close:hover { background:#f1f3f7; color:var(--text); }
+.lb-body { flex:1; overflow:auto; padding:16px 18px 20px; }
+.lb-act { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:17px;
+  font-weight:700; }
+.lb-act .done { color:var(--pass); } .lb-act.fail { color:#b91c1c; } .lb-act.warn { color:#92400e; }
+.lb-facts { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 14px; }
+.lb-facts span { font-size:11.5px; color:#4b5563; background:#f3f4f6; border-radius:6px;
+  padding:2px 8px; white-space:nowrap; }
+.lb-facts .wchip { display:inline-block; margin:0; }
+.lb-facts .reused { background:#fff7ed; color:#9a3412; }
+.lb-detail .dec { font-size:13.5px; color:var(--text); line-height:1.6; margin-bottom:10px; }
+.lb-detail .det { font-size:12px; color:#374151; background:#f8fafc; border:1px solid var(--line);
+  border-radius:8px; padding:6px 10px; }
+.lb-detail .out { margin-top:10px; }
+.lb-foot { padding:10px 18px; border-top:1px solid var(--line); font-size:11.5px;
+  color:var(--faint); display:flex; gap:14px; }
+.lb-foot a { color:#4f46e5; text-decoration:none; margin-left:auto; }
+.lb-foot a:hover { text-decoration:underline; }
+kbd { font-family:inherit; font-size:10.5px; border:1px solid var(--line); border-bottom-width:2px;
+  border-radius:4px; padding:0 4px; color:var(--muted); background:#fff; }
+
+@media (max-width: 900px) {
+  .lightbox.open { flex-direction:column; }
+  .lb-stage { padding:16px 56px; }
+  .lb-side { width:auto; height:38vh; box-shadow:0 -12px 40px rgba(0,0,0,.25); }
+  .wrap { padding:12px; }
+  .panel { grid-template-columns:1fr; }
+  .zone + .zone { border-left:0; border-top:1px solid var(--line); }
+  .tasks a { grid-template-columns:22px 92px minmax(0,1fr) 64px 60px; }
+  .tasks a > :last-child { display:none; }
 }
-@media (prefers-color-scheme: dark) {
-  body { background: #16181c; color: #e8e8e8; }
-  section { background: #1e2126; border-color: #2c3036; }
-  section > h2 { background: #22262c; border-color: #2c3036; }
-  .head { background: #1a1d22; }
-  .steps > div { border-color: #262a30; }
-  .steps > div.fail-row { background: #3a1d1d; }
-  .steps > .act.fail-row { color: #f3a6a6; }
-  .warn { background: #3a2f12; color: #f0d493; }
-  .steps > div.warn-row { background: #332a14; }
-  .steps > .act.warn-row { color: #e8c877; }
-  .runinfo { color: #9aa0a6; }
-  .runinfo dt { color: #6f757c; }
-  .when a { color: #a9c7ff; }
-  .detail .decision { color: #9aa0a6; }
-  .shot .reused { color: #7f858c; }
-  .notice { background: #3a2f12; color: #f0d493; }
-  .notice.error { background: #3a1d1d; color: #f3a6a6; }
+@media print {
+  body { background:#fff; }
+  .tokpop { display:block; position:static; width:auto; margin-top:16px; filter:none; }
+  .tokpop::before, .tokx, .tokbtn .car { display:none; }
+  details.instr pre { max-height:none; }
 }
 """
 
@@ -254,20 +400,6 @@ _STATUS_KINDS = {
 }
 
 
-def _normalize_status(value: bool | str) -> str:
-    """Map legacy bool outcomes onto the status vocabulary.
-
-    ``outcomes`` historically held ``dict[str, bool]``; external callers of
-    :func:`write_html` may still pass bools, which carried no more meaning
-    than pass/fail.
-    """
-    if value is True:
-        return "completed"
-    if value is False:
-        return "goal_failed"
-    return str(value)
-
-
 def fmt_tokens(n: int) -> str:
     """Compact token count: 1234 -> ``1.2k``, 980 -> ``980``.
 
@@ -303,120 +435,47 @@ def fmt_ms(ms: int) -> str:
     return f"{mins // 60}h{mins % 60:02d}m"
 
 
-def _render_run_info(
-    stats: dict[str, int], when: str, task_id: str, model: str, tier: str
-) -> str:
-    """The run's facts as labelled rows.
-
-    Bare fragments would leave the reader to work out what each string is —
-    an opaque id, a model name, "in/out/think", a duration of something
-    unstated. The label column answers all of that, and rows appear only when
-    they have something to say.
-    """
-    rows: list[tuple[str, str]] = [("Run", when)]
-    if model:
-        rows.append(("Model", model))
-    if tier:
-        rows.append(("Tier", tier))
-
-    total_steps = stats.get("total_steps", 0)
-    if total_steps:
-        ai = stats.get("ai_steps", 0)
-        # Naming the AI subset only matters when some steps were not: an
-        # all-AI run reads as noise otherwise.
-        detail = "all AI-decided" if ai == total_steps else f"{ai} AI-decided"
-        rows.append(("Steps", f"{total_steps} ({detail})"))
-
-    tokens = _token_summary(stats)
-    if tokens:
-        rows.append(("Tokens", tokens))
-
-    step_ms = stats.get("step_duration_ms", 0)
-    if step_ms:
-        rows.append(("Time", _time_summary(step_ms, stats.get("llm_decision_duration_ms", 0))))
-
-    if task_id:
-        rows.append(("Run ID", task_id))
-
-    cells = []
-    for label, value in rows:
-        css = " class='id'" if label == "Run ID" else ""
-        cells.append(f"<dt>{html.escape(label)}</dt>"
-                     f"<dd{css}>{html.escape(value)}</dd>")
-    return f"<dl class='runinfo'>{''.join(cells)}</dl>"
-
-
-def _time_summary(step_ms: int, llm_ms: int) -> str:
-    """Time in steps, and how much of it was the model.
-
-    A step is more than its model call — a screenshot, the action, the settle
-    pause — so the split says where a slow run actually went. Printing both
-    numbers when they are the same reads like a bug, so near-total model time
-    is stated in words instead.
-    """
-    total = fmt_ms(step_ms)
-    if not llm_ms:
-        return f"{total} in steps"
-    if llm_ms >= step_ms * 0.95:
-        return f"{total} in steps — almost all of it waiting on the model"
-    return f"{total} in steps · {fmt_ms(llm_ms)} waiting on the model"
-
-
-def _token_summary(stats: dict[str, int]) -> str:
-    """Token spend in words rather than API field names."""
-    inp = stats.get("input_tokens", 0)
-    out = stats.get("output_tokens", 0)
-    think = stats.get("thinking_tokens", 0)
-    cache = stats.get("cache_read_tokens", 0) + stats.get("cache_write_tokens", 0)
-    # input_tokens is the non-cached prompt portion only; the cached portion
-    # rides in the cache counters, so the total needs both. Thinking is
-    # already counted within output tokens (Anthropic semantics; the Gemini
-    # provider normalizes to match) — do not add it again.
-    total = inp + cache + out
-    if not total:
-        return ""
-    detail = [f"{fmt_tokens(inp)} prompt"]
-    if cache:
-        detail.append(f"{fmt_tokens(cache)} cached")
-    detail.append(f"{fmt_tokens(out)} response")
-    if think:
-        # Anthropic reports no separate thinking count (it stays 0 there) —
-        # show the split only when a provider actually supplies it.
-        detail.append(f"{fmt_tokens(think)} thinking")
-    return f"{fmt_tokens(total)} total — {', '.join(detail)}"
-
-
 _LIGHTBOX_JS = """
 const SHOTS = __SHOTS__;
 let lbIdx = 0;
 const lb = document.getElementById('lightbox');
+const $ = function (id) { return document.getElementById(id); };
 function renderLb() {
   const s = SHOTS[lbIdx];
   if (!s) return;
-  document.getElementById('lb-img').src = s.src;
-  document.getElementById('lb-img').alt = s.label;
-  document.getElementById('lb-act').textContent = s.action;
-  document.getElementById('lb-label').textContent = s.label;
-  document.getElementById('lb-detail').innerHTML = s.detail;
-  document.getElementById('lb-count').textContent = (lbIdx + 1) + ' / ' + SHOTS.length;
+  $('lb-img').src = s.src;
+  $('lb-img').alt = s.where + ' · ' + s.action;
+  $('lb-where').textContent = s.where;
+  $('lb-count').textContent = (lbIdx + 1) + ' / ' + SHOTS.length;
+  $('lb-act').innerHTML = s.act;
+  $('lb-act').className = 'lb-act ' + s.status;
+  $('lb-facts').innerHTML = s.facts;
+  $('lb-detail').innerHTML = s.detail;
+  $('lb-full').href = s.src;
+  $('lb-body').scrollTop = 0;
+  // Warm the neighbours so paging swaps instantly.
+  [lbIdx - 1, lbIdx + 1].forEach(function (i) {
+    const n = SHOTS[(i + SHOTS.length) % SHOTS.length];
+    if (n) (new Image()).src = n.src;
+  });
 }
-function openLb(i) { lbIdx = i; renderLb(); lb.classList.add('open'); return false; }
-function closeLb() { lb.classList.remove('open'); }
+function openLb(i) {
+  lbIdx = i; renderLb(); lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  return false;
+}
+function closeLb() { lb.classList.remove('open'); document.body.style.overflow = ''; }
 function stepLb(d) {
   if (!SHOTS.length) return;
   lbIdx = (lbIdx + d + SHOTS.length) % SHOTS.length;
   renderLb();
 }
-lb.addEventListener('click', function (e) {
-  const t = e.target;
-  if (t === lb || t.id === 'lb-stage' || t.id === 'lb-close') closeLb();
+$('lb-stage').addEventListener('click', function (e) {
+  if (e.target.id === 'lb-stage') closeLb();
 });
-document.getElementById('lb-prev').addEventListener('click', function (e) {
-  e.stopPropagation(); stepLb(-1);
-});
-document.getElementById('lb-next').addEventListener('click', function (e) {
-  e.stopPropagation(); stepLb(1);
-});
+$('lb-close').addEventListener('click', closeLb);
+$('lb-prev').addEventListener('click', function (e) { e.stopPropagation(); stepLb(-1); });
+$('lb-next').addEventListener('click', function (e) { e.stopPropagation(); stepLb(1); });
 document.addEventListener('keydown', function (e) {
   if (!lb.classList.contains('open')) return;
   if (e.key === 'Escape') closeLb();
@@ -439,21 +498,442 @@ def _lightbox(shots: list[dict[str, str]]) -> str:
     script = _LIGHTBOX_JS.replace("__SHOTS__", data)
     return (
         "<div id='lightbox' class='lightbox' role='dialog' aria-modal='true'>"
-        "<div class='lb-bar'>"
-        "<span class='lb-label' id='lb-label'></span>"
-        "<span class='lb-act' id='lb-act'></span>"
-        "<span class='lb-count' id='lb-count'></span>"
-        "<span class='lb-close' id='lb-close' title='Close (Esc)'>✕</span>"
-        "</div>"
         "<div class='lb-stage' id='lb-stage'>"
-        "<span class='lb-nav lb-prev' id='lb-prev' title='Previous (←)'>‹</span>"
+        "<button class='lb-nav lb-prev' id='lb-prev' title='Previous (←)'>‹</button>"
         "<img id='lb-img' alt=''>"
-        "<span class='lb-nav lb-next' id='lb-next' title='Next (→)'>›</span>"
+        "<button class='lb-nav lb-next' id='lb-next' title='Next (→)'>›</button>"
         "</div>"
-        "<div class='lb-caption' id='lb-detail'></div>"
-        "</div>"
+        "<aside class='lb-side'>"
+        "<div class='lb-head'><span class='lb-where' id='lb-where'></span>"
+        "<span class='lb-count' id='lb-count'></span>"
+        "<button class='lb-close' id='lb-close' title='Close (Esc)'>✕</button></div>"
+        "<div class='lb-body' id='lb-body'><div class='lb-act' id='lb-act'></div>"
+        "<div class='lb-facts' id='lb-facts'></div>"
+        "<div class='lb-detail' id='lb-detail'></div></div>"
+        "<div class='lb-foot'><span><kbd>←</kbd> <kbd>→</kbd> step</span>"
+        "<span><kbd>Esc</kbd> close</span>"
+        "<a id='lb-full' href='#' target='_blank' rel='noopener'>Open full size ↗</a></div>"
+        "</aside></div>"
         f"<script>{script}</script>"
     )
+
+
+_PAGE_JS = """
+(function () {
+  // A single-line instruction gets its "Full instruction" toggle only when
+  // the two-line clamp actually cut it — that depends on the viewport.
+  document.querySelectorAll('details.instr.auto').forEach(function (d) {
+    var c = d.previousElementSibling;
+    if (c && c.scrollHeight > c.clientHeight + 1) d.classList.remove('auto');
+  });
+  // Token popover, anchored under the Tokens button.
+  var btn = document.getElementById('tokbtn'), pop = document.getElementById('tokpop');
+  if (!btn || !pop) return;
+  var hero = pop.parentElement;
+  function place() {
+    var h = hero.getBoundingClientRect(), b = btn.getBoundingClientRect();
+    pop.style.top = (b.bottom - h.top + 10) + 'px';
+    var right = h.right - 26 - (b.left + b.width / 2);
+    pop.style.setProperty('--arrow', Math.max(12, right - 6) + 'px');
+  }
+  function set(open) {
+    pop.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) place();
+  }
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation(); set(!pop.classList.contains('open'));
+  });
+  document.getElementById('tokx').addEventListener('click', function () { set(false); });
+  pop.addEventListener('click', function (e) { e.stopPropagation(); });
+  document.addEventListener('click', function () { set(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
+  window.addEventListener('resize', function () { if (pop.classList.contains('open')) place(); });
+})();
+"""
+
+# Provider-ledger buckets in display order: (entry/stats key, css class, label).
+_WAITS = (
+    ("rate_limit_wait_ms", "rate", "Rate limit"),
+    ("outage_wait_ms", "outage", "Outage"),
+    ("timeout_wait_ms", "timeout", "Timeout"),
+)
+
+# RunStatus -> the Outcome zone's headline for a single judged task.
+_OUTCOME_WORDS = {
+    "completed": "Passed",
+    "goal_failed": "Failed",
+    "max_steps": "Max steps",
+    "max_duration": "Max duration",
+    "error": "Error",
+    "cancelled": "Cancelled",
+}
+
+_DEFAULT_TIER = "standard"
+
+
+def _esc(value: Any) -> str:
+    return html.escape(str(value))
+
+
+_MD_ITEM = re.compile(r"^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$")
+_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+_MD_CODE = re.compile(r"`([^`\n]+)`")
+# ** only: __x__ would mangle identifiers such as __init__.
+_MD_BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
+
+
+def _md_inline(text: str) -> str:
+    """Escape, then bold and inline code. Code spans are cut out first so
+    their contents stay literal."""
+    out, last = [], 0
+    for m in _MD_CODE.finditer(text):
+        out.append(_MD_BOLD.sub(lambda b: f"<strong>{b[1]}</strong>", _esc(text[last:m.start()])))
+        out.append(f"<code>{_esc(m[1])}</code>")
+        last = m.end()
+    out.append(_MD_BOLD.sub(lambda b: f"<strong>{b[1]}</strong>", _esc(text[last:])))
+    return "".join(out)
+
+
+def _render_markdown(text: str) -> str:
+    """The small Markdown subset models answer in: paragraphs, headings (as
+    bold lines), ordered and unordered lists (nested by indent), bold and
+    inline code. Everything is escaped first; links, images and raw HTML
+    stay literal text, so model output can never inject markup."""
+    parts: list[str] = []
+    para: list[str] = []
+    # Open lists, innermost last: (indent, tag).
+    stack: list[tuple[int, str]] = []
+
+    def flush_para() -> None:
+        if para:
+            parts.append(f"<p>{'<br>'.join(para)}</p>")
+            para.clear()
+
+    def close_to(indent: int) -> None:
+        while stack and stack[-1][0] > indent:
+            parts.append(f"</li></{stack.pop()[1]}>")
+
+    for raw in text.strip().splitlines():
+        line = raw.rstrip()
+        item = _MD_ITEM.match(line)
+        if item:
+            flush_para()
+            indent = len(item[1].expandtabs(4))
+            tag = "ul" if item[2] in "-*+" else "ol"
+            close_to(indent)
+            if stack and stack[-1][0] == indent and stack[-1][1] == tag:
+                parts.append("</li><li>")
+            else:
+                if stack and stack[-1][0] == indent:  # same depth, other list kind
+                    parts.append(f"</li></{stack.pop()[1]}>")
+                start = int(item[2][:-1]) if tag == "ol" else 1
+                attr = f" start='{start}'" if start != 1 else ""
+                parts.append(f"<{tag}{attr}><li>")
+                stack.append((indent, tag))
+            parts.append(_md_inline(item[3]))
+            continue
+        if not line.strip():
+            flush_para()
+            continue
+        if stack and raw[:1].isspace():
+            # An indented line under a list item continues that item.
+            parts.append(f"<br>{_md_inline(line.strip())}")
+            continue
+        close_to(-1)
+        heading = _MD_HEADING.match(line)
+        if heading:
+            flush_para()
+            parts.append(f"<p><strong>{_md_inline(heading[1])}</strong></p>")
+        else:
+            para.append(_md_inline(line.strip()))
+    flush_para()
+    close_to(-1)
+    return "".join(parts)
+
+
+def _output_html(text: str) -> str:
+    """A step's output box. JSON-looking output keeps its layout verbatim;
+    anything else renders as Markdown, which is what models answer in."""
+    stripped = text.strip()
+    if stripped[:1] in "{[":
+        return f"<div class='out mono'>{_esc(text)}</div>"
+    return f"<div class='out md'>{_render_markdown(text)}</div>"
+
+
+def _first_line(text: str) -> str:
+    return next((ln.strip() for ln in text.splitlines() if ln.strip()), text.strip())
+
+
+def _split_label(label: str) -> tuple[str, str]:
+    """``"flex — some calls served as priority, …"`` -> (main, note): the
+    backend's model/tier labels put the configured value first and any
+    deviation after an em dash."""
+    main, _, note = label.partition(" — ")
+    return main.strip(), note.strip()
+
+
+def _instruction_toggle(text: str) -> str:
+    """The full instruction behind a toggle, under a clamped line.
+
+    Multi-line text always gets it (the clamp shows the first line only);
+    a single line only when the browser actually clamped it, which _PAGE_JS
+    decides — so a line that fits shows no toggle at all.
+    """
+    lines = text.strip().count("\n") + 1
+    size = f"{lines} lines, {len(text)} chars" if lines > 1 else f"{len(text)} chars"
+    auto = "" if lines > 1 else " auto"
+    return (
+        f"<details class='instr{auto}'><summary>Full instruction · {size}</summary>"
+        f"<pre>{_esc(text.strip())}</pre></details>"
+    )
+
+
+def _segments(t: Mapping[str, int], duration: int) -> list[tuple[str, str, int]]:
+    """(css class, label, ms) for model, device and the three waits.
+
+    Device is whatever the step's wall clock spent outside the model and
+    the waits: screenshot, action, settle, custom tools, local overhead.
+    """
+    model = int(t.get("model_ms", 0) or 0)
+    waits = [(css, label, int(t.get(key, 0) or 0)) for key, css, label in _WAITS]
+    device = max(0, duration - model - sum(ms for _, _, ms in waits))
+    return [("model", "Model", model), ("device", "Device", device), *waits]
+
+
+def _bar(segments: list[tuple[str, str, int]], cls: str) -> str:
+    total = sum(ms for _, _, ms in segments)
+    if not total:
+        return ""
+    spans = "".join(
+        f"<span class='{css}-bg' style='width:{ms / total * 100:.2f}%' "
+        f"title='{label} {fmt_ms(ms)}'></span>"
+        for css, label, ms in segments
+        if ms
+    )
+    return f"<div class='{cls}'>{spans}</div>"
+
+
+def _has_ledger(t: Mapping[str, int]) -> bool:
+    return any(t.get(k) for k in ("model_ms", *(key for key, _, _ in _WAITS)))
+
+
+def _time_zone(stats: Mapping[str, int]) -> str:
+    duration = int(stats.get("step_duration_ms", 0) or 0)
+    if not duration:
+        return ""
+    head = f"<div class='tn'><span class='v'>{fmt_ms(duration)}</span>"
+    if not _has_ledger(stats):
+        # An injected provider keeps no ledger: the wall clock is all there
+        # is, and a bar of pure "device" time would misread.
+        return f"<div class='zone'><div class='zl'>Time</div>{head}</div></div>"
+    segs = _segments(stats, duration)
+    lost = sum(ms for _, _, ms in segs[2:])
+    if lost:
+        head += (
+            f"<span class='lost'>{fmt_ms(lost)} lost to capacity "
+            f"({lost / max(duration, 1) * 100:.0f}%)</span>"
+        )
+
+    def item(css: str, label: str, ms: int) -> str:
+        zero = "" if ms else " class='z'"
+        return f"<span{zero}><i class='{css}-bg'></i>{label}<b>{fmt_ms(ms) if ms else '0'}</b></span>"
+
+    working = "".join(item(*s) for s in segs[:2])
+    lost_items = "".join(item(*s) for s in segs[2:])
+    return (
+        f"<div class='zone'><div class='zl'>Time</div>{head}</div>{_bar(segs, 'bar')}"
+        f"<div class='groups'><div class='grp'><span class='gt'>Working</span>{working}</div>"
+        f"<div class='grp lostg'><span class='gt'>Lost</span>{lost_items}</div></div></div>"
+    )
+
+
+def _token_total(stats: Mapping[str, int]) -> int:
+    # input_tokens is the non-cached prompt portion only; the cached portion
+    # rides in the cache counters, so the total needs both. Thinking is
+    # already counted within output tokens — do not add it again.
+    return (
+        int(stats.get("input_tokens", 0) or 0)
+        + int(stats.get("cache_read_tokens", 0) or 0)
+        + int(stats.get("cache_write_tokens", 0) or 0)
+        + int(stats.get("output_tokens", 0) or 0)
+    )
+
+
+def _tok(n: int) -> str:
+    return fmt_tokens(n) if n else "<span class='dim'>—</span>"
+
+
+def _token_table(tokens_by: Mapping[tuple[str, str], Mapping[str, int]]) -> str:
+    """Spend per model × tier — the rate each row is billed at.
+
+    Response excludes thinking here (the providers fold thinking into the
+    output count), so the columns add up to Total without double counting.
+    """
+    rows = sorted(
+        tokens_by.items(),
+        key=lambda kv: -(kv[1].get("input", 0) + kv[1].get("cached", 0) + kv[1].get("output", 0)),
+    )
+    body = []
+    tot = dict.fromkeys(("calls", "input", "cached", "response", "thinking"), 0)
+    for (model, tier), r in rows:
+        think = int(r.get("thinking", 0))
+        vals = {
+            "calls": int(r.get("calls", 0)),
+            "input": int(r.get("input", 0)),
+            "cached": int(r.get("cached", 0)),
+            "response": max(0, int(r.get("output", 0)) - think),
+            "thinking": think,
+        }
+        for k, v in vals.items():
+            tot[k] += v
+        tier_cell = (
+            f"<span class='tier {_esc(tier)}'>{_esc(tier)}</span>" if tier
+            else "<span class='dim'>—</span>"
+        )
+        body.append(
+            f"<tr><td class='mono'>{_esc(model or 'unknown')}</td><td>{tier_cell}</td>"
+            f"<td class='num mono'>{vals['calls']}</td>"
+            + "".join(
+                f"<td class='num mono'>{_tok(vals[k])}</td>"
+                for k in ("input", "cached", "response", "thinking")
+            )
+            + f"<td class='num mono'>{_tok(sum(vals[k] for k in vals if k != 'calls'))}</td></tr>"
+        )
+    foot = (
+        f"<tr><td colspan='2'>Total</td><td class='num mono'>{tot['calls']}</td>"
+        + "".join(
+            f"<td class='num mono'>{_tok(tot[k])}</td>"
+            for k in ("input", "cached", "response", "thinking")
+        )
+        + f"<td class='num mono'>{_tok(sum(tot[k] for k in tot if k != 'calls'))}</td></tr>"
+    )
+    return (
+        "<div class='tok'><div class='cap'><span class='zl'>Token usage</span>"
+        "<button class='tokx' id='tokx' title='Close (Esc)'>✕</button></div>"
+        "<table><thead><tr><th>Model</th><th>Tier</th><th class='num'>AI calls</th>"
+        "<th class='num'>Prompt</th><th class='num'>Cached</th><th class='num'>Response</th>"
+        "<th class='num'>Thinking</th><th class='num'>Total</th></tr></thead>"
+        f"<tbody>{''.join(body)}</tbody><tfoot>{foot}</tfoot></table>"
+        "<div class='foot'>Every AI call is counted, failed ones and single-step calls "
+        "(click / verify / extract) included.</div></div>"
+    )
+
+
+def _model_zone(
+    stats: Mapping[str, int],
+    model: str,
+    tier: str,
+    tokens_by: Mapping[tuple[str, str], Mapping[str, int]],
+) -> str:
+    rows = []
+    if model:
+        main, note = _split_label(model)
+        rows.append(("Model", f"<span class='main mono'>{_esc(main)}</span>", note))
+    if tier:
+        main, note = _split_label(tier)
+        rows.append(("Tier", f"<span class='main'>{_esc(main)}</span>", note))
+    total = _token_total(stats)
+    if total:
+        if tokens_by:
+            value = (
+                "<button class='tokbtn' id='tokbtn' aria-expanded='false' "
+                "aria-controls='tokpop' title='Token usage by model and tier'>"
+                f"{fmt_tokens(total)} <span class='car'>▾</span></button>"
+            )
+        else:
+            value = f"<span class='main'>{fmt_tokens(total)}</span>"
+        rows.append(("Tokens", value, ""))
+    if not rows:
+        return ""
+    cells = "".join(
+        f"<dt>{label}</dt><dd>{value}"
+        # Deviations (fallback, another tier) are amber; "default" is not one.
+        + (
+            f"<span class='note{' plain' if note == 'default' else ''}'>{_esc(note)}</span>"
+            if note
+            else ""
+        )
+        + "</dd>"
+        for label, value, note in rows
+    )
+    return f"<div class='zone'><div class='zl'>Model &amp; tokens</div><dl class='kv'>{cells}</dl></div>"
+
+
+def _outcome_zone(statuses: list[str], stats: Mapping[str, int]) -> str:
+    total_steps = int(stats.get("total_steps", 0) or 0)
+    ai = int(stats.get("ai_steps", 0) or 0)
+    if total_steps:
+        detail = "all AI" if ai == total_steps else f"{ai} AI"
+        steps = f"<b>{total_steps}</b> step{'s' if total_steps != 1 else ''}, {detail}"
+    else:
+        steps = ""
+    if not statuses:
+        return (
+            "<div class='zone outcome neutral'><div class='zl'>Outcome</div>"
+            "<div class='oc'><span class='ic'>•</span><span class='t'>No AI tasks</span></div>"
+            f"<div class='os'>{steps}</div></div>"
+        )
+    passed = sum(1 for st in statuses if st == "completed")
+    truncated = sum(1 for st in statuses if st in _TRUNCATED)
+    failed = sum(1 for st in statuses if _STATUS_KINDS.get(st, ("", "fail"))[1] == "fail")
+    if passed == len(statuses):
+        kind, icon = "pass", "✓"
+    elif failed:
+        kind, icon = "fail", "✗"
+    else:
+        kind, icon = "warn", "!"
+    if len(statuses) == 1:
+        word = _OUTCOME_WORDS.get(statuses[0], "Failed")
+    elif kind == "pass":
+        word = "All passed"
+    elif failed:
+        word = f"{failed} failed"
+    else:
+        word = f"{len(statuses) - passed} not passed"
+    tally = f"<b>{passed}</b>/{len(statuses)} passed"
+    if truncated:
+        tally += f" · {truncated} truncated"
+    sep = " · " if steps else ""
+    return (
+        # The pass look is the zone's default: a bare "pass" class would pick
+        # up the badge colours instead.
+        f"<div class='zone outcome{'' if kind == 'pass' else ' ' + kind}'><div class='zl'>Outcome</div>"
+        f"<div class='oc'><span class='ic'>{icon}</span><span class='t'>{word}</span></div>"
+        f"<div class='os tally'>{tally}{sep}{steps}</div></div>"
+    )
+
+
+def _waits_cell(e: Mapping[str, Any]) -> str:
+    chips = [
+        f"<span class='wchip {css} mono'>{label.lower()} {fmt_ms(int(e[key]))}</span>"
+        for key, css, label in _WAITS
+        if e.get(key)
+    ]
+    none = "<span class='none'>—</span>"
+    return f"<td class='waits'>{''.join(chips) or none}</td>"
+
+
+def _duration_cell(e: Mapping[str, Any]) -> str:
+    if "duration_ms" not in e:
+        return "<td class='num'><span class='none'>—</span></td>"
+    duration = int(e.get("duration_ms") or 0)
+    bar = _bar(_segments(e, duration), "minibar") if _has_ledger(e) and duration else ""
+    return f"<td class='num'><div class='dur mono'>{fmt_ms(duration)}</div>{bar}</td>"
+
+
+def _model_cell(e: Mapping[str, Any], default_model: str, default_tier: str) -> str:
+    name = str(e.get("model") or "")
+    if not name:
+        return "<td class='mdl'><span class='none'>—</span></td>"
+    same = not default_model or name == default_model
+    served = str(e.get("tier") or "")
+    pill = (
+        f"<br><span class='tier {_esc(served)}'>{_esc(served)}</span>"
+        if served and served != default_tier
+        else ""
+    )
+    return f"<td class='mdl mono {'same' if same else 'diff'}'>{_esc(name)}{pill}</td>"
 
 
 def write_html(
@@ -462,7 +942,7 @@ def write_html(
     *,
     title: str = "",
     task_id: str = "",
-    outcomes: Mapping[str, bool | str] | None = None,
+    outcomes: Mapping[str, str] | None = None,
     section_errors: Mapping[str, str] | None = None,
     recording: str = "",
     recording_start: float = 0.0,
@@ -470,6 +950,11 @@ def write_html(
     stats: dict[str, int] | None = None,
     model: str = "",
     tier: str = "",
+    instructions: Mapping[str, str] | None = None,
+    section_stats: Mapping[str, Mapping[str, int]] | None = None,
+    tokens_by: Mapping[tuple[str, str], Mapping[str, int]] | None = None,
+    default_model: str = "",
+    device: tuple[str, int, int] | None = None,
 ) -> Path:
     """Render ``log`` to a self-contained HTML report at ``path``.
 
@@ -482,14 +967,26 @@ def write_html(
     ``recording_start`` is the epoch time the embedded recording began; when
     set (and a recording is present), each step's elapsed offset becomes a
     link that seeks the video to that moment.
+
+    The title is ``title`` when given (an explicit task name), else the
+    first line of the only task's instruction, else "N tasks".
+    ``instructions`` maps a section key to its full instruction (a repeat
+    run's key carries a ``#2`` suffix); without it the key stands in.
+
+    ``section_stats`` (section -> wall clock and ledger slice) feeds the
+    task overview, ``tokens_by`` ((model, tier) -> counts) the token
+    popover, and ``default_model`` lets step rows mute the run's primary
+    model and highlight any other. AI entries may carry ``duration_ms``,
+    ``model_ms``, the three ``*_wait_ms`` keys, ``model`` and ``tier``;
+    entries without them (manual steps, older logs) show dashes.
+    ``device`` is the (platform, width, height) shown in the meta line.
     """
     outcomes = outcomes or {}
     section_errors = section_errors or {}
+    instructions = instructions or {}
+    section_stats = section_stats or {}
+    tokens_by = tokens_by or {}
     stats = stats or {}
-    # Callers predating the total_steps key still get a stats line keyed on
-    # the timeline length.
-    if stats and "total_steps" not in stats:
-        stats = {**stats, "total_steps": len(log)}
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -515,22 +1012,37 @@ def write_html(
     # errors/outcomes describe how that section's final run ended.
     last_group_of = {name: i for i, (name, _) in enumerate(groups)}
 
-    def display_name(name: str) -> str:
-        # "setup" is the client's section key for standalone (non-ai) actions;
-        # now that those render in timeline order, "manual" describes them.
-        return "manual" if name == "setup" else name
+    # ai() tasks in run order, each once ("setup" holds the manual steps).
+    tasks: list[str] = list(dict.fromkeys(name for name, _ in groups if name != "setup"))
+    task_no = {name: i for i, name in enumerate(tasks, 1)}
+    multi = len(tasks) > 1 or (len(tasks) == 1 and any(n == "setup" for n, _ in groups))
 
-    def section_kind(name: str, entries: list[dict[str, Any]]) -> tuple[str, str]:
+    def instruction(name: str) -> str:
+        return instructions.get(name) or name
+
+    def kind_of(name: str) -> tuple[str, str]:
         if name in outcomes:
-            status = _normalize_status(outcomes[name])
-            return _STATUS_KINDS.get(status, ("FAIL", "fail"))
-        return (f"{len(entries)} steps", "neutral")
+            return _STATUS_KINDS.get(outcomes[name], ("FAIL", "fail"))
+        return ("", "neutral")
 
-    parts: list[str] = []
-    parts.append("<!doctype html><html><head><meta charset='utf-8'>")
-    parts.append(f"<title>{html.escape(title or 'Qirabot report')}</title>")
-    parts.append(f"<style>{_CSS}</style></head><body>")
-    parts.append(f"<h1>{html.escape(title or 'Qirabot run report')}</h1>")
+    # -- header -----------------------------------------------------------
+    if title:
+        h1 = f"<h1 class='clamp'>{_esc(title)}</h1>"
+        page_title = title
+        if len(tasks) == 1:
+            h1 += _instruction_toggle(instruction(tasks[0])).replace(" auto'", "'")
+    elif len(tasks) == 1:
+        text = instruction(tasks[0])
+        page_title = _first_line(text)
+        h1 = f"<h1 class='clamp' title='{_esc(text)}'>{_esc(page_title)}</h1>"
+        h1 += _instruction_toggle(text)
+    elif tasks:
+        page_title = f"{len(tasks)} tasks"
+        h1 = f"<h1>{page_title}</h1>"
+    else:
+        page_title = "Manual steps"
+        h1 = f"<h1>{page_title}</h1>"
+
     # Header timestamp: the run's first stamped step, so a report regenerated
     # from an old log still shows when the run happened. Falls back to "now"
     # for logs predating the "ts" field.
@@ -539,132 +1051,169 @@ def write_html(
         "%Y-%m-%d %H:%M:%S",
         time.localtime(first_ts) if first_ts else time.localtime(),
     )
-    parts.append(_render_run_info(stats or {}, when, task_id, model, tier))
+    meta = [f"<span>{when}</span>"]
+    if device:
+        platform, width, height = device
+        meta.append(f"<span>{_esc(platform)} · {width}×{height}</span>")
+    if task_id:
+        meta.append(f"<span>Run <b class='mono'>{_esc(task_id)}</b></span>")
 
-    # Overall tally, on its own line: the report's headline answer ("how many
-    # tasks ran, how many passed"), kept clear of the per-task badges below.
-    # A truncation (max_steps / max_duration) counts toward the total but not
-    # toward passed: a truncated run isn't a pass, but as long as nothing
-    # truly failed the tally is amber (raise the budget) rather than red
-    # (something broke). Each judged
-    # section counts once, even when its steps split across several timeline
-    # groups (outcomes are keyed per section).
-    judged: list[str] = []
-    seen_judged: set[str] = set()
-    for name, _entries in groups:
-        if name in outcomes and name not in seen_judged:
-            seen_judged.add(name)
-            judged.append(name)
-    statuses = [_normalize_status(outcomes[name]) for name in judged]
-    passed = sum(1 for st in statuses if st == "completed")
-    truncated = sum(1 for st in statuses if st in _TRUNCATED)
-    total_judged = len(statuses)
-    if total_judged:
-        if passed == total_judged:
-            kind = "pass"
-        elif passed + truncated == total_judged:
-            kind = "warn"
-        else:
-            kind = "fail"
-        label = f"{passed}/{total_judged} passed"
-        if truncated:
-            label += f" · {truncated} truncated"
-        parts.append(f"<div class='tally'>{_badge(label, kind)}</div>")
-    # One line per judged task, in run order: an aligned status column, then
-    # the task name. A section name can be an entire ai() instruction, so the
-    # name is CSS-truncated with the full text on hover; unjudged (manual)
-    # groups stay out of the summary — their step counts already show in the
-    # stats line and on each section header. A single judged task gets no
-    # summary: its one row would repeat the section header right below it,
-    # and the tally above already gives the headline.
-    if len(judged) > 1:
-        parts.append("<div class='summary'>")
-        for name in judged:
-            status = _normalize_status(outcomes[name])
-            label, kind = _STATUS_KINDS.get(status, ("FAIL", "fail"))
-            disp = html.escape(display_name(name))
-            # Badge and name are direct grid children (no row wrapper): the
-            # summary grid places each pair on its own row.
-            parts.append(
-                _badge(label, kind)
-                + f'<span class="tname" title="{disp}">{disp}</span>'
+    # Each judged section counts once, even when its steps split across
+    # several timeline groups (outcomes are keyed per section).
+    judged = [name for name in tasks if name in outcomes]
+    statuses = [outcomes[name] for name in judged]
+    zones = (
+        _outcome_zone(statuses, stats)
+        + _time_zone(stats)
+        + _model_zone(stats, model, tier, tokens_by)
+    )
+
+    parts: list[str] = []
+    parts.append("<!doctype html><html><head><meta charset='utf-8'>")
+    parts.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
+    parts.append(f"<title>{_esc(page_title)} — Qirabot report</title>")
+    parts.append(f"<style>{_CSS}</style></head><body><div class='wrap'>")
+    parts.append("<div class='hero'><div class='eyebrow'>Qirabot run report</div>")
+    parts.append(h1)
+    sep = "<span class='sep'>·</span>"
+    parts.append(f"<div class='meta'>{sep.join(meta)}</div>")
+    parts.append(f"<div class='panel'>{zones}</div>")
+
+    # Task overview: one row per ai() task once there are two or more.
+    if len(tasks) > 1:
+        rows = []
+        for name in tasks:
+            label, kind = kind_of(name)
+            badge = _badge(label, kind) if label else _badge("—", "neutral")
+            n_steps = sum(len(es) for g, es in groups if g == name)
+            ss = section_stats.get(name, {})
+            duration = int(ss.get("step_duration_ms", 0) or 0)
+            bar = _bar(_segments(ss, duration), "mb") if duration and _has_ledger(ss) else "<span></span>"
+            text = instruction(name)
+            rows.append(
+                f"<a href='#task-{task_no[name]}'><span class='i'>{task_no[name]}</span>{badge}"
+                f"<span class='n' title='{_esc(text)}'>{_esc(_first_line(text))}</span>"
+                f"<span class='r'>{n_steps} step{'s' if n_steps != 1 else ''}</span>"
+                f"<span class='r mono'>{fmt_ms(duration) if duration else ''}</span>{bar}</a>"
             )
-        parts.append("</div>")
+        parts.append(f"<div class='tasks'>{''.join(rows)}</div>")
+    if tokens_by and _token_total(stats):
+        parts.append(
+            "<div class='tokpop' id='tokpop' role='dialog' aria-label='Token usage'>"
+            f"{_token_table(tokens_by)}</div>"
+        )
+    parts.append("</div>")  # .hero
 
     if recording:
         parts.append(
-            f"<video controls src='{html.escape(recording)}'></video>"
+            f"<video controls src='{_esc(recording)}'></video>"
             "<script>function seekTo(t){const v=document.querySelector('video');"
             "if(!v)return false;v.currentTime=t;"
             "v.scrollIntoView({behavior:'smooth',block:'center'});v.play();"
             "return false;}</script>"
         )
     elif record_error:
-        parts.append(f"<div class='notice'>⚠ {html.escape(record_error)}</div>")
+        parts.append(f"<div class='notice'>⚠ {_esc(record_error)}</div>")
 
-    # Step offsets are measured from the recording start when the video is
-    # seekable, else from the first stamped step (≈ run start). Entries from
-    # runs predating the "ts" field just leave the time cell empty.
+    # A step's offset into the video, as a link that seeks it, only when
+    # the video is seekable. Without one, an offset from the run start would
+    # only restate the clock time beside it. Entries from runs predating the
+    # "ts" field just leave the time cell empty.
     seekable = bool(recording) and recording_start > 0
-    offset_base = recording_start if seekable else first_ts
+    default_tier = _split_label(tier)[0] or _DEFAULT_TIER
 
     # Sections. Every step with a thumbnail also becomes a lightbox "shot" so the
     # viewer can page across all screenshots regardless of which section they're in.
     shots: list[dict[str, str]] = []
     for gi, (sec, entries) in enumerate(groups):
-        label, kind = section_kind(sec, entries)
-        parts.append("<section>")
+        is_last = last_group_of[sec] == gi
+        steps_label = f"{len(entries)} step{'s' if len(entries) != 1 else ''}"
+        sub = steps_label
+        if sec == "setup":
+            heading = "Manual steps"
+            badge = _badge(steps_label, "neutral")
+            ins = ""
+        else:
+            heading = f"Task {task_no[sec]}" if multi else "Steps"
+            label, kind = kind_of(sec)
+            badge = _badge(label, kind) if label else _badge(steps_label, "neutral")
+            ins = ""
+            if multi:
+                text = instruction(sec)
+                ins = (
+                    f"<div class='ins clamp' title='{_esc(text)}'>{_esc(_first_line(text))}</div>"
+                    + _instruction_toggle(text)
+                )
+        group_ms = sum(int(e.get("duration_ms") or 0) for e in entries)
+        if group_ms:
+            sub += f" · {fmt_ms(group_ms)}"
+        anchor = f" id='task-{task_no[sec]}'" if sec != "setup" and is_last else ""
+        parts.append(f"<section{anchor}>")
         parts.append(
-            f"<h2>{html.escape(display_name(sec))} {_badge(label, kind)}</h2>"
+            f"<h2><div class='row'>{_esc(heading)} {badge}<span class='sub'>{sub}</span></div>"
+            f"{ins}</h2>"
         )
         # Section-level failure banner: amber for a max-steps truncation
         # (matching its badge), red for a terminal error. Rendered only on the
         # section's last group — the error ended its final run.
-        sec_err = section_errors.get(sec) if last_group_of[sec] == gi else None
+        sec_err = section_errors.get(sec) if is_last else None
         if sec_err:
-            status = _normalize_status(outcomes[sec]) if sec in outcomes else ""
+            status = outcomes.get(sec, "")
             if status in _TRUNCATED:
                 cls, mark = "notice", "⚠"
             else:
                 cls, mark = "notice error", "✗"
-            parts.append(f"<div class='{cls}'>{mark} {html.escape(sec_err)}</div>")
-        parts.append("<div class='steps'>")
+            parts.append(f"<div class='{cls}'>{mark} {_esc(sec_err)}</div>")
+        if not entries:
+            parts.append("</section>")
+            continue
         parts.append(
-            "<div class='head'>#</div><div class='head'>time</div>"
-            "<div class='head'>action</div>"
-            "<div class='head'>detail</div><div class='head'>screenshot</div>"
+            "<div class='scroll'><table class='steps'><thead><tr><th>#</th><th>Time</th>"
+            "<th>Action</th><th>Detail</th><th>Model</th><th class='num'>Duration</th>"
+            "<th class='num'>Waits</th><th>Screenshot</th></tr></thead><tbody>"
         )
         for i, e in enumerate(entries, 1):
             detail = ""
             decision = e.get("decision") or ""
             if decision:
-                detail += f"<span class='decision'>{html.escape(decision)}</span>"
-            detail += html.escape(_summarize_params(e.get("params") or {}))
+                detail += f"<div class='dec'>{_esc(decision)}</div>"
+            params = dict(e.get("params") or {})
             output = e.get("output") or ""
+            if e.get("action_type") == "done":
+                # The done tool's success flag is the row's ✓ / ✗ and the task
+                # badge; its result is the output box below, shown once.
+                params.pop("success", None)
+                if str(params.get("result", "")).strip() == output.strip():
+                    params.pop("result", None)
+            summary = _summarize_params(params)
+            if summary:
+                detail += f"<div class='det mono'>{_esc(summary)}</div>"
             if output:
-                detail += f"<br><span class='out'>{html.escape(output)}</span>"
+                detail += _output_html(output)
             # A step explicitly recorded as failed gets a ✗ and a red row —
             # unless it's marked warn (max-steps truncation), which gets ⚠ and
             # amber to match its section badge. The terminal step otherwise
             # gets the completion ✓.
             warned = bool(e.get("warn"))
             failed = e.get("success") is False and not warned
-            row_cls = " fail-row" if failed else (" warn-row" if warned else "")
+            hot = any(e.get(key) for key, _, _ in _WAITS)
+            row_cls = "fail-row" if failed else ("warn-row" if warned else ("hot" if hot else ""))
             mark = " ✗" if failed else (" ⚠" if warned else (" ✓" if e.get("finished") else ""))
             action = (e.get("action_type") or "") + mark
+            act_html = _esc(e.get("action_type") or "")
+            if mark == " ✓":
+                act_html += " <span class='done'>✓</span>"
+            elif mark:
+                act_html += _esc(mark)
             ts = e.get("ts") or 0.0
             clock = time.strftime("%H:%M:%S", time.localtime(ts)) if ts else ""
-            when = clock
-            if ts and ts >= offset_base:
-                offset = ts - offset_base
-                off_txt = _fmt_offset(offset)
-                if seekable:
-                    when += (
-                        f"<br><a href='#' title='Jump the video to this step' "
-                        f"onclick='return seekTo({offset:.1f})'>{off_txt}</a>"
-                    )
-                else:
-                    when += f"<br>{off_txt}"
+            when_cell = clock
+            if seekable and ts and ts >= recording_start:
+                offset = ts - recording_start
+                when_cell += (
+                    f"<span><a href='#' title='Jump the video to this step' "
+                    f"onclick='return seekTo({offset:.1f})'>{_fmt_offset(offset)}</a></span>"
+                )
             shot = ""
             thumb = e.get("thumb") or ""
             full = e.get("screenshot") or ""
@@ -674,30 +1223,51 @@ def write_html(
             reused = bool(e.get("reused_frame"))
             if thumb:
                 idx = len(shots)
+                facts = [f"<span>{clock}</span>"] if clock else []
+                if "duration_ms" in e:
+                    facts.append(f"<span>{fmt_ms(int(e.get('duration_ms') or 0))}</span>")
+                if e.get("model"):
+                    model_fact = _esc(e["model"])
+                    if e.get("tier"):
+                        model_fact += f" · {_esc(e['tier'])}"
+                    facts.append(f"<span>{model_fact}</span>")
+                facts += [
+                    f"<span class='wchip {css}'>{label.lower()} {fmt_ms(int(e[key]))}</span>"
+                    for key, css, label in _WAITS
+                    if e.get(key)
+                ]
+                if reused:
+                    facts.append("<span class='reused'>frame from an earlier step</span>")
                 shots.append({
                     "src": full or thumb,
+                    "where": f"{heading} · step {i}",
                     "action": action,
+                    "act": act_html,
+                    "status": "fail" if failed else ("warn" if warned else ""),
+                    "facts": "".join(facts),
                     "detail": detail,
-                    "label": f"{display_name(sec)} · #{i}"
-                    + (f" · {clock}" if clock else "")
-                    + (" · frame from an earlier step" if reused else ""),
                 })
                 img = f"<img src='{thumb}' loading='lazy'>"
-                href = html.escape(full or "#")
+                href = _esc(full or "#")
                 shot = f"<a href='{href}' onclick='return openLb({idx})'>{img}</a>"
                 if reused:
                     shot += "<span class='reused'>frame from an earlier step</span>"
-            num_div = f"<div class='{row_cls.strip()}'>{i}</div>" if row_cls else f"<div>{i}</div>"
+            cls_attr = f" class='{row_cls}'" if row_cls else ""
             parts.append(
-                num_div
-                + f"<div class='when{row_cls}'>{when}</div>"
-                f"<div class='act{row_cls}'>{html.escape(action)}</div>"
-                f"<div class='detail{row_cls}'>{detail}</div>"
-                f"<div class='shot{row_cls}'>{shot}</div>"
+                f"<tr{cls_attr}><td class='idx'>{i}</td>"
+                f"<td class='when mono'>{when_cell}</td>"
+                f"<td class='act mono'>{act_html}</td>"
+                f"<td>{detail}</td>"
+                + _model_cell(e, default_model, default_tier)
+                + _duration_cell(e)
+                + _waits_cell(e)
+                + f"<td class='shot'>{shot}</td></tr>"
             )
-        parts.append("</div></section>")
+        parts.append("</tbody></table></div></section>")
 
+    parts.append("</div>")  # .wrap
     parts.append(_lightbox(shots))
+    parts.append(f"<script>{_PAGE_JS}</script>")
     parts.append("</body></html>")
     out.write_text("".join(parts), encoding="utf-8")
     return out

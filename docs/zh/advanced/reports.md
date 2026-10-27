@@ -26,9 +26,35 @@ qira_runs/2026-06-07/192335-3f9ab2c1/
   recording.mp4        # 若开启录制——同时嵌入报告
 ```
 
-每个 `ai()` 任务的徽章对应 `result.status`:绿色 `PASS`、红色
-`FAIL`/`ERROR`、琥珀色 `MAX STEPS`(步数截断)。
-`screenshot_annotate=True`(默认)在点击/输入坐标处画红色十字线。
+### 报告内容
+
+**页头。** 标题优先用 `task_name`,没设置时取唯一任务指令的第一行,多个
+任务时写「N tasks」。指令较长或有多行时最多显示两行,完整内容点「Full
+instruction」展开。标题下面依次是运行时间、平台和屏幕尺寸、Run ID,再往下
+是三栏面板:
+
+- **Outcome**:所有 `ai()` 任务通过为绿色,有任务失败为红色,只有截断
+  (`MAX STEPS` / `MAX DURATION`)或取消时为琥珀色;另有通过数和步数。
+- **Time**:AI 步骤的总耗时,拆成模型耗时、设备耗时(截图、动作、等待
+  稳定、自定义工具)和因容量损失的时间(限流、故障、超时),数据与
+  `bot.usage` 一致。
+- **Model & tokens**:模型(及兜底模型)、档位(及升档情况)和 token 总数。
+  点击总数弹出「模型 × 档位」明细表:AI calls、Prompt、Cached、Response、
+  Thinking、Total。失败的调用也计入;没有应答告知档位时,档位显示 `—`。
+  打印时明细表自动展开。
+
+**任务概览。** 有两个及以上 `ai()` 任务时,每个任务一行:状态、指令、步数、
+耗时和时间构成。点击可跳到对应任务。
+
+**步骤。** 每个任务一张表(单任务时标题为「Steps」,多任务时为「Task N」),
+手动步骤按实际执行位置分组。每个 `ai()` 任务的徽章对应 `result.status`,
+失败原因显示在表格上方。列为 `# / Time / Action / Detail / Model /
+Duration / Waits / Screenshot`。本次运行的主模型以灰色显示,调用以其他档位
+服务时带档位标签。Duration 下面有模型 / 设备 / 等待的时间条;因容量等待过的
+步骤会标出各项等待并整行高亮。手动(非 AI)步骤这三列显示 `—`。
+
+`screenshot_annotate=True`(默认)在点击/输入坐标处画红色十字线。点击缩略图
+可翻看全部截图;有录像时,点时间列可跳到视频对应位置。
 `bot.report("path.html")` 可按需额外输出一份;`bot.screenshot(target)`
 抓单帧。
 

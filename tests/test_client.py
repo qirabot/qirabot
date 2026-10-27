@@ -25,6 +25,7 @@ from qirabot.client import (
     VerifyResult,
     _SingleAction,
 )
+from qirabot.engine.providers.stats import StatsSnapshot
 from qirabot.engine.session import StepOutcome
 from qirabot.engine.types import TokenUsage
 from qirabot.exceptions import ActionError, AuthenticationError
@@ -96,6 +97,17 @@ class TestStepResult:
         s = StepResult.from_outcome(StepOutcome(finished=True, output="done"), step=5)
         assert s.finished is True
         assert s.output == "done"
+
+    def test_from_outcome_carries_the_step_ledger(self):
+        outcome = StepOutcome(
+            model_used="gemini-3.5-flash",
+            tier="priority",
+            stats=StatsSnapshot(model_ms=900, outage_wait_ms=7_000),
+        )
+        s = StepResult.from_outcome(outcome, step=2, step_duration_ms=9_400)
+        assert (s.model_ms, s.outage_wait_ms, s.timeout_wait_ms) == (900, 7_000, 0)
+        assert (s.model, s.tier) == ("gemini-3.5-flash", "priority")
+        assert s.step_duration_ms == 9_400
 
 
 class TestVerifyResult:
@@ -435,10 +447,17 @@ class TestAiLoopStatus:
 
     def test_wait_cut_to_remaining_time(self, make_bot, monkeypatch):
         now = self._clock(monkeypatch)
-        bot = self._bot_returning(make_bot, {
+        wait = {
             "success": True, "finished": False, "actionType": "wait",
             "params": {"duration": 10_000},
-        })
+        }
+
+        def decide():  # 8s of the 10s budget go to deciding
+            now[0] += 8
+            return dict(wait)
+
+        bot = self._bot_returning(make_bot, wait)
+        bot._backend.results[0] = decide
         executed = []
 
         def execute(adapter, action, params):  # "sleeps" on the fake clock
@@ -447,10 +466,7 @@ class TestAiLoopStatus:
 
         bot._execute_action = execute
 
-        def tick(step):  # 8s of the 10s budget gone before the wait runs
-            now[0] += 8
-
-        result = bot.ai(object(), "do thing", max_steps=5, on_step=tick, max_duration=10)
+        result = bot.ai(object(), "do thing", max_steps=5, max_duration=10)
         assert executed[0]["duration"] == 2_000
         # The recorded step keeps the model's own value.
         assert result.steps[0].params["duration"] == 10_000
@@ -699,6 +715,298 @@ class TestSessionUsage:
         bot.verify(object(), "anything")
         assert before.ai_steps == 0  # old snapshot untouched
         assert bot.usage.ai_steps == 1
+
+    def test_usage_reads_the_provider_ledger(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.provider_stats = StatsSnapshot(
+            model_ms=1_234, rate_limit_wait_ms=5_000, timeout_wait_ms=120_000
+        )
+        u = bot.usage
+        assert (u.model_ms, u.rate_limit_wait_ms, u.timeout_wait_ms) == (
+            1_234, 5_000, 120_000,
+        )
+        assert u.outage_wait_ms == 0
+        assert not hasattr(u, "llm_decision_duration_ms")
+
+
+
+class TestStepTiming:
+    """3.5.0: step_duration_ms is a wall clock — screenshot through action
+    and settle — and on_step fires once the step is complete."""
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        now = [1000.0]
+        monkeypatch.setattr("qirabot.client.time.monotonic", lambda: now[0])
+        return now
+
+    def _bot(self, make_bot, clock, action_s=0.0):
+        bot = make_bot()
+        bot._get_adapter = lambda target: _SettleFakeAdapter()
+        events = []
+
+        def execute(adapter, action, params):  # action + settle
+            events.append(("action", action))
+            clock[0] += action_s
+
+        bot._execute_action = execute
+        return bot, events
+
+    @staticmethod
+    def _deciding(clock, seconds, result):
+        def decide():
+            clock[0] += seconds
+            return dict(result)
+        return decide
+
+    def test_a_step_spans_decision_action_and_settle(self, make_bot, clock):
+        bot, _ = self._bot(make_bot, clock, action_s=1.5)
+        bot._backend.results.extend([
+            self._deciding(clock, 4.0, {
+                "success": True, "finished": False, "actionType": "click",
+                "params": {"x": 1, "y": 2},
+            }),
+            self._deciding(clock, 2.0, {
+                "success": True, "finished": True, "actionType": "done",
+                "params": {"success": True}, "output": "ok",
+            }),
+        ])
+        result = bot.ai(object(), "task", max_steps=3)
+        click, done = result.steps
+        assert click.step_duration_ms == 5_500  # decide 4s + action/settle 1.5s
+        assert done.step_duration_ms == 2_000  # done has no action
+        assert bot.usage.step_duration_ms == 7_500
+
+    def test_on_step_fires_after_the_action(self, make_bot, clock):
+        bot, events = self._bot(make_bot, clock)
+        bot._backend.results.append({
+            "success": True, "finished": False, "actionType": "click",
+            "params": {"x": 1, "y": 2},
+        })
+        seen = []
+
+        def on_step(step):
+            events.append(("on_step", step.action_type))
+            seen.append(step.step_duration_ms)
+
+        bot.ai(object(), "task", max_steps=2, on_step=on_step)
+        assert events[:2] == [("action", "click"), ("on_step", "click")]
+
+    def test_custom_tool_time_counts_toward_its_step(self, make_bot, clock):
+        bot, _ = self._bot(make_bot, clock)
+
+        def gm_command(cmd: str) -> str:
+            """Send a GM command."""
+            clock[0] += 3.0
+            return "ok"
+
+        bot._backend.results.append({
+            "success": True, "finished": False, "actionType": "gm_command",
+            "params": {"cmd": "heal"},
+        })
+        result = bot.ai(object(), "task", max_steps=2, custom_tools=[gm_command])
+        assert result.steps[0].step_duration_ms == 3_000
+
+    def test_a_failed_step_counts_in_the_session_only(self, make_bot, clock):
+        bot, _ = self._bot(make_bot, clock)
+        bot._backend.results.append(self._deciding(clock, 66.0, {
+            "success": False, "error": "rate limited", "inputTokens": 10,
+        }))
+        steps = []
+        with pytest.raises(ActionError):
+            bot.ai(object(), "task", max_steps=3, on_step=steps.append)
+        assert steps == []  # no StepResult, no on_step
+        u = bot.usage
+        assert u.step_duration_ms == 66_000
+        assert u.ai_steps == 0
+
+    def test_single_step_calls_are_timed_failures_included(self, make_bot, clock):
+        bot, _ = self._bot(make_bot, clock, action_s=0.5)
+        bot._backend.results.extend([
+            self._deciding(clock, 1.0, {"success": False, "error": "not found"}),
+            self._deciding(clock, 1.5, {
+                "success": True, "finished": True, "actionType": "click",
+                "params": {"x": 1, "y": 2},
+            }),
+        ])
+        with pytest.raises(ActionError):
+            bot.click(object(), "Login", retry=0)
+        bot.click(object(), "Login", retry=0)
+        # 1.0s failed locate + (1.5s locate + 0.5s click/settle)
+        assert bot.usage.step_duration_ms == 3_000
+
+    def test_step_reports_model_and_tier(self, make_bot, clock):
+        bot, _ = self._bot(make_bot, clock)
+        bot._backend.results.append({
+            "success": True, "finished": True, "actionType": "done",
+            "params": {"success": True}, "output": "ok",
+            "model": "gemini-3.5-flash", "tier": "priority",
+        })
+        (step,) = bot.ai(object(), "task", max_steps=1).steps
+        assert (step.model, step.tier) == ("gemini-3.5-flash", "priority")
+
+
+class TestReportData:
+    """3.5.0 report redesign: what the client hands the report — per-step
+    timing, model and tier on the entries, spend by model × tier, per-task
+    ledger slices, the device."""
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        now = [1000.0]
+        monkeypatch.setattr("qirabot.client.time.monotonic", lambda: now[0])
+        return now
+
+    @staticmethod
+    def _bot(make_bot, **kwargs):
+        bot = make_bot(report=True, **kwargs)
+        bot._get_adapter = lambda target: _SettleFakeAdapter()
+        bot._execute_action = lambda *a, **k: None
+        return bot
+
+    def test_ai_step_entry_carries_time_model_and_tier(self, make_bot, clock):
+        bot = self._bot(make_bot)
+
+        def decide():
+            clock[0] += 4.0
+            return {
+                "success": True, "finished": True, "actionType": "done",
+                "params": {"success": True}, "output": "ok",
+                "model": "gemini-3.5-flash", "tier": "priority",
+                "stats": StatsSnapshot(model_ms=3_000, rate_limit_wait_ms=500),
+            }
+
+        bot._backend.results.append(decide)
+        bot.ai(object(), "task", max_steps=1)
+        (entry,) = bot._timeline.entries
+        assert entry["duration_ms"] == 4_000
+        assert (entry["model_ms"], entry["rate_limit_wait_ms"]) == (3_000, 500)
+        assert (entry["outage_wait_ms"], entry["timeout_wait_ms"]) == (0, 0)
+        assert (entry["model"], entry["tier"]) == ("gemini-3.5-flash", "priority")
+
+    def test_single_step_entry_carries_its_outcome(self, make_bot, clock):
+        bot = self._bot(make_bot)
+
+        def locate():
+            clock[0] += 1.5
+            return {
+                "success": True, "params": {"x": 1, "y": 2},
+                "model": "gemini-3.5-flash", "tier": "flex",
+                "stats": StatsSnapshot(model_ms=1_200, timeout_wait_ms=100),
+            }
+
+        bot._backend.results.append(locate)
+        bot.click(object(), "Login", retry=0)
+        (entry,) = bot._timeline.entries
+        assert entry["duration_ms"] == 1_500
+        assert (entry["model_ms"], entry["timeout_wait_ms"]) == (1_200, 100)
+        assert (entry["model"], entry["tier"]) == ("gemini-3.5-flash", "flex")
+
+    def test_manual_steps_get_no_ai_fields(self, make_bot):
+        bot = self._bot(make_bot)
+        bot.press_key(object(), "Enter")
+        (entry,) = bot._timeline.entries
+        assert "duration_ms" not in entry
+        assert "model" not in entry
+
+    def test_tokens_split_by_model_and_tier(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.results.extend([
+            {"success": True, "finished": False, "actionType": "click",
+             "params": {"x": 1, "y": 2}, "inputTokens": 100, "outputTokens": 20,
+             "thinkingTokens": 5, "model": "gemini-3.5-flash", "tier": "standard"},
+            {"success": True, "finished": True, "actionType": "done",
+             "params": {"success": True}, "inputTokens": 50, "cacheReadTokens": 30,
+             "outputTokens": 10, "model": "gemini-3.5-flash", "tier": "priority"},
+            # verify: a single-step call, filed the same way.
+            {"success": True, "finished": True, "output": "yes", "inputTokens": 7,
+             "outputTokens": 1, "model": "gemini-3.5-flash", "tier": "standard"},
+        ])
+        bot.ai(object(), "task", max_steps=3)
+        bot.verify(object(), "anything")
+        tb = bot._timeline.tokens_by
+        assert tb[("gemini-3.5-flash", "standard")] == {
+            "calls": 2, "input": 107, "cached": 0, "output": 21, "thinking": 5,
+        }
+        assert tb[("gemini-3.5-flash", "priority")] == {
+            "calls": 1, "input": 50, "cached": 30, "output": 10, "thinking": 0,
+        }
+
+    def test_failed_calls_go_to_the_current_model_with_no_tier(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.results.extend([
+            {"success": False, "error": "rate limited", "inputTokens": 40},
+            {"success": False, "error": "not found", "inputTokens": 9},
+        ])
+        with pytest.raises(ActionError):
+            bot.ai(object(), "task", max_steps=3)
+        with pytest.raises(ActionError):
+            bot.click(object(), "Login", retry=0)
+        assert bot._timeline.tokens_by == {
+            ("fake-model", ""): {
+                "calls": 2, "input": 49, "cached": 0, "output": 0, "thinking": 0,
+            },
+        }
+
+    def test_each_task_gets_its_own_ledger_slice(self, make_bot, clock):
+        bot = self._bot(make_bot)
+        backend = bot._backend
+
+        def decide():
+            clock[0] += 10.0
+            backend.provider_stats = StatsSnapshot(model_ms=4_000, rate_limit_wait_ms=6_000)
+            return {"success": True, "finished": True, "actionType": "done",
+                    "params": {"success": True}}
+
+        def locate():
+            clock[0] += 2.0
+            backend.provider_stats = StatsSnapshot(model_ms=5_000, rate_limit_wait_ms=6_000)
+            return {"success": True, "params": {"x": 1, "y": 2}}
+
+        backend.results.extend([decide, locate])
+        bot.ai(object(), "task", max_steps=1)
+        bot.click(object(), "Login", retry=0)
+        sec = bot._timeline.section_stats
+        assert sec["task"]["step_duration_ms"] == 10_000
+        assert (sec["task"]["model_ms"], sec["task"]["rate_limit_wait_ms"]) == (4_000, 6_000)
+        # The click after the run is a manual-section call.
+        assert sec["setup"]["step_duration_ms"] == 2_000
+        assert sec["setup"]["model_ms"] == 1_000
+
+    def test_a_failed_step_still_counts_in_its_task(self, make_bot, clock):
+        bot = self._bot(make_bot)
+
+        def decide():
+            clock[0] += 66.0
+            bot._backend.provider_stats = StatsSnapshot(timeout_wait_ms=60_000)
+            return {"success": False, "error": "timed out"}
+
+        bot._backend.results.append(decide)
+        with pytest.raises(ActionError):
+            bot.ai(object(), "task", max_steps=3)
+        sec = bot._timeline.section_stats["task"]
+        assert (sec["step_duration_ms"], sec["timeout_wait_ms"]) == (66_000, 60_000)
+
+    def test_repeat_runs_keep_their_instruction(self, make_bot):
+        bot = self._bot(make_bot)
+        bot.ai(object(), "Log in", max_steps=1)
+        bot.ai(object(), "Log in", max_steps=1)
+        assert bot._timeline.instructions == {"Log in": "Log in", "Log in #2": "Log in"}
+
+    def test_report_shows_the_new_header(self, make_bot):
+        bot = self._bot(make_bot)
+        bot._backend.results.append({
+            "success": True, "finished": True, "actionType": "done",
+            "params": {"success": True}, "output": "ok", "inputTokens": 100,
+            "outputTokens": 10, "model": "fake-model", "tier": "standard",
+        })
+        bot.ai(object(), "Open the menu\nthen tap Save", max_steps=1)
+        html = bot.report().read_text(encoding="utf-8")
+        # No task_name: the title is the instruction's first line.
+        assert ">Open the menu</h1>" in html
+        assert "<span>test · 100×100</span>" in html
+        assert "id='tokbtn'" in html
+        assert "<td class='mdl mono same'>fake-model</td>" in html
 
 
 class TestQirabotInit:

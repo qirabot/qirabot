@@ -361,13 +361,6 @@ def _fail_setup(bot: Any, e: Exception, output_format: str = "text") -> NoReturn
     sys.exit(1)
 
 
-def _default_task_name(instruction: str) -> str:
-    """Derive a task name from the instruction when --name is not given, so
-    runs are distinguishable in the report header instead of sharing one name."""
-    first_line = next((ln.strip() for ln in instruction.splitlines() if ln.strip()), "")
-    return first_line[:60] or "cli"
-
-
 # Accept -h alongside --help, and print each option's default in --help. The
 # show_default context setting is inherited by every subcommand (click >= 8.1).
 _CONTEXT_SETTINGS = {
@@ -476,7 +469,7 @@ def _task_options(f: _FC) -> _FC:
         help='Model as "{provider}/{model}" with provider one of gemini-vertex / '
         "gemini (default: QIRA_MODEL or the built-in default)",
     )(f)
-    f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Run name shown in the report (default: derived from the instruction)")(f)
+    f = _option("--name", "-n", group=_TASK_GROUP, default="", help="Run name shown in the report (default: the instruction's first line)")(f)
     return f
 
 
@@ -1106,7 +1099,8 @@ def _task_bot(opts: _TaskOpts, **record_kwargs: Any) -> Any:
         opts.ctx, model=opts.model, thinking_level=opts.thinking_level,
         media_resolution=opts.media_resolution, language=opts.language,
         report=opts.report, report_dir=opts.report_dir, annotate=opts.annotate,
-        task_name=opts.name or _default_task_name(opts.instruction),
+        # No --name: the report titles the run from its instruction itself.
+        task_name=opts.name,
         overlay=opts.overlay, output_format=opts.output_format,
         **record_kwargs,
     )

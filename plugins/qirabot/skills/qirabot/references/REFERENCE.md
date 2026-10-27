@@ -69,7 +69,8 @@ managed in-process (self-heals on a misfire). Prefer this over hand-sequencing
 primitives. Drop to the primitives below only for strict determinism or a stable
 flow you'll run repeatedly (e.g. CI).
 
-**`on_step(step)` — your live window into the run.** It fires after every step;
+**`on_step(step)` — your live window into the run.** It fires after every step,
+once its action and settle pause have finished;
 `bot.ai` is otherwise a black box until `result` returns. Print it so a stuck,
 looping, or failed run is debuggable from stdout without opening the report:
 
@@ -81,8 +82,13 @@ def on_step(step: StepResult) -> None:
 
 `StepResult` fields: `.step`, `.action_type`, `.params`, `.finished`,
 `.decision` (the model's reasoning for this step), `.output` (text on the final
-step), and `.input_tokens` / `.output_tokens` / `.thinking_tokens` /
-`.step_duration_ms` / `.llm_decision_duration_ms`. The full list is also on
+step), `.input_tokens` / `.output_tokens` / `.thinking_tokens`,
+`.step_duration_ms` (the step's wall clock: screenshot → model → action and
+settle), the time fields listed under `bot.usage` below counted over this
+step's model requests (timeout re-asks, tier escalation and fallback
+included), `.model` (the model that answered; the fallback model once the run
+switched) and `.tier` (`"standard"` / `"flex"` / `"priority"`, `""` if
+unreported). The full list is also on
 `result.steps` after the run; `on_step` is the same data, live. (The callback is
 read-only — its return value is ignored and it can't steer the loop. It runs on
 the hot path, so keep it light and wrap any IO in `try`; an exception thrown here
@@ -97,10 +103,18 @@ failed calls' spend is included, `.ai_steps` counts successful calls only.
 Fields: `.ai_steps`, `.input_tokens` (non-cached prompt portion),
 `.cache_read_tokens` / `.cache_write_tokens` (cached prompt portion),
 `.output_tokens` (already includes thinking), `.thinking_tokens`,
-`.total_tokens` (input + cache read/write + output), `.step_duration_ms`,
-`.llm_decision_duration_ms`. Read it after a run for cost accounting; the
-CLI prints the same summary after each task, and the HTML report header
-shows it too.
+`.total_tokens` (input + cache read/write + output). Read it after a run for
+cost accounting; the CLI prints the same summary after each task, and the HTML
+report header shows it too. Time fields: `.step_duration_ms` (wall clock of
+every AI call, failed steps included), `.model_ms` (round trip of answered
+model requests, upload included), `.rate_limit_wait_ms` / `.outage_wait_ms`
+(time lost to 429s / 5xx and connection failures, backoff included),
+`.timeout_wait_ms` (requests that ended in a timeout). All five cover the same
+calls, so `step_duration_ms` minus the other four is the device side. Totals
+span the client: diff two snapshots around a run, the second in a `finally`.
+A failed step leaves no `StepResult`; its time is the run's diff minus the
+sum of the committed steps. Older SDKs lack these fields:
+`getattr(bot.usage, "model_ms", None)`.
 
 **`custom_tools` — register your own functions as tools the model can call
 mid-task.** Any Python function works — anything code can do (internal API

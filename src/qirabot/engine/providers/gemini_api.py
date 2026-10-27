@@ -15,9 +15,11 @@ from .base import ChatRequest, ChatResponse
 from .service_tier import (
     FLEX,
     GEMINI_SERVED_TIER_HEADER,
+    SUPPORTED_TIERS,
     TierCheck,
     TierLadder,
 )
+from .stats import ProviderStats
 
 _PROVIDER = "gemini"
 
@@ -39,6 +41,7 @@ class GeminiApiProvider:
     ) -> None:
         self._api_key = api_key
         self._http = http_client
+        self._stats = ProviderStats()
         self._ladder = TierLadder(service_tier, tier_escalation, _PROVIDER)
         self._tier_check = TierCheck(_PROVIDER)
         # Sticky capability flag, see run_chat.
@@ -52,6 +55,12 @@ class GeminiApiProvider:
         """Distinct consumption tiers this provider was actually served
         on, for the run report."""
         return self._tier_check.served
+
+    @property
+    def stats(self) -> ProviderStats:
+        """Where this provider's request time went, for the usage totals
+        (see providers.stats)."""
+        return self._stats
 
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
         return self._ladder.run(
@@ -79,6 +88,7 @@ class GeminiApiProvider:
             _PROVIDER,
             timeout,
             on_headers=lambda h: served.append(h.get(GEMINI_SERVED_TIER_HEADER, "")),
+            stats=self._stats,
         )
         data, self._part_media_resolution = run_chat(
             request,
@@ -87,11 +97,14 @@ class GeminiApiProvider:
             service_tier=tier,
             wait_out_quota=self._ladder.wait_out_quota(escalated),
             ride_out_outage=self._ladder.ride_out_outage(tier, escalated),
+            on_wait=self._stats.record_wait,
         )
         resp = parse_response(data, request.model)
+        reported = served[-1].strip().lower() if served else ""
+        resp.served_tier = reported if reported in SUPPORTED_TIERS else ""
         self._tier_check.observe(
             tier,
-            served[-1].strip().lower() if served else "",
+            reported,
             request.model,
             "endpoint=generativelanguage",
         )

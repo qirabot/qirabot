@@ -288,8 +288,9 @@ curl -sS -X POST \
 就能同样验证 flex。
 
 运行报告的头部会给档位单独一行,紧挨模型。两者不一致时会直接写清楚 ——
-`priority — served as standard, and billed at that rate` —— 没配置档位则
-不显示这一行。
+`priority — served as standard, and billed at that rate`。standard 档(默认)
+只在有调用由其他档位服务时才显示这一行,例如升档后的
+`standard — some calls served as priority, and billed at that rate`。
 
 降级**不是**失败,也不会触发 `tier_escalation`:那次调用成功了,只是
 按标准价计费。升档响应的是容量**失败** —— 限流、拒绝,或请求在预算

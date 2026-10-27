@@ -19,6 +19,7 @@ from .engine import LocalEngine
 from .history import History, default_history_config
 from .prompts import NORMALIZED_COORD_RULE
 from .providers.base import ErrorCategory, ProviderError
+from .providers.stats import StatsSnapshot
 from .coords import rescale_point
 from .types import (
     Action,
@@ -88,7 +89,11 @@ class StepError(Exception):
 
 @dataclass
 class StepOutcome:
-    """The engine-side result of one ai() step (pre-wire)."""
+    """The engine-side result of one ai() step (pre-wire).
+
+    Carries no wall-clock duration: a step's time spans the screenshot
+    before it and the action and settle after it, all on the client's
+    side, so the client measures it."""
 
     action_type: str = ""
     params: dict[str, Any] = field(default_factory=dict)
@@ -97,10 +102,15 @@ class StepOutcome:
     finished: bool = False
     step_number: int = 0
     model_used: str = ""
+    # Tier that served the committed decision ("standard"/"flex"/
+    # "priority"), "" when the endpoint gave no signal.
+    tier: str = ""
     token_usage: TokenUsage = field(default_factory=TokenUsage)
-    llm_decision_ms: int = 0
     coordinate_parse_ms: int = 0
-    step_duration_ms: int = 0
+    # This step's share of the provider ledger (model time, capacity
+    # waits). AIRun.step fills it from two snapshots; the decision loop
+    # below never touches it.
+    stats: StatsSnapshot = field(default_factory=StatsSnapshot)
 
 
 class LocalAISession:
@@ -165,12 +175,10 @@ class LocalAISession:
             self.history.backfill_last_tool_output(action_result)
         self.history.attach_screenshots(self.screenshots)
 
-        step_start = time.monotonic()
         hist_entries = self.history.entries()
         hist_summary = self.history.summary()
 
         usage = TokenUsage()
-        llm_ms = 0
         coord_ms = 0
         correction_hint = ""
         act: Action | None = None
@@ -223,7 +231,6 @@ class LocalAISession:
                 partial = getattr(exc, "result", None)
                 if isinstance(partial, DecisionResult):
                     usage.add(partial.token_usage)
-                    llm_ms += partial.duration_ms
                 if attempt < MAX_GROUNDING_ATTEMPTS:
                     correction_hint = _UNPARSABLE_HINT
                     logger.warning(
@@ -237,7 +244,6 @@ class LocalAISession:
                 raise StepError(str(exc), usage) from exc
 
             usage.add(result.token_usage)
-            llm_ms += result.duration_ms
             if result.action is None:
                 raise StepError("AI returned no action", usage)
 
@@ -323,10 +329,9 @@ class LocalAISession:
             finished=finished,
             step_number=self.step_count,
             model_used=result.model_used,
+            tier=result.served_tier,
             token_usage=usage,
-            llm_decision_ms=llm_ms,
             coordinate_parse_ms=coord_ms,
-            step_duration_ms=int((time.monotonic() - step_start) * 1000),
         )
 
 

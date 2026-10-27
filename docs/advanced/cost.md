@@ -148,5 +148,35 @@ header, and are in the `usage` object of `--output-format json`. For a
 per-call breakdown while tuning, `QIRA_ENGINE_TRACE=<dir>` writes one JSONL
 record per model call.
 
+### Time and capacity
+
+The same snapshot says where the time went. `step_duration_ms` is the
+wall-clock time of the AI calls, device work included. `model_ms` is the
+round-trip time of answered model requests (upload and download included).
+Time lost to capacity is split three ways: `rate_limit_wait_ms` (429s) and
+`outage_wait_ms` (5xx and connection failures), each counting the backoff
+sleeps plus the failed requests themselves, and `timeout_wait_ms` (requests
+that ended in a timeout). All five cover the same calls, so
+`step_duration_ms` minus the other four is the device side.
+
+```python
+before = bot.usage
+try:
+    bot.ai(page, "…")
+finally:
+    run = bot.usage    # read here: a step that fails leaves no StepResult
+    print(run.model_ms - before.model_ms,
+          run.rate_limit_wait_ms - before.rate_limit_wait_ms,
+          run.outage_wait_ms - before.outage_wait_ms,
+          run.timeout_wait_ms - before.timeout_wait_ms)
+```
+
+Billing follows the tier that served each call. Every `StepResult` carries
+the `tier` that served it (`"standard"` / `"flex"` / `"priority"`) and the
+`model` that answered, so a run that escalated shows `"priority"` steps and
+a run that fell back shows the fallback model's name.
+Older qirabot versions lack these fields, so code that must run on both can
+read them with `getattr(bot.usage, "model_ms", None)`.
+
 See also: [Configuration](/advanced/configuration) (every knob and its env
 var) · [AI Tasks & Custom Tools](/advanced/ai-tasks)

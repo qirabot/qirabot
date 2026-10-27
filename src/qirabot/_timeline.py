@@ -15,9 +15,14 @@ from typing import Any
 
 from qirabot._annotate import render_step_images
 from qirabot.adapters.base import ScreenshotConfig
+from qirabot.engine.providers.stats import StatsSnapshot
 from qirabot.engine.types import TokenUsage
 
 logger = logging.getLogger("qirabot")
+
+# Provider-ledger fields kept per section and per entry (see StatsSnapshot).
+_LEDGER_KEYS = ("model_ms", "rate_limit_wait_ms", "outage_wait_ms", "timeout_wait_ms")
+_SECTION_KEYS = ("step_duration_ms", *_LEDGER_KEYS)
 
 
 class RunTimeline:
@@ -62,8 +67,22 @@ class RunTimeline:
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
             "step_duration_ms": 0,
-            "llm_decision_duration_ms": 0,
         }
+        # ai() section key -> its full instruction, for the report's titles
+        # (a repeat run's key carries a " #2" suffix the instruction lacks).
+        self.instructions: dict[str, str] = {}
+        # Section key -> that section's wall-clock time and provider-ledger
+        # slice (model time, capacity waits), for the per-task rows. Every
+        # AI call adds to the section that was current when it ran, failed
+        # calls included; "setup" collects standalone calls.
+        self.section_stats: dict[str, dict[str, int]] = {}
+        # (model, tier) -> token counts, so the report can break spend down
+        # by what each call is billed at. tier is "" when unknown (a failed
+        # call carries no served tier).
+        self.tokens_by: dict[tuple[str, str], dict[str, int]] = {}
+        # (platform, width, height) of the first device an AI call ran on,
+        # for the report's meta line; None until one has.
+        self.device: tuple[str, int, int] | None = None
         self._screenshot_counter = 0
         # Last frame written by record_step (report-relative path + thumbnail),
         # so a step that reuses the previous frame can point at it instead of
@@ -85,7 +104,13 @@ class RunTimeline:
         if runs > 1:
             section = f"{section} #{runs}"
         self.current_section = section
+        self.instructions[section] = instruction
         return section
+
+    def note_device(self, platform: str, width: int, height: int) -> None:
+        """Remember the device an AI call ran on; the first one sticks."""
+        if self.device is None:
+            self.device = (platform, width, height)
 
     def record_outcome(self, status: str, error: str = "") -> None:
         """Record how the current section ended.
@@ -100,32 +125,85 @@ class RunTimeline:
         if error:
             self.section_errors[self.current_section] = error
 
-    def add_tokens(
-        self, usage: TokenUsage, *, step_ms: int = 0, llm_ms: int = 0
-    ) -> None:
-        """Fold an engine call's token/timing usage into the run stats —
-        failed calls included: a failed step's decide attempts (up to
+    def add_tokens(self, usage: TokenUsage, model: str = "", tier: str = "") -> None:
+        """Fold an engine call's token usage into the run stats — failed
+        calls included: a failed step's decide attempts (up to
         MAX_GROUNDING_ATTEMPTS of them) are real spend the engine reports on
         the error, and dropping them would understate the session totals
-        exactly on the most expensive steps."""
+        exactly on the most expensive steps.
+
+        ``model``/``tier`` file the spend under the rate it is billed at
+        (see :attr:`tokens_by`); a call that spent nothing is not counted
+        there."""
         self.stats["input_tokens"] += usage.input_tokens
         self.stats["output_tokens"] += usage.output_tokens
         self.stats["thinking_tokens"] += usage.thinking_tokens
         self.stats["cache_read_tokens"] += usage.cache_read_tokens
         self.stats["cache_write_tokens"] += usage.cache_write_tokens
-        self.stats["step_duration_ms"] += step_ms
-        self.stats["llm_decision_duration_ms"] += llm_ms
+        cache = usage.cache_read_tokens + usage.cache_write_tokens
+        if not (usage.input_tokens or cache or usage.output_tokens):
+            return
+        row = self.tokens_by.setdefault(
+            (model, tier),
+            {"calls": 0, "input": 0, "cached": 0, "output": 0, "thinking": 0},
+        )
+        row["calls"] += 1
+        row["input"] += usage.input_tokens
+        row["cached"] += cache
+        row["output"] += usage.output_tokens
+        row["thinking"] += usage.thinking_tokens
 
-    def add_step_usage(
-        self, usage: TokenUsage, *, step_ms: int = 0, llm_ms: int = 0
-    ) -> None:
+    def add_step_usage(self, usage: TokenUsage, model: str = "", tier: str = "") -> None:
         """A successful AI call: its usage plus one AI step.
 
         ai_steps counts committed calls only (matching the report's step
         count); failed calls go through :meth:`add_tokens` alone.
         """
         self.stats["ai_steps"] += 1
-        self.add_tokens(usage, step_ms=step_ms, llm_ms=llm_ms)
+        self.add_tokens(usage, model, tier)
+
+    def _section_stats(self) -> dict[str, int]:
+        return self.section_stats.setdefault(
+            self.current_section, dict.fromkeys(_SECTION_KEYS, 0)
+        )
+
+    def add_time(self, ms: int) -> None:
+        """Fold the wall-clock time of one ai() step or one single-step AI
+        call into the run stats — failed ones included, so the session
+        total can be compared against the provider ledger's model time and
+        waits, which also see every call."""
+        self.stats["step_duration_ms"] += ms
+        self._section_stats()["step_duration_ms"] += ms
+
+    def add_ledger(self, window: StatsSnapshot) -> None:
+        """Fold a provider-ledger window (model time, capacity waits) into
+        the current section. The session totals are read off the ledger
+        itself; this only splits them by section."""
+        sec = self._section_stats()
+        for key in _LEDGER_KEYS:
+            sec[key] += getattr(window, key)
+
+    @staticmethod
+    def annotate(
+        entry: dict[str, Any] | None,
+        duration_ms: int,
+        window: StatsSnapshot,
+        model: str,
+        tier: str,
+    ) -> None:
+        """Attach an AI step's timing, model and tier to its log entry.
+
+        Called once the step is over (action and settle included), so the
+        entry recorded before the action gets its full time. Manual steps
+        never get these keys, which is how the report tells them apart.
+        """
+        if entry is None:
+            return
+        entry["duration_ms"] = duration_ms
+        for key in _LEDGER_KEYS:
+            entry[key] = getattr(window, key)
+        entry["model"] = model
+        entry["tier"] = tier
 
     def save_frame(self, data: bytes, label: str) -> Path | None:
         """Write a full-resolution screenshot to ``report_dir/screenshots/``."""

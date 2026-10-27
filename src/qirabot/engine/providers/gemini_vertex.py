@@ -19,6 +19,7 @@ from .service_tier import (
     TierLadder,
     tier_from_traffic_type,
 )
+from .stats import ProviderStats
 from .vertex_auth import VertexTokenSource, vertex_base_url
 
 # API-key requests bypass project/location entirely: Vertex API keys are
@@ -46,6 +47,7 @@ class GeminiVertexProvider:
         self._tokens = token_source
         self._http = http_client
         self._api_key = api_key
+        self._stats = ProviderStats()
         self._ladder = TierLadder(service_tier, tier_escalation, _PROVIDER)
         self._tier_check = TierCheck(_PROVIDER)
         # Sticky capability flag: flips off on the first endpoint rejection
@@ -86,6 +88,12 @@ class GeminiVertexProvider:
         on, for the run report."""
         return self._tier_check.served
 
+    @property
+    def stats(self) -> ProviderStats:
+        """Where this provider's request time went, for the usage totals
+        (see providers.stats)."""
+        return self._stats
+
     def chat(self, request: ChatRequest, timeout: float) -> ChatResponse:
         return self._ladder.run(
             lambda tier, escalated: self._chat_once(request, timeout, tier, escalated)
@@ -103,6 +111,7 @@ class GeminiVertexProvider:
             lambda: self._headers(tier),
             _PROVIDER,
             timeout,
+            stats=self._stats,
         )
         data, self._part_media_resolution = run_chat(
             request,
@@ -110,11 +119,13 @@ class GeminiVertexProvider:
             self._part_media_resolution,
             wait_out_quota=self._ladder.wait_out_quota(escalated),
             ride_out_outage=self._ladder.ride_out_outage(tier, escalated),
+            on_wait=self._stats.record_wait,
         )
         resp = parse_response(data, request.model)
+        resp.served_tier = tier_from_traffic_type(resp.traffic_type)
         self._tier_check.observe(
             tier,
-            tier_from_traffic_type(resp.traffic_type),
+            resp.served_tier,
             request.model,
             self._where(),
         )

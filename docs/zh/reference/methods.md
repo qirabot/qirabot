@@ -120,7 +120,34 @@ AI 定位动作(`click()`/`type_text()` 等)以及独立的
 | `cache_read_tokens` / `cache_write_tokens` | `int` | 由 Gemini 隐式缓存提供的 prompt token,已从 `input_tokens` 中扣除。引擎不调用显式 `cachedContent` API,因此 `cache_write_tokens` 恒为 `0`,缓存读取完全取决于 Google 的隐式缓存是否碰巧命中——实测经常不命中 |
 | `output_tokens` / `thinking_tokens` | `int` | Gemini 单独上报 thinking,且 `output_tokens` 已经包含它,所以一次调用的花费是 `input_tokens + output_tokens`——不要再把 `thinking_tokens` 加一遍 |
 | `total_tokens` | `int` | `input + cache 读写 + output`(thinking 不重复相加) |
-| `step_duration_ms` / `llm_decision_duration_ms` | `int` | 累计耗时 |
+| `step_duration_ms` | `int` | 每个 `ai()` 步骤(含失败的)和每次单步 AI 调用的墙钟时间,从截图开始,到动作和 settle 停顿结束 |
+| `model_ms` | `int` | 得到应答(HTTP 200)的模型请求的往返耗时之和。包含请求上传和响应下载,不是纯推理时间 |
+| `rate_limit_wait_ms` | `int` | 因限流(429)损失的时间:退避等待加上 429 请求本身的耗时 |
+| `outage_wait_ms` | `int` | 因服务不可用(5xx、连接失败)损失的时间:退避等待加上失败请求本身的耗时 |
+| `timeout_wait_ms` | `int` | 以超时告终的请求(客户端读超时,或 HTTP 408/504)的耗时。传输层不会重试这类请求,所以其中没有退避 |
+
+这五个时间字段覆盖的是同一批调用,所以
+`step_duration_ms - model_ms - rate_limit_wait_ms - outage_wait_ms - timeout_wait_ms`
+就是设备侧的耗时(截图、动作、settle、自定义工具)加上少量本地开销。确定性
+失败(400/401/403、响应无法解析)不计入四个模型字段中的任何一个。
+
+汇总覆盖整个客户端。要拿单次运行的数据,就在运行前后各取一次快照相减,
+第二次放在 `finally` 里,这样抛异常的运行也能算到:
+
+```python
+steps = []
+before = bot.usage
+try:
+    result = bot.ai(page, "...", on_step=steps.append)
+finally:
+    run = bot.usage
+    run_ms = run.step_duration_ms - before.step_duration_ms
+    run_waits = run.rate_limit_wait_ms - before.rate_limit_wait_ms
+```
+
+失败的那一步会以异常结束运行,不生成 [`StepResult`](#stepresult)。它的耗时
+和等待等于这次运行的汇总减去 `on_step` 收到的所有已提交步骤之和。CLI
+`--output-format json` 的结果里带有同样的 `usage`,同样可以这样相减。
 
 CLI 在每个任务结束后会打印同一份汇总,HTML 报告头部也展示相同数据。
 
@@ -197,7 +224,8 @@ ai(target, instruction, max_steps=20, *, on_step=None, thinking_level="",
 ```
 
 自主循环:截图 → 决策 → 执行,直到完成、达到 `max_steps` 或 `max_duration`
-(墙钟秒数,每步开始前检查;`None` 表示不限时;见[配置](/zh/advanced/configuration#一次运行能跑多久))。每步之后以
+(墙钟秒数,每步开始前检查;`None` 表示不限时;见[配置](/zh/advanced/configuration#一次运行能跑多久))。每步的动作和
+settle 停顿结束后(最后的 `done` 步在决策后立即),以
 [`StepResult`](#stepresult) 为参数调用 `on_step`。`custom_tools` 把你的
 Python 函数注册为可调用工具;`exclude_tools` 按动作名移除内置工具。
 两者详见 [AI 任务与自定义工具](/zh/advanced/ai-tasks)。`knowledge` 为本次
@@ -355,7 +383,15 @@ stop_recording() -> str | None       # 返回保存路径
 | `finished` | `bool` | 最后一步为 `True` |
 | `decision` | `str` | 模型此步的推理 |
 | `input_tokens` / `output_tokens` / `thinking_tokens` | `int` | 此步的 token 用量 |
-| `step_duration_ms` / `llm_decision_duration_ms` | `int` | 实际耗时 |
+| `step_duration_ms` | `int` | 此步的墙钟时间:从截图开始,经过模型调用,到动作和 settle 停顿结束。最后的 `done` 步没有动作,到决策为止 |
+| `model_ms` / `rate_limit_wait_ms` / `outage_wait_ms` / `timeout_wait_ms` | `int` | 此步的模型耗时,以及因限流、服务不可用、超时损失的时间,含义同 [`usage`](#usage) |
+| `model` | `str` | 做出此步决策的模型;运行切到兜底模型后即为兜底模型名 |
+| `tier` | `str` | 服务此步的档位:`"standard"`、`"flex"` 或 `"priority"`,端点没有上报时为 `""`。flex/standard 运行中出现 `"priority"` 表示触发了升档 |
+
+模型耗时与各项等待是此步所有模型请求的合计,包括超时重问、升档和兜底,
+所以 `step_duration_ms - model_ms - 各项等待` 就是此步设备侧的耗时。只有
+已提交的步骤才生成 `StepResult`。失败的那一步会以异常结束运行,它的耗时和
+等待只出现在 [`bot.usage`](#usage) 里(单独取出的方法见该节)。
 
 ### ExtractResult
 

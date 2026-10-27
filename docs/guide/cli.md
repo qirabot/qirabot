@@ -136,7 +136,10 @@ human-readable output is suppressed; exit codes are unchanged):
     "cache_read_tokens": 12040,
     "cache_write_tokens": 0,
     "step_duration_ms": 41830,
-    "llm_decision_duration_ms": 28510,
+    "model_ms": 27940,
+    "rate_limit_wait_ms": 0,
+    "outage_wait_ms": 0,
+    "timeout_wait_ms": 0,
     "total_tokens": 63370
   },
   "report": "qira_runs/2026-08-03/143012-1a2b3c4d/report.html"
@@ -154,6 +157,10 @@ the `Failed:` line for `max_steps` / `max_duration` / `goal_failed` runs. `repor
 is off; the file itself is written as the process exits, so read it after the
 CLI returns.
 
+`usage` mirrors the SDK's [`bot.usage`](/reference/methods#usage): the run's
+wall-clock `step_duration_ms`, plus `model_ms` and the three `*_wait_ms`
+fields saying how much of it went to the model and to capacity problems.
+
 `--output-format stream-json` emits NDJSON: one JSON object per line, flushed
 per step, for tools that supervise a run live:
 
@@ -165,11 +172,15 @@ per step, for tools that supervise a run live:
 ```
 
 `step` lines carry the same fields as the SDK's `StepResult` (`step`,
-`action_type`, `params`, `decision`, `output`, `finished`, per-step token and
-duration counts); the final `result` line is identical to the `json` format's
-object. Errors that stop the run, including setup failures such as an
-unreachable device, still end with a `result` object (`status: "error"`), so
-a consumer always sees one terminal line.
+`action_type`, `params`, `decision`, `output`, `finished`, per-step token
+counts, the step's wall-clock `step_duration_ms`, its `model_ms` and waits,
+and the `model` / `tier` that served it). A step line is written once the
+step's action has finished. A step that fails gets no `step` line; its time
+is the `result` line's `usage` minus the sum of the `step` lines. The final
+`result` line is identical to the `json` format's object. Errors
+that stop the run, including setup failures such as an unreachable device,
+still end with a `result` object (`status: "error"`), so a consumer always
+sees one terminal line.
 
 ## Shared run options
 
@@ -177,7 +188,7 @@ a consumer always sees one terminal line.
 
 | Option | Default | What it does |
 |---|---|---|
-| `-n, --name` | derived from the instruction | Run name shown in the HTML report |
+| `-n, --name` | the instruction's first line | Run name shown in the HTML report |
 | `-m, --model` | `QIRA_MODEL`, else `gemini-vertex/gemini-3.8-flash` | Model as `{provider}/{model}`, provider one of `gemini-vertex` / `gemini` (see [Configuration](/advanced/configuration)) |
 | `--thinking-level` | engine default | Thinking override: `minimal` / `low` / `medium` / `high` (see [Configuration](/advanced/configuration#thinking-level)) |
 | `--media-resolution` | `QIRA_MEDIA_RESOLUTION`, else `high` | Screenshot detail the model sees: `low` / `medium` / `high` / `ultra_high` (Gemini only; `ultra_high` needs a Gemini 3 model); lower it to cut image tokens per step |

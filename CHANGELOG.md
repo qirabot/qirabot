@@ -1,5 +1,99 @@
 # Changelog
 
+## 3.5.0 (2026-10-27)
+
+### Breaking
+
+- `llm_decision_duration_ms` is removed from `SessionUsage`, `StepResult`
+  and the CLI `json` / `stream-json` output. What it covered depended on
+  which layer handled a failure (it missed session-level timeout
+  re-asks, for one); read `model_ms` and the wait fields below instead.
+- `step_duration_ms` is now wall-clock time. An `ai()` step runs from its
+  screenshot to the end of its action and settle pause (the final `done`
+  step ends with the decision), so custom tool time, a model-requested
+  `wait` and a failed action are all in it. A failed `ai()` step and every
+  single-step AI call (`click()` / `locate()` / `verify()` / `extract()`,
+  each `wait_for()` poll, each `retry` attempt) are timed too; those land
+  in `SessionUsage.step_duration_ms` only.
+- `on_step` fires after the step's action and settle pause, not before,
+  so the `StepResult` it receives is complete. The overlay still updates
+  before the action. CLI step lines (text and `stream-json`) arrive one
+  action + settle later than before. With pyautogui, a FailSafe triggered
+  during the action now means that step gets no `on_step` call.
+- `qirabot.report.write_html`: `outcomes` takes `RunStatus` strings only
+  (the legacy `True` / `False` values are gone), and a `stats` dict without
+  `total_steps` no longer falls back to the log length.
+
+### New fields
+
+- `SessionUsage` (`bot.usage`) and `StepResult` gain four `int` fields
+  (default `0`): `model_ms`, the round trip of answered model requests
+  (upload and download included), and the time lost to capacity,
+  `rate_limit_wait_ms` (429s) and `outage_wait_ms` (5xx, connection
+  failures), each the backoff sleeps plus the failed requests themselves,
+  and `timeout_wait_ms` (requests that ended in a timeout, 408/504
+  included). Deterministic failures (400/401/403, an unparsable response)
+  count in none of them.
+- These cover the same calls as `step_duration_ms`, so
+  `step_duration_ms − model_ms − waits` is the device side (screenshot,
+  action, settle, custom tools) plus a few milliseconds of local overhead,
+  per step and per session. A step's fields include its timeout re-asks,
+  tier escalation and fallback.
+- `StepResult` gains `model` (the model that answered; the fallback model
+  once the run switched) and `tier` (`"standard"` / `"flex"` /
+  `"priority"`, or `""` when the endpoint reported none), read from the
+  response that was committed.
+- A failed step still produces no `StepResult`. Its numbers are the run's
+  total minus the committed steps: diff `bot.usage` around `ai()` (the
+  second read in a `finally`), or, from the CLI, the `result` line's
+  `usage` minus the `step` lines.
+
+### Report redesign
+
+- New header: the title is `task_name` when set, else the first line of the
+  only task's instruction, else "N tasks", with a "Full instruction"
+  toggle for long or multi-line text. The meta line shows run time,
+  platform and screen size, and the run ID.
+- Three panels replace the stats list. **Outcome**: pass / fail / truncated
+  in green, red or amber. **Time**: total, the share lost to capacity, and
+  a model / device / rate-limit / outage / timeout bar. **Model & tokens**:
+  model and fallback, tier and escalation, and a token total that opens a
+  model × tier table (AI calls, prompt, cached, response, thinking, total;
+  failed and single-step calls included, unknown tier shown as `—`). The
+  table prints expanded.
+- With two or more tasks, a task overview lists each one's status,
+  instruction, steps, time and time breakdown, linked to its section.
+- Step tables gain Model, Duration (with a time-breakdown bar) and Waits
+  (tagged rate limit / outage / timeout; the row is tinted) columns.
+  Manual steps show `—` there.
+- Step output renders as Markdown (paragraphs, headings, nested lists,
+  bold, inline code; everything else escaped), so a model's formatted
+  answer reads as formatted. JSON-looking output stays verbatim. The
+  `done` step no longer repeats its answer as `result=…` and drops the
+  `success=` flag the ✓ / ✗ already shows.
+- The Time column shows a `+0:20` offset only when it can seek the
+  recording; without a seekable video it shows the clock time alone.
+- The screenshot viewer shows the frame on the left and one fixed side
+  panel on the right (below on narrow screens) with everything about the
+  step: action and status, time, duration, model and tier, waits, the
+  reasoning, params and output. Nothing moves when paging; neighbouring
+  frames are preloaded, and "Open full size" opens the original.
+- Light theme only; dark mode is dropped.
+- The CLI no longer passes a 60-character cut of the instruction as
+  `task_name` when `--name` is not given; the report titles the run from
+  the full instruction instead.
+- `write_html` gains `instructions`, `section_stats`, `tokens_by`,
+  `default_model` and `device`, all filled in by the client.
+
+### Fixes
+
+- The report's Tier row was empty on a standard-tier run with
+  `tier_escalation` on, even when calls were served, and billed, as
+  priority. It now reads `standard — some calls served as priority, and
+  billed at that rate`.
+- The report always has a Tier row: an unconfigured all-standard run
+  reads `standard` with a `default` note instead of leaving the row out.
+
 ## 3.4.6 (2026-10-27)
 
 ### Custom tool parameter names

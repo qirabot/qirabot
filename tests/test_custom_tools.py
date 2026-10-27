@@ -223,6 +223,28 @@ class TestAiLoopCustomTools:
         h.bot.close()
         assert h.bodies == []  # nothing reached the engine
 
+    def test_coordinate_params_reach_handler_without_crosshair(self, make_bot):
+        # A custom tool's x/y are its own arguments (here a grid cell, not
+        # numbers): handed to the handler, never read as a screen point.
+        calls = []
+
+        def teleport(x: str, y: str) -> str:
+            """Teleport to a grid cell."""
+            calls.append((x, y))
+            return "ok"
+
+        bot = make_bot(report=True)
+        bot._get_adapter = lambda target: _FakeAdapter()
+        bot._backend.results.extend([_tool_step("teleport", {"x": "B", "y": "7"}), DONE])
+        bot.ai(object(), "do it", max_steps=3, custom_tools=[teleport])
+
+        assert calls == [("B", "7")]
+        entry = bot._timeline.entries[0]
+        assert entry["action_type"] == "teleport"
+        assert entry["coords"] is None
+        out = bot.report()
+        assert out is not None and "x=B y=7" in out.read_text(encoding="utf-8")
+
 
 def _real_engine_bot(*responses):
     """A bot on the REAL engine with only the model endpoint scripted: for

@@ -1321,7 +1321,11 @@ class Qirabot:
             finished = outcome.finished
             decision = outcome.decision
 
-            coords = _extract_coords(action_params)
+            # A custom tool's params are its own arguments: an `x`/`y` there
+            # (game-world coordinates, a string, ...) is not a screen point
+            # and gets no crosshair.
+            is_custom = action_type in tool_handlers
+            coords = None if is_custom else _extract_coords(action_params)
             # save_note continuations decided on the previous step's frame;
             # flag that so the report reuses the image instead of showing the
             # step with no screenshot at all.
@@ -1330,7 +1334,7 @@ class Qirabot:
                 action_type or "ai",
                 action_params,
                 coords,
-                end_coords=_extract_end_coords(action_params),
+                end_coords=None if is_custom else _extract_end_coords(action_params),
                 output=outcome.output,
                 finished=finished,
                 decision=decision,

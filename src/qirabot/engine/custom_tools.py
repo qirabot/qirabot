@@ -13,7 +13,6 @@ from typing import Any
 
 from . import actions
 from .tools import (
-    LOCATE_POINT_FIELDS,
     REASON_FIELD,
     STEP_REASON_FIELD,
     TOOL_REGISTRY,
@@ -47,27 +46,14 @@ def _reserved_tool_names() -> set[str]:
     return names
 
 
-def _reserved_property_names() -> set[str]:
-    """Schema property names custom tools may not declare: locate-style
-    fields consumed by grounding, and the coordinate output keys
-    resolve_coordinates writes into params (SDK report crosshairs read them
-    back). The meta fields are not reserved: a tool may declare `reason` or
-    `safety_decision` as its own parameter (see reason_field_for)."""
-    names = {
-        "x",
-        "y",
-        "start_x",
-        "start_y",
-        "end_x",
-        "end_y",
-    }
-    for locate, fx, fy in LOCATE_POINT_FIELDS:
-        names.update((locate, fx, fy))
-    return names
-
-
 RESERVED_TOOL_NAMES = _reserved_tool_names()
-RESERVED_PROPERTY_NAMES = _reserved_property_names()
+
+# Property names, by contrast, are not reserved. A custom tool's params are
+# its own arguments: never grounded (the session skips grounding for custom
+# tools) and dispatched to the handler verbatim, so a custom `x` or `locate`
+# means nothing to the engine. The meta-field names are resolved per tool
+# instead (reason_field_for); the one combination that leaves no free name
+# is rejected in _normalize_tool_parameters.
 
 
 def parse_custom_tools(raw: Any) -> list[CustomToolDef]:
@@ -135,8 +121,6 @@ def _normalize_tool_parameters(tool: str, raw: Any) -> dict[str, Any] | None:
         if not isinstance(props, dict):
             raise ValueError(f'tool "{tool}": parameters.properties must be an object')
         for prop_name, prop_val in props.items():
-            if prop_name in RESERVED_PROPERTY_NAMES:
-                raise ValueError(f'tool "{tool}": property name "{prop_name}" is reserved')
             if not isinstance(prop_val, dict):
                 raise ValueError(f'tool "{tool}": property "{prop_name}" must be an object')
         # A tool's own `reason` moves the engine's step reasoning to

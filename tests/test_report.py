@@ -1,6 +1,6 @@
 """Tests for the HTML report renderer, focused on outcome badges."""
 
-from qirabot.report import write_html
+from qirabot.report import _summarize_params, write_html
 
 
 def _entry(section, **over):
@@ -18,6 +18,26 @@ def _entry(section, **over):
     }
     e.update(over)
     return e
+
+
+class TestParamSummary:
+    def test_screen_coordinates_compact(self):
+        assert _summarize_params({"locate": "OK", "x": 10, "y": 20.6}) == "OK (10, 20)"
+        drag = {"x": 1, "y": 2, "start_x": 1, "start_y": 2, "end_x": 30, "end_y": 40}
+        assert _summarize_params(drag) == "(1, 2) (1,2)→(30,40)"
+
+    def test_custom_tool_coordinates_fall_through(self):
+        # A custom tool's own x/y can be any type, or unpaired: never int()'d
+        # (used to raise and lose the whole report), never silently dropped.
+        assert _summarize_params({"x": "B", "y": "7"}) == "x=B y=7"
+        assert _summarize_params({"x": 5}) == "x=5"
+        assert _summarize_params({"x": True, "y": 3}) == "x=True y=3"
+        assert _summarize_params({"start_x": 1, "end_x": 2}) == "start_x=1 end_x=2"
+
+    def test_non_numeric_coordinates_render_in_report(self, tmp_path):
+        log = [_entry("a", action_type="teleport", params={"x": "B", "y": "7"})]
+        out = write_html(log, tmp_path / "report.html")
+        assert "x=B y=7" in out.read_text(encoding="utf-8")
 
 
 class TestSectionBadges:

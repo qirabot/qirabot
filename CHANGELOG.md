@@ -12,6 +12,10 @@
   prompt-cache prefix, is byte-identical. `safety_decision` is allowed as a
   parameter name too. The one rejected combination is a tool declaring both
   `reason` and `step_reason`.
+- Coordinate-style parameter names (`x`, `y`, `locate`, `point_x`, …) are no
+  longer reserved either. A custom tool's params are never grounded, so a
+  game's `teleport(x, y)` gets its world coordinates verbatim, and the
+  report draws no crosshair for that step.
 
 ## 3.4.5 (2026-10-24)
 

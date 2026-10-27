@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 _CSS = """
 :root { color-scheme: light dark; }
@@ -145,6 +146,11 @@ video { max-width: 100%; max-height: 70vh; display: block; border-radius: 8px;
 _COORD_KEYS = ("x", "y", "start_x", "start_y", "end_x", "end_y")
 
 
+def _is_coord(value: Any) -> TypeGuard[float]:
+    """A finite real number. bool is excluded (True would render as 1)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def _summarize_params(params: dict[str, Any]) -> str:
     """A compact one-line view of an action's parameters.
 
@@ -170,14 +176,17 @@ def _summarize_params(params: dict[str, Any]) -> str:
         parts.append(f'{params["direction"]} {params.get("amount", "")}'.strip())
         rendered.update(("direction", "amount"))
 
-    # Coordinates, formatted compactly.
+    # Coordinates, formatted compactly. Only real numbers, and a key counts
+    # as rendered only once it is: a custom tool's own `x` can be any type,
+    # or come without a `y`, and must then fall through to key=value below.
     x, y = params.get("x"), params.get("y")
-    if x is not None and y is not None:
+    if _is_coord(x) and _is_coord(y):
         parts.append(f"({int(x)}, {int(y)})")
+        rendered.update(_COORD_KEYS[:2])
     sx, sy, ex, ey = (params.get(k) for k in _COORD_KEYS[2:])
-    if sx is not None and sy is not None and ex is not None and ey is not None:
+    if _is_coord(sx) and _is_coord(sy) and _is_coord(ex) and _is_coord(ey):
         parts.append(f"({int(sx)},{int(sy)})→({int(ex)},{int(ey)})")
-    rendered.update(_COORD_KEYS)
+        rendered.update(_COORD_KEYS[2:])
 
     # Everything else: generic fallback so nothing silently vanishes.
     for key, val in params.items():

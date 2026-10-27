@@ -72,6 +72,9 @@ credentials behind it.
   Parameter types come from annotations (`str`/`int`/`float`/`bool`; anything
   else falls back to string); parameters without defaults are required.
   Lambdas and `*args`/`**kwargs` are rejected. At most 16 tools per call.
+- Parameter names are free, including ones the engine uses internally
+  (`reason`, `x`, `y`, `locate`, …); they reach the handler unchanged. The
+  one exception is declaring both `reason` and `step_reason` on one tool.
 - For schemas introspection can't express (enums, per-parameter
   descriptions), there is a dict escape hatch:
   `{"name": ..., "description": ..., "parameters": {...}, "handler": fn}`.

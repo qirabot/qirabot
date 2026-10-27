@@ -436,6 +436,34 @@ class TestCoordinateResolution:
         assistant = [m for m in fake.requests[1].messages if m.role == "assistant"][0]
         assert assistant.tool_calls[0].args == {"reason": "门锁了", "step_reason": "页面一直打不开"}
 
+    def test_5_custom_tool_coordinate_params_not_grounded(self) -> None:
+        # A custom x/y/locate is the tool's own argument (here game-world
+        # coordinates far outside 0~1000): dispatched verbatim, never
+        # rescaled, never bounced back for a corrective re-decide.
+        fake = FakeProvider(
+            tool_resp("teleport", {"x": 5000, "y": -3, "locate": "城门", "reason": "r"})
+        )
+        run = start_run(
+            backend(fake),
+            custom_tools=[
+                {
+                    "name": "teleport",
+                    "description": "传送到世界坐标",
+                    "parameters": {
+                        "properties": {
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
+                            "locate": {"type": "string"},
+                        },
+                        "required": ["x", "y"],
+                    },
+                }
+            ],
+        )
+        outcome = step(run)
+        assert outcome.params == {"x": 5000, "y": -3, "locate": "城门"}
+        assert len(fake.requests) == 1
+
     def test_6_history_replays_normalized_frame(self) -> None:
         fake = FakeProvider(
             tool_resp("click", CLICK_ARGS),

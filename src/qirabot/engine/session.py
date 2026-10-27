@@ -378,8 +378,9 @@ def _resolve_coordinates(
     """Resolve target coordinates for a decided action, writing device pixels
     onto act.params. Returns None when resolved (or nothing to resolve), or
     the corrective hint string when the model must re-decide."""
-    # Custom tools execute client-side and never carry locate/point fields
-    # (reserved-name validation guarantees it); skip grounding outright.
+    # Custom tools execute client-side and their params are the tool's own
+    # arguments: a custom `locate` or `x` is not a screen target (which is
+    # why custom tools may use those names at all). Skip grounding outright.
     if finished or is_save_note or is_custom or not act.params:
         return None
 

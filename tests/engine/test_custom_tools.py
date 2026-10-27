@@ -71,14 +71,6 @@ class TestParseCustomTools:
                 'property name "step_reason" is reserved when "reason" is also declared',
             ),
             (
-                [{**gm_tool(), "parameters": {"properties": {"locate": {"type": "string"}}}}],
-                "reserved",
-            ),
-            (
-                [{**gm_tool(), "parameters": {"properties": {"x": {"type": "integer"}}}}],
-                "reserved",
-            ),
-            (
                 [
                     {
                         **gm_tool(),
@@ -205,6 +197,29 @@ class TestDefinitions:
         tools = custom_tool_definitions(defs)
         props = tools[0].parameters["properties"]
         assert "point_x" not in props and "point_y" not in props
+
+    def test_coordinate_names_allowed_and_untouched(self) -> None:
+        # Custom params are never grounded, so the names grounding uses mean
+        # nothing here: a game's teleport(x, y) is accepted as declared.
+        params = {
+            "properties": {
+                "x": {"type": "integer"},
+                "y": {"type": "integer"},
+                "locate": {"type": "string"},
+                "start_point_x": {"type": "integer"},
+            },
+            "required": ["x", "y", "locate"],
+        }
+        defs = parse_custom_tools([{"name": "teleport", "description": "d", "parameters": params}])
+        (tool,) = custom_tool_definitions(defs)
+        assert list(tool.parameters["properties"]) == [
+            "reason",
+            "x",
+            "y",
+            "locate",
+            "start_point_x",
+        ]
+        assert tool.parameters["required"] == ["x", "y", "locate", "reason"]
 
     def test_client_order_preserved(self) -> None:
         defs = parse_custom_tools(

@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Collection
 from typing import Any
 
 from . import actions
 from .tools import (
     LOCATE_POINT_FIELDS,
+    REASON_FIELD,
+    STEP_REASON_FIELD,
     TOOL_REGISTRY,
     available_for_platform,
     merge_common_fields,
@@ -45,13 +48,12 @@ def _reserved_tool_names() -> set[str]:
 
 
 def _reserved_property_names() -> set[str]:
-    """Schema property names custom tools may not declare: meta fields
-    injected/stripped by the engine, locate-style fields consumed by
-    grounding, and the coordinate output keys resolve_coordinates writes into
-    params (SDK report crosshairs read them back)."""
+    """Schema property names custom tools may not declare: locate-style
+    fields consumed by grounding, and the coordinate output keys
+    resolve_coordinates writes into params (SDK report crosshairs read them
+    back). The meta fields are not reserved: a tool may declare `reason` or
+    `safety_decision` as its own parameter (see reason_field_for)."""
     names = {
-        "reason",
-        "safety_decision",
         "x",
         "y",
         "start_x",
@@ -137,6 +139,13 @@ def _normalize_tool_parameters(tool: str, raw: Any) -> dict[str, Any] | None:
                 raise ValueError(f'tool "{tool}": property name "{prop_name}" is reserved')
             if not isinstance(prop_val, dict):
                 raise ValueError(f'tool "{tool}": property "{prop_name}" must be an object')
+        # A tool's own `reason` moves the engine's step reasoning to
+        # step_reason, so that name must then be free.
+        if REASON_FIELD in props and STEP_REASON_FIELD in props:
+            raise ValueError(
+                f'tool "{tool}": property name "{STEP_REASON_FIELD}" is reserved '
+                f'when "{REASON_FIELD}" is also declared'
+            )
         if props:
             out["properties"] = props
 
@@ -212,16 +221,41 @@ def custom_tool_names(defs: list[CustomToolDef]) -> set[str]:
     return {d.name for d in defs}
 
 
+def declared_params(d: CustomToolDef) -> frozenset[str]:
+    """Parameter names the tool declares."""
+    props = d.parameters.get("properties") if d.parameters else None
+    return frozenset(props) if isinstance(props, dict) else frozenset()
+
+
+def custom_tool_params(defs: list[CustomToolDef]) -> dict[str, frozenset[str]]:
+    """Tool name -> declared parameter names. Built-ins are absent: they
+    declare no meta-field names, so the defaults apply to them."""
+    return {d.name: declared_params(d) for d in defs}
+
+
+def reason_field_for(params: Collection[str]) -> str:
+    """The field carrying the model's step reasoning in a call to a tool
+    declaring `params`. Normally `reason`; a custom tool that declares its
+    own `reason` keeps it as an ordinary argument, and only that tool's
+    schema carries the reasoning as step_reason instead. The schema
+    (custom_tool_definitions), the decision parser and the history replay
+    must all agree, so they all ask here."""
+    return STEP_REASON_FIELD if REASON_FIELD in params else REASON_FIELD
+
+
 def custom_tool_definitions(defs: list[CustomToolDef], language: str = "") -> list[ToolDefinition]:
     """Convert defs to LLM tool definitions, preserving client order (appended
     after built-ins so the prompt-cache prefix stays stable within a session).
-    The common reason field is injected like for built-ins; locate/point-field
-    grounding transforms never apply."""
+    The common reason field is injected like for built-ins (as step_reason
+    on a tool declaring its own `reason`); locate/point-field grounding
+    transforms never apply."""
     return [
         ToolDefinition(
             name=d.name,
             description=d.description,
-            parameters=merge_common_fields(d.parameters, language),
+            parameters=merge_common_fields(
+                d.parameters, language, reason_field_for(declared_params(d))
+            ),
         )
         for d in defs
     ]

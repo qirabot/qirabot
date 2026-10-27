@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Custom tool parameter names
+
+- A custom tool parameter named `reason` no longer fails the run with
+  `property name "reason" is reserved` (the docs' own
+  `wait_for_human(reason)` example hit this). The tool's `reason` reaches
+  the handler unchanged; the engine's per-step reasoning moves to
+  `step_reason` in that tool's schema only. Every other schema, and the
+  prompt-cache prefix, is byte-identical. `safety_decision` is allowed as a
+  parameter name too. The one rejected combination is a tool declaring both
+  `reason` and `step_reason`.
+
 ## 3.4.5 (2026-10-24)
 
 ### Fallback model (same provider)

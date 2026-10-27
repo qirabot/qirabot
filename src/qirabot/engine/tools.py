@@ -508,6 +508,16 @@ def is_locate_field(name: str) -> bool:
     return any(f[0] == name for f in LOCATE_POINT_FIELDS)
 
 
+# Engine meta fields in a tool call's args: the model's step reasoning
+# (injected into every schema as REASON_FIELD, or as STEP_REASON_FIELD on a
+# custom tool that declares its own `reason` parameter) and the computer-use
+# safety acknowledgement. The engine reads them; they never reach action
+# params, unless the tool itself declares the name as a parameter.
+REASON_FIELD = "reason"
+STEP_REASON_FIELD = "step_reason"
+META_FIELDS = (REASON_FIELD, STEP_REASON_FIELD, "safety_decision")
+
+
 # Native-language names for common tags: the model follows "Respond in 日本語"
 # more reliably than "Respond in ja". The table is a quality optimization, not
 # a capability boundary — unlisted values pass through to the prompt verbatim
@@ -633,17 +643,26 @@ def resolve_schema(p: ToolPromptDef, platform: str) -> dict[str, Any]:
     return p.schema
 
 
-def merge_common_fields(schema: dict[str, Any] | None, language: str = "") -> dict[str, Any]:
+def merge_common_fields(
+    schema: dict[str, Any] | None, language: str = "", reason_field: str = REASON_FIELD
+) -> dict[str, Any]:
     """Inject the common `reason` field into a tool schema. The language
     requirement is stated on the field itself (like the locate tool's error
     field) because a single "Respond in ..." line in the system prompt is
-    routinely ignored when the task context drifts to another language."""
+    routinely ignored when the task context drifts to another language.
+
+    reason_field renames the injected field for a custom tool that declares
+    its own `reason` parameter (see custom_tools.reason_field_for); the
+    description then tells the two apart. The default leaves every other
+    schema byte-identical."""
+    desc = "Describe what changed in the UI and give the detailed reasoning for this decision. "
+    if reason_field != REASON_FIELD:
+        desc += (
+            f"This is your step reasoning, separate from the tool's own `{REASON_FIELD}` "
+            "parameter. "
+        )
     props: dict[str, Any] = {
-        "reason": prop(
-            "string",
-            "Describe what changed in the UI and give the detailed reasoning for this "
-            "decision. Respond in " + response_language(language),
-        ),
+        reason_field: prop("string", desc + "Respond in " + response_language(language)),
     }
     if schema:
         sp = schema.get("properties")
@@ -655,6 +674,6 @@ def merge_common_fields(schema: dict[str, Any] | None, language: str = "") -> di
         sr = schema.get("required")
         if isinstance(sr, list):
             required.extend(s for s in sr if isinstance(s, str))
-    required.append("reason")
+    required.append(reason_field)
 
     return {"type": "object", "properties": props, "required": required}

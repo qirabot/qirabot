@@ -410,6 +410,32 @@ class TestCoordinateResolution:
         assert outcome.action_type == "gm_command"
         assert outcome.params == {"command": "add 100"}
 
+    def test_5_custom_tool_own_reason_round_trip(self) -> None:
+        # The customer case end to end: a tool parameter named `reason`
+        # registers, its value reaches the dispatched params, and the next
+        # request replays the call exactly as the model emitted it.
+        emitted = {"step_reason": "页面一直打不开", "reason": "门锁了"}
+        fake = FakeProvider(tool_resp("report_unreachable", emitted), tool_resp("done", DONE_ARGS))
+        run = start_run(
+            backend(fake),
+            custom_tools=[
+                {
+                    "name": "report_unreachable",
+                    "description": "报告目标不可达",
+                    "parameters": {
+                        "properties": {"reason": {"type": "string"}},
+                        "required": ["reason"],
+                    },
+                }
+            ],
+        )
+        outcome = step(run)
+        assert outcome.params == {"reason": "门锁了"}
+        assert outcome.decision == "页面一直打不开"
+        step(run, PNG, "reported")
+        assistant = [m for m in fake.requests[1].messages if m.role == "assistant"][0]
+        assert assistant.tool_calls[0].args == {"reason": "门锁了", "step_reason": "页面一直打不开"}
+
     def test_6_history_replays_normalized_frame(self) -> None:
         fake = FakeProvider(
             tool_resp("click", CLICK_ARGS),

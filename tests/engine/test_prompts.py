@@ -183,6 +183,43 @@ class TestConversationMessages:
         assert "Verify the actual result from the screenshot" in results["click"]
         assert results["click"].startswith("ok")
 
+    def test_custom_turn_replays_own_reason(self) -> None:
+        # A tool declaring its own `reason`: the replayed call must match the
+        # tool's schema — its reason argument intact, the step reasoning
+        # under step_reason — while built-ins keep `reason`.
+        defs = parse_custom_tools(
+            [
+                {
+                    "name": "report_unreachable",
+                    "description": "Report that the target cannot be reached",
+                    "parameters": {
+                        "properties": {"reason": {"type": "string"}},
+                        "required": ["reason"],
+                    },
+                }
+            ]
+        )
+        input = DecisionInput(
+            instruction="do it",
+            custom_tools=defs,
+            history=[
+                ConversationTurn(
+                    action_type="click",
+                    action_params='{"point_x":500,"point_y":300}',
+                    reasoning="点击登录",
+                ),
+                ConversationTurn(
+                    action_type="report_unreachable",
+                    action_params='{"reason":"门锁了"}',
+                    reasoning="页面一直打不开",
+                ),
+            ],
+        )
+        msgs = build_conversation_messages(input)
+        calls = {tc.name: tc.args for m in msgs for tc in m.tool_calls}
+        assert calls["click"] == {"point_x": 500, "point_y": 300, "reason": "点击登录"}
+        assert calls["report_unreachable"] == {"reason": "门锁了", "step_reason": "页面一直打不开"}
+
     def test_correction_hint_goes_last(self) -> None:
         msgs = build_conversation_messages(
             DecisionInput(

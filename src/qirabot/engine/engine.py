@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import time
+from collections.abc import Collection
 from typing import Any
 
 from .coords import bbox_center, rescale_point, to_float
@@ -20,9 +21,14 @@ from .prompts import (
     build_conversation_messages,
     build_system_prompt,
 )
-from .custom_tools import custom_tool_definitions, filter_excluded
+from .custom_tools import (
+    custom_tool_definitions,
+    custom_tool_params,
+    filter_excluded,
+    reason_field_for,
+)
 from .providers.base import ChatRequest, Provider
-from .tools import prop, response_language, tool_definitions_for_platform
+from .tools import META_FIELDS, prop, response_language, tool_definitions_for_platform
 from .types import (
     LOCATE_FORMAT_BBOX,
     Action,
@@ -102,12 +108,16 @@ class LocalEngine:
 
         duration_ms = int((time.monotonic() - start) * 1000)
 
+        # A custom tool may declare a meta-field name as its own parameter;
+        # it then stays in params, and the reasoning moves (reason_field_for).
+        custom_params = custom_tool_params(input.custom_tools)
         if resp.tool_calls:
             tc = resp.tool_calls[0]
+            own = custom_params.get(tc.name, frozenset())
             result_action = Action(
                 type=tc.name,
-                params=filter_meta_fields(tc.args),
-                reasoning=string_from_args(tc.args, "reason"),
+                params=filter_meta_fields(tc.args, own),
+                reasoning=string_from_args(tc.args, reason_field_for(own)),
             )
         else:
             # Fallback: parse from text JSON response.
@@ -133,7 +143,14 @@ class LocalEngine:
                 err = UnparsableResponseError(f"parse decision response: {exc}")
                 err.result = partial  # type: ignore[attr-defined]
                 raise err from exc
-            result_action = Action(type=name, params=args, reasoning=reasoning)
+            own = custom_params.get(name, frozenset())
+            # Same meta handling as a tool call. The reasoning normally sits
+            # beside "input", but a model may tuck it inside instead.
+            result_action = Action(
+                type=name,
+                params=filter_meta_fields(args, own),
+                reasoning=reasoning or string_from_args(args, reason_field_for(own)),
+            )
 
         logger.info(
             "decision completed: action=%s model=%s duration_ms=%d tokens=%d/%d",
@@ -486,9 +503,11 @@ def parse_locate_coords(
     return (x, y) if mode else None
 
 
-def filter_meta_fields(args: dict[str, Any]) -> dict[str, Any]:
-    """Copy of args without the common meta-fields."""
-    return {k: v for k, v in args.items() if k not in ("reason", "safety_decision")}
+def filter_meta_fields(args: dict[str, Any], own: Collection[str] = ()) -> dict[str, Any]:
+    """Copy of args without the common meta-fields. A meta-field name the
+    tool declares as its own parameter (`own`, custom tools only) is the
+    tool's argument, not meta, and is kept."""
+    return {k: v for k, v in args.items() if k not in META_FIELDS or k in own}
 
 
 def string_from_args(args: dict[str, Any], key: str) -> str:

@@ -6,6 +6,7 @@ import io
 
 import pytest
 
+from qirabot.engine.custom_tools import parse_custom_tools
 from qirabot.engine.engine import (
     LocalEngine,
     extract_json,
@@ -78,6 +79,18 @@ def decide_input(**kwargs) -> DecisionInput:
     return DecisionInput(**defaults)
 
 
+# A custom tool whose own parameter shares the engine's meta-field name.
+REPORT_TOOL = parse_custom_tools(
+    [
+        {
+            "name": "report_unreachable",
+            "description": "Report that the target cannot be reached",
+            "parameters": {"properties": {"reason": {"type": "string"}}, "required": ["reason"]},
+        }
+    ]
+)
+
+
 class TestDecide:
     def test_tool_call_preferred_and_meta_filtered(self) -> None:
         fake = FakeProvider(
@@ -133,6 +146,56 @@ class TestDecide:
         result = LocalEngine(fake).decide(decide_input())
         assert result.action is not None
         assert result.action.type == "wait"
+
+    def test_custom_tool_own_reason_reaches_params(self) -> None:
+        # The tool declares `reason`, so its schema carries the reasoning as
+        # step_reason: the tool's value stays in params for the handler.
+        fake = FakeProvider(
+            tool_resp(
+                "report_unreachable", {"step_reason": "页面一直打不开", "reason": "门锁了"}
+            )
+        )
+        result = LocalEngine(fake).decide(decide_input(custom_tools=REPORT_TOOL))
+        assert result.action is not None
+        assert result.action.params == {"reason": "门锁了"}
+        assert result.action.reasoning == "页面一直打不开"
+        sent = next(t for t in fake.requests[0].tools if t.name == "report_unreachable")
+        assert list(sent.parameters["properties"]) == ["step_reason", "reason"]
+
+    def test_custom_tool_own_safety_decision_kept(self) -> None:
+        tools = parse_custom_tools(
+            [
+                {
+                    "name": "ack",
+                    "description": "d",
+                    "parameters": {"properties": {"safety_decision": {"type": "string"}}},
+                }
+            ]
+        )
+        fake = FakeProvider(tool_resp("ack", {"reason": "r", "safety_decision": "proceed"}))
+        result = LocalEngine(fake).decide(decide_input(custom_tools=tools))
+        assert result.action is not None
+        assert result.action.params == {"safety_decision": "proceed"}
+        assert result.action.reasoning == "r"
+
+    def test_stray_meta_fields_never_reach_params(self) -> None:
+        # A model may echo step_reason on a tool whose schema lacks it (it
+        # saw the name on another tool); it is meta there and is dropped.
+        fake = FakeProvider(
+            tool_resp("click", {"point_x": 1, "point_y": 2, "reason": "r", "step_reason": "s"})
+        )
+        result = LocalEngine(fake).decide(decide_input(custom_tools=REPORT_TOOL))
+        assert result.action is not None
+        assert result.action.params == {"point_x": 1, "point_y": 2}
+        assert result.action.reasoning == "r"
+
+    def test_json_fallback_meta_inside_input(self) -> None:
+        content = '{"name": "report_unreachable", "input": {"reason": "门锁了", "step_reason": "s"}}'
+        fake = FakeProvider(text_resp(content))
+        result = LocalEngine(fake).decide(decide_input(custom_tools=REPORT_TOOL))
+        assert result.action is not None
+        assert result.action.params == {"reason": "门锁了"}
+        assert result.action.reasoning == "s"
 
     def test_unparsable_raises_with_partial_result(self) -> None:
         fake = FakeProvider(text_resp("I cannot decide."))
@@ -292,3 +355,7 @@ class TestParsingHelpers:
     def test_filter_meta_fields(self) -> None:
         out = filter_meta_fields({"a": 1, "reason": "r", "safety_decision": "s"})
         assert out == {"a": 1}
+        assert filter_meta_fields({"a": 1, "step_reason": "s"}) == {"a": 1}
+        # A meta-field name the tool declares itself is its own argument.
+        out = filter_meta_fields({"a": 1, "reason": "r", "step_reason": "s"}, {"a", "reason"})
+        assert out == {"a": 1, "reason": "r"}

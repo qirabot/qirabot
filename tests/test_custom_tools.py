@@ -222,3 +222,60 @@ class TestAiLoopCustomTools:
             h.bot.ai(object(), "do it", max_steps=3, custom_tools=[lambda x: x])
         h.bot.close()
         assert h.bodies == []  # nothing reached the engine
+
+
+def _real_engine_bot(*responses):
+    """A bot on the REAL engine with only the model endpoint scripted: for
+    behavior decided by engine-side schema handling, which FakeBackend skips."""
+    from qirabot.engine.local_backend import LocalBackend
+    from qirabot.engine.providers.base import ChatResponse
+    from qirabot.engine.types import TokenUsage, ToolCall
+
+    class _Provider:
+        def __init__(self):
+            self.requests = []
+            self.responses = [
+                ChatResponse(
+                    tool_calls=[ToolCall(id=name, name=name, args=args)],
+                    token_usage=TokenUsage(),
+                    model_used="fake-model",
+                )
+                for name, args in responses
+            ]
+
+        def chat(self, request, timeout):
+            self.requests.append(request)
+            return self.responses.pop(0)
+
+    provider = _Provider()
+    bot = Qirabot(report=False)
+    bot._backend = LocalBackend(model="gemini-vertex/gemini-test", provider=provider)
+    bot._get_adapter = lambda target: _FakeAdapter()
+    return bot, provider
+
+
+class TestRealEngineCustomTools:
+    def test_reason_param_reaches_handler(self):
+        # Customer report: a tool parameter named `reason` (also the engine's
+        # step-reasoning field) failed the run with
+        # 'tool "report_unreachable": property name "reason" is reserved'.
+        calls = []
+
+        def report_unreachable(reason: str) -> str:
+            """Report that the target cannot be reached, and why."""
+            calls.append(reason)
+            return "reported"
+
+        bot, provider = _real_engine_bot(
+            ("report_unreachable", {"step_reason": "页面一直打不开", "reason": "门锁了"}),
+            ("done", {"reason": "已上报", "success": False, "result": "目标不可达"}),
+        )
+        result = bot.ai(object(), "打开目标页面", max_steps=3, custom_tools=[report_unreachable])
+        bot.close()
+
+        assert calls == ["门锁了"]
+        assert result.steps[0].params == {"reason": "门锁了"}
+        assert result.steps[0].decision == "页面一直打不开"
+        assert result.status == "goal_failed"
+        sent = next(t for t in provider.requests[0].tools if t.name == "report_unreachable")
+        assert sent.parameters["required"] == ["reason", "step_reason"]

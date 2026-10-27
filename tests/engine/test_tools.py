@@ -197,6 +197,26 @@ class TestMergeCommonFields:
             "Respond in the same language as the user's instruction"
         )
 
+    def test_default_description_unchanged(self) -> None:
+        # The built-in tool list is part of the prompt-cache prefix and was
+        # tuned for language adherence; the rename option must not touch it.
+        assert merge_common_fields(None)["properties"]["reason"]["description"] == (
+            "Describe what changed in the UI and give the detailed reasoning for this "
+            "decision. Respond in the same language as the user's instruction"
+        )
+
+    def test_renamed_reason_field(self) -> None:
+        own = prop("string", "the tool's own reason")
+        merged = merge_common_fields(
+            {"properties": {"reason": own}, "required": ["reason"]}, "zh", "step_reason"
+        )
+        assert list(merged["properties"]) == ["step_reason", "reason"]
+        assert merged["properties"]["reason"] == own
+        assert merged["required"] == ["reason", "step_reason"]
+        desc = merged["properties"]["step_reason"]["description"]
+        assert "separate from the tool's own `reason` parameter" in desc
+        assert desc.endswith("Respond in 中文")
+
 
 class TestResponseLanguage:
     def test_known_tags_map_to_native_names(self) -> None:

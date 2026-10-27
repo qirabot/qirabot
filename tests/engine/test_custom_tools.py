@@ -7,10 +7,12 @@ import pytest
 from qirabot.engine.custom_tools import (
     custom_tool_definitions,
     custom_tool_names,
+    custom_tool_params,
     filter_excluded,
     parse_custom_tools,
     parse_exclude_tools,
     parse_knowledge,
+    reason_field_for,
 )
 from qirabot.engine.tools import tool_definitions_for_platform
 
@@ -55,8 +57,18 @@ class TestParseCustomTools:
             ([{**gm_tool(), "description": "a" * 1025}], "exceeds 1024"),
             ([{**gm_tool(), "parameters": "x"}], "must be an object"),
             (
-                [{**gm_tool(), "parameters": {"properties": {"reason": {"type": "string"}}}}],
-                "reserved",
+                [
+                    {
+                        **gm_tool(),
+                        "parameters": {
+                            "properties": {
+                                "reason": {"type": "string"},
+                                "step_reason": {"type": "string"},
+                            }
+                        },
+                    }
+                ],
+                'property name "step_reason" is reserved when "reason" is also declared',
             ),
             (
                 [{**gm_tool(), "parameters": {"properties": {"locate": {"type": "string"}}}}],
@@ -205,6 +217,68 @@ class TestDefinitions:
         defs = parse_custom_tools([gm_tool()])
         assert custom_tool_names(defs) == {"gm_command"}
         assert custom_tool_names([]) == set()
+
+    def test_own_reason_kept_and_reasoning_moves_to_step_reason(self) -> None:
+        # The customer case: a tool argument named like the engine's meta
+        # field. It stays exactly as declared; only this tool's schema
+        # carries the step reasoning under step_reason.
+        own_reason = {"type": "string", "description": "why it is unreachable"}
+        defs = parse_custom_tools(
+            [
+                gm_tool(),
+                {
+                    "name": "report_unreachable",
+                    "description": "Report that the target cannot be reached",
+                    "parameters": {"properties": {"reason": own_reason}, "required": ["reason"]},
+                },
+            ]
+        )
+        gm, report = custom_tool_definitions(defs, "zh")
+        props = report.parameters["properties"]
+        # Reasoning first, like everywhere else, then the tool's arguments.
+        assert list(props) == ["step_reason", "reason"]
+        assert props["reason"] == own_reason
+        desc = props["step_reason"]["description"]
+        assert "separate from the tool's own `reason` parameter" in desc
+        assert desc.endswith("Respond in 中文")
+        assert report.parameters["required"] == ["reason", "step_reason"]
+        # Tools without the collision keep the plain reason field.
+        assert "step_reason" not in gm.parameters["properties"]
+        assert "reason" in gm.parameters["required"]
+
+    def test_meta_field_names_allowed_as_params(self) -> None:
+        defs = parse_custom_tools(
+            [
+                {
+                    "name": "ack_safety",
+                    "description": "d",
+                    "parameters": {"properties": {"safety_decision": {"type": "string"}}},
+                },
+                {
+                    "name": "log_step",
+                    "description": "d",
+                    "parameters": {"properties": {"step_reason": {"type": "string"}}},
+                },
+            ]
+        )
+        ack, log = custom_tool_definitions(defs)
+        assert list(ack.parameters["properties"]) == ["reason", "safety_decision"]
+        # A tool's own step_reason (without `reason`) leaves the meta field
+        # at its default name.
+        assert list(log.parameters["properties"]) == ["reason", "step_reason"]
+
+    def test_reason_field_for(self) -> None:
+        assert reason_field_for(frozenset()) == "reason"
+        assert reason_field_for({"command"}) == "reason"
+        assert reason_field_for({"reason", "code"}) == "step_reason"
+        assert reason_field_for({"step_reason"}) == "reason"
+
+    def test_custom_tool_params(self) -> None:
+        defs = parse_custom_tools([gm_tool(), {"name": "no_args", "description": "d"}])
+        assert custom_tool_params(defs) == {
+            "gm_command": frozenset({"command"}),
+            "no_args": frozenset(),
+        }
 
 
 class TestFilterExcluded:

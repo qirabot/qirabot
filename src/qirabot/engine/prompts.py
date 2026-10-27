@@ -18,7 +18,7 @@ from importlib import resources
 from typing import Any
 
 from . import actions
-from .custom_tools import custom_tool_names
+from .custom_tools import custom_tool_names, custom_tool_params, reason_field_for
 from .tools import response_language
 from .types import DecisionInput, Image, Message, ToolCall, ToolResult, detect_image_mime
 
@@ -212,6 +212,7 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
     covers the system prompt, tools and the whole text history."""
     messages: list[Message] = []
     custom_names = custom_tool_names(input.custom_tools)
+    custom_params = custom_tool_params(input.custom_tools)
 
     # Replay conversation history (already trimmed by History.add)
     for turn in input.history:
@@ -232,11 +233,13 @@ def build_conversation_messages(input: DecisionInput) -> list[Message]:
                 )
             )
 
-        # 2. Model's decision as tool call
+        # 2. Model's decision as tool call. The reasoning goes back under the
+        # field the tool's schema declares, never over a tool's own `reason`.
         if turn.action_type:
             args = parse_history_args(turn.action_params)
             if turn.reasoning:
-                args["reason"] = turn.reasoning
+                own = custom_params.get(turn.action_type, frozenset())
+                args[reason_field_for(own)] = turn.reasoning
             messages.append(
                 Message(
                     role="assistant",

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.4.6 (2026-10-27)
 
 ### Custom tool parameter names
 

@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.5.1 (2026-10-28)
+
+### iOS recording (WDA MJPEG stream)
+
+- `--record` on the direct WDA engine produced a time-lapsed, truncated
+  video: ffmpeg's raw mjpeg demuxer ignores wall-clock timestamps and
+  stamps a nominal 25fps, so a ~10fps device stream played back about 2.6x
+  fast and most frames were dropped (a 2-minute run came out as a 49s
+  video), and the report's per-step seek offsets landed in the wrong place.
+  Frames are now re-stamped with the time they arrive and kept
+  variable-rate, so video time is real time. The stream starts recording at
+  its first frame instead of after a multi-second probe, and frames are
+  scaled to a 1280px longest side (they used to be encoded at the phone's
+  full ~1200x2600, which libx264 couldn't keep up with in real time).
+
+### Report
+
+- The recording player follows the video's orientation: a portrait
+  recording sits in a sticky column beside the steps on screens 1240px and
+  wider (stacked above them on narrower ones); a landscape one is capped at
+  880px and centered above the steps.
+- A marker strip under the video has one tick per step, colored by
+  outcome; clicking a tick or the strip seeks there. While the video plays
+  the current step's row is highlighted and named under the player, and in
+  the side-by-side layout the table follows along. Clicking a step's `+m:ss`
+  offset no longer scrolls the page when the video is already on screen.
+  Steps that fall after the end of the recording are counted under the
+  player instead of silently getting no tick.
+- A step's decision text is clamped to four lines in the step table, with a
+  Show more toggle where it was actually cut. The screenshot lightbox and
+  printed reports keep the full text.
+
+### CLI
+
+- Text output ends with a `Report: <path>` line after the usage summary,
+  printed as a terminal hyperlink (Cmd/Ctrl+click in terminals that support
+  them). It appears whenever a report will be written, on failed and
+  cancelled runs too.
+
+### Engine
+
+- The `reason` field every tool carries now asks for one or two short
+  sentences that describe the action actually output, instead of "detailed
+  reasoning". Models had been using it as a scratchpad, writing page-long,
+  self-correcting analysis whose conclusion could differ from the
+  coordinates they then output. The built-in tool definitions change, so
+  the first request after upgrading misses the prompt cache once.
+
 ## 3.5.0 (2026-10-27)
 
 ### Breaking

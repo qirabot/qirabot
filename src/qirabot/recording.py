@@ -490,16 +490,37 @@ class MjpegStreamRecorder(ScreenRecorder):
         super().__init__(output)
         self.url = url
 
+    # Longest side of the encoded video. A phone streams ~1200x2600 frames;
+    # libx264 can't encode those at the stream's rate on a laptop (measured
+    # ~3.5fps on an M3), and a backlog in a real-time pipeline means a
+    # time-lapsed, truncated video. 1280 keeps up with headroom and is still
+    # far more than the report's player shows.
+    MAX_SIDE = 1280
+
     def _build_cmd(self, ffmpeg: str) -> tuple[list[str], str] | None:
+        m = self.MAX_SIDE
+        # Fit the longest side to MAX_SIDE (never upscale), even dimensions
+        # for yuv420p; -2 keeps the aspect ratio on the other side.
+        fit = (
+            f"scale='if(gte(iw,ih),trunc(min({m},iw)/2)*2,-2)'"
+            f":'if(gte(iw,ih),-2,trunc(min({m},ih)/2)*2)'"
+        )
         cmd = [
             ffmpeg, "-y",
+            # Start at the first frame: default probing buffers ~5s of the
+            # live stream, which would then arrive in one burst.
+            "-fflags", "nobuffer", "-probesize", "32", "-analyzeduration", "0",
             "-f", "mjpeg",
-            # The stream carries no timestamps; wallclock keeps the video at
-            # real-time speed regardless of the stream's (variable) frame rate.
-            "-use_wallclock_as_timestamps", "1",
             "-i", self.url,
-            # Device frames can have odd dimensions; yuv420p needs even ones.
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            # The stream carries no timestamps, and the raw mjpeg demuxer
+            # ignores -use_wallclock_as_timestamps (it stamps a nominal
+            # 25fps): played back that way a ~10fps stream runs 2.5x fast and
+            # the frame-rate conversion drops most frames. Re-stamp each frame
+            # with the wall time it arrived, relative to the first, and keep
+            # the variable rate (vfr) so video time is real time — the
+            # report's per-step seek offsets depend on it.
+            "-vf", f"setpts=(RTCTIME-RTCSTART)/(TB*1000000),{fit}",
+            "-fps_mode", "vfr",
             "-vcodec", "libx264",
             "-preset", "ultrafast",
             "-pix_fmt", "yuv420p",

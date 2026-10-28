@@ -397,11 +397,17 @@ class TestMjpegStreamRecorder:
         assert cmd[0] == "ffmpeg" and cmd[1] == "-y"
         assert cmd[cmd.index("-f") + 1] == "mjpeg"
         assert cmd[cmd.index("-i") + 1] == "http://127.0.0.1:9100"
-        # The stream has no timestamps: wallclock keeps playback real-time,
-        # and it must be an *input* option (before -i).
-        assert cmd.index("-use_wallclock_as_timestamps") < cmd.index("-i")
-        # Odd device dimensions are scaled to even ones for yuv420p.
-        assert "scale=trunc(iw/2)*2:trunc(ih/2)*2" in cmd
+        # The raw mjpeg demuxer ignores wallclock timestamps (nominal 25fps
+        # → a time-lapsed video): frames are re-stamped with real time in the
+        # filter graph and kept variable-rate.
+        vf = cmd[cmd.index("-vf") + 1]
+        assert vf.startswith("setpts=(RTCTIME-RTCSTART)/(TB*1000000),")
+        assert cmd[cmd.index("-fps_mode") + 1] == "vfr"
+        # Probing must not buffer seconds of the live stream before frame one.
+        assert cmd[cmd.index("-analyzeduration") + 1] == "0"
+        assert cmd.index("-analyzeduration") < cmd.index("-i")
+        # Downscaled so libx264 keeps up; even dimensions for yuv420p.
+        assert f"min({MjpegStreamRecorder.MAX_SIDE},ih)" in vf
         for token in ("libx264", "ultrafast", "yuv420p"):
             assert token in cmd
         assert cmd[-1] == out

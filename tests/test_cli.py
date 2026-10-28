@@ -1546,6 +1546,29 @@ class TestRunLocalUsageSummary:
         assert "Cancelled" in out
         assert "42.3k tokens" in out
 
+    def test_report_link_printed_after_summary(self, capsys, tmp_path, monkeypatch):
+        from qirabot.cli import main as cli_main
+
+        monkeypatch.chdir(tmp_path)
+        run = tmp_path / "qira_runs" / "r1"
+        bot = self._bot(ai=self._result(True, "ok", "completed"))
+        bot.will_write_report = True
+        bot.report_dir = str(run)
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        out = capsys.readouterr().out
+        # Short relative path on screen; the hyperlink target is absolute.
+        assert "Report: qira_runs/r1/report.html" in out
+        assert out.index("42.3k tokens") < out.index("Report:")
+
+    def test_no_report_link_when_no_report_will_be_written(self, capsys, tmp_path):
+        from qirabot.cli import main as cli_main
+
+        bot = self._bot(ai=self._result(True, "ok", "completed"))
+        bot.will_write_report = False
+        bot.report_dir = str(tmp_path)
+        cli_main._run_local(bot, object(), "task", max_steps=5)
+        assert "Report:" not in capsys.readouterr().out
+
     def test_no_ai_steps_prints_nothing(self, capsys):
         from qirabot.cli import main as cli_main
 

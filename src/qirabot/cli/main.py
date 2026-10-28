@@ -114,6 +114,30 @@ def _print_usage(console: Any, bot: Any) -> None:
         pass
 
 
+def _print_report_link(console: Any, bot: Any) -> None:
+    """``Report: <path>`` under the usage line, as a terminal hyperlink.
+
+    The path is shown relative (short) but links to the absolute file://
+    URI, so Cmd/Ctrl+click opens it in terminals with OSC 8 support (iTerm2,
+    VS Code, Ghostty, Windows Terminal …); elsewhere it is plain text to
+    copy. close() writes the file right after this prints, before the process
+    exits. Same gate as the JSON result's ``report`` field, and like the
+    usage line it never masks the run outcome.
+    """
+    try:
+        if not bot.will_write_report:
+            return
+        path = Path(bot.report_dir) / "report.html"
+        uri = path.resolve().as_uri()
+        try:
+            shown = str(path.resolve().relative_to(Path.cwd()))
+        except ValueError:
+            shown = str(path.resolve())
+        console.print(f"[dim]Report:[/dim] [link={uri}]{shown}[/link]", soft_wrap=True)
+    except Exception:
+        pass
+
+
 # Formats whose stdout carries machine-readable JSON only: "json" prints one
 # result object at the end of the run; "stream-json" additionally prints a
 # start line and one NDJSON line per step. All rich/human output is suppressed
@@ -341,6 +365,7 @@ def _run_local(
         sdk_logger.removeFilter(drop_reported)
         if not machine:
             _print_usage(console, bot)
+            _print_report_link(console, bot)
 
 
 def _fail_setup(bot: Any, e: Exception, output_format: str = "text") -> NoReturn:

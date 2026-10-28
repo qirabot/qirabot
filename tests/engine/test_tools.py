@@ -201,8 +201,10 @@ class TestMergeCommonFields:
         # The built-in tool list is part of the prompt-cache prefix and was
         # tuned for language adherence; the rename option must not touch it.
         assert merge_common_fields(None)["properties"]["reason"]["description"] == (
-            "Describe what changed in the UI and give the detailed reasoning for this "
-            "decision. Respond in the same language as the user's instruction"
+            "In 1-2 short sentences: what changed in the UI since the last action, and why "
+            "this action. Decide on the action first; this must describe the action and "
+            "target you actually output, not exploratory analysis. "
+            "Respond in the same language as the user's instruction"
         )
 
     def test_renamed_reason_field(self) -> None:

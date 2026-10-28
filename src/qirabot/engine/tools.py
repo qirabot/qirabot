@@ -655,7 +655,15 @@ def merge_common_fields(
     its own `reason` parameter (see custom_tools.reason_field_for); the
     description then tells the two apart. The default leaves every other
     schema byte-identical."""
-    desc = "Describe what changed in the UI and give the detailed reasoning for this decision. "
+    # Deliberately brief: "give the detailed reasoning" turned this field into
+    # a scratchpad — page-long, self-correcting analysis whose conclusion
+    # didn't match the coordinates actually output. Analysis belongs before
+    # the call; history replays only the first 50 chars of it anyway.
+    desc = (
+        "In 1-2 short sentences: what changed in the UI since the last action, and why "
+        "this action. Decide on the action first; this must describe the action and "
+        "target you actually output, not exploratory analysis. "
+    )
     if reason_field != REASON_FIELD:
         desc += (
             f"This is your step reasoning, separate from the tool's own `{REASON_FIELD}` "

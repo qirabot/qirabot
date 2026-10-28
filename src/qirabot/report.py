@@ -157,7 +157,40 @@ details.instr pre { margin:8px 0 0; padding:12px 14px; background:#f8fafc;
   border-bottom:1px solid #fde68a; }
 .notice.error { background:#fef2f2; color:#991b1b; border-bottom-color:#fecaca; }
 .wrap > .notice { border:1px solid #fde68a; border-radius:10px; margin-bottom:18px; }
-video { max-width:100%; max-height:70vh; display:block; border-radius:12px; margin-bottom:18px; }
+/* Recording. .media wraps the player and the step sections; _PLAYER_JS tags
+   it portrait / landscape from the video's own size once metadata loads and
+   sets --ar (width/height), so the box and its marker strip match the
+   picture exactly. Landscape (and the default): capped and centered above
+   the steps. Portrait on a wide screen: a sticky column beside the steps. */
+.player { margin-bottom:18px; }
+.pbox { --ar:1.778; width:min(100%, 880px, calc(55vh * var(--ar))); margin:0 auto; }
+.pbox video { display:block; width:100%; aspect-ratio:var(--ar); background:#0b0d12;
+  border-radius:12px; }
+.ticks { position:relative; height:14px; margin:8px 2px 0; cursor:pointer; visibility:hidden; }
+.ticks.ready { visibility:visible; }
+.ticks::before { content:""; position:absolute; left:0; right:0; top:6px; height:2px;
+  border-radius:1px; background:#e2e5eb; }
+.tkfill { position:absolute; left:0; top:6px; height:2px; width:0; border-radius:1px;
+  background:#4f46e5; pointer-events:none; }
+.tk { position:absolute; top:2px; width:4px; height:10px; margin-left:-2px; padding:0; border:0;
+  border-radius:2px; background:#a5b4fc; cursor:pointer; }
+.tk:hover, .tk.now { top:0; height:14px; background:#4f46e5; }
+.tk.warn { background:#f59e0b; } .tk.fail { background:#ef4444; }
+.pcap { display:flex; gap:8px; margin-top:6px; font-size:11.5px; color:var(--muted); }
+.pcap b { color:var(--text); font-weight:600; }
+.pcap .miss { color:#b45309; font-weight:600; }
+.pcap .now { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.steps tr.now td { background:#eef2ff; }
+.steps tr.now td.idx { box-shadow:inset 3px 0 #4f46e5; color:#4f46e5; }
+@media (min-width: 1240px) {
+  .media.portrait { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:18px;
+    align-items:start; }
+  .media.portrait > .main { grid-column:1; grid-row:1; min-width:0; }
+  .media.portrait > .player { grid-column:2; grid-row:1; position:sticky; top:20px; margin:0; }
+  .media.portrait .pbox { width:min(100%, calc((100vh - 96px) * var(--ar))); }
+  .media.portrait .steps { min-width:840px; }
+}
 
 /* Step sections. */
 section { background:var(--card); border:1px solid var(--line); border-radius:16px;
@@ -190,6 +223,12 @@ td { padding:12px; border-bottom:1px solid #f1f3f6; vertical-align:top; }
 .act .done { color:var(--pass); }
 .warn-row .act { color:#92400e; } .fail-row .act { color:#b91c1c; }
 .dec { color:var(--muted); font-size:12.5px; margin-bottom:4px; }
+.dec.clip { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical;
+  overflow:hidden; overflow-wrap:anywhere; }
+.dec.clip.open { display:block; -webkit-line-clamp:unset; }
+.more { border:0; background:none; padding:0; margin:-2px 0 6px; cursor:pointer;
+  font:inherit; font-size:12px; font-weight:600; color:#4f46e5; }
+.more:hover { text-decoration:underline; }
 .det { font-size:12.5px; white-space:pre-wrap; word-break:break-word; color:#1f2937; }
 .out { margin-top:6px; padding:6px 10px; background:#f6f8fb; border-radius:8px; font-size:12px;
   white-space:pre-wrap; word-break:break-word; color:#374151; border-left:3px solid #c7d2fe; }
@@ -285,6 +324,8 @@ kbd { font-family:inherit; font-size:10.5px; border:1px solid var(--line); borde
   .tokpop { display:block; position:static; width:auto; margin-top:16px; filter:none; }
   .tokpop::before, .tokx, .tokbtn .car { display:none; }
   details.instr pre { max-height:none; }
+  .dec.clip { display:block; -webkit-line-clamp:unset; }
+  .more { display:none; }
 }
 """
 
@@ -526,6 +567,17 @@ _PAGE_JS = """
     var c = d.previousElementSibling;
     if (c && c.scrollHeight > c.clientHeight + 1) d.classList.remove('auto');
   });
+  // Long step decisions: same idea, a four-line clamp whose toggle appears
+  // only where it cut. (Rows inside a collapsed layout measure 0 — skip.)
+  document.querySelectorAll('.dec.clip').forEach(function (c) {
+    var b = c.nextElementSibling;
+    if (!b || !b.classList.contains('more')) return;
+    if (c.scrollHeight > c.clientHeight + 1) b.hidden = false;
+    b.addEventListener('click', function () {
+      var open = c.classList.toggle('open');
+      b.textContent = open ? 'Show less' : 'Show more';
+    });
+  });
   // Token popover, anchored under the Tokens button.
   var btn = document.getElementById('tokbtn'), pop = document.getElementById('tokpop');
   if (!btn || !pop) return;
@@ -549,6 +601,96 @@ _PAGE_JS = """
   document.addEventListener('click', function () { set(false); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
   window.addEventListener('resize', function () { if (pop.classList.contains('open')) place(); });
+})();
+"""
+
+# Only emitted with a recording. Rows that can seek carry data-t (their
+# offset into the video, seconds) and data-l (a label for the caption).
+_PLAYER_JS = """
+(function () {
+  var media = document.querySelector('.media'), v = media && media.querySelector('video');
+  if (!v) return;
+  var player = media.querySelector('.player'), box = player.querySelector('.pbox');
+  var bar = player.querySelector('.ticks'), fill = player.querySelector('.tkfill');
+  var cap = player.querySelector('.pcap .now');
+  var rows = [].slice.call(media.querySelectorAll('tr[data-t]')).map(function (r) {
+    return { el: r, t: parseFloat(r.dataset.t), l: r.dataset.l || '' };
+  }).sort(function (a, b) { return a.t - b.t; });
+  var ticks = [], cur = -1, built = false;
+  function sidebar() { return getComputedStyle(player).position === 'sticky'; }
+  function visible(el) {
+    var r = el.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= window.innerHeight;
+  }
+  function layout() {
+    if (!v.videoWidth || !v.videoHeight) return;
+    box.style.setProperty('--ar', (v.videoWidth / v.videoHeight).toFixed(4));
+    var portrait = v.videoHeight > v.videoWidth;
+    media.classList.toggle('portrait', portrait);
+    media.classList.toggle('landscape', !portrait);
+    var d = v.duration;
+    if (!bar || built || !isFinite(d) || d <= 0) return;
+    built = true;
+    rows.forEach(function (r, i) {
+      if (r.t > d) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tk' + (r.el.classList.contains('fail-row') ? ' fail'
+        : r.el.classList.contains('warn-row') ? ' warn' : '');
+      b.style.left = (r.t / d * 100) + '%';
+      b.title = r.l;
+      b.addEventListener('click', function (e) { e.stopPropagation(); seek(r.t, false); });
+      bar.appendChild(b);
+      ticks[i] = b;
+    });
+    bar.classList.add('ready');
+    // Steps past the end (a recorder that fell behind, or stopped early)
+    // get no marker; say so rather than let the strip look complete.
+    var miss = rows.filter(function (r) { return r.t > d + 1; }).length;
+    if (miss) {
+      var s = document.createElement('span');
+      s.className = 'miss';
+      s.textContent = miss + (miss === 1 ? ' step' : ' steps') + ' after the recording ends';
+      cap.parentNode.insertBefore(s, cap);
+    }
+  }
+  function sync() {
+    var t = v.currentTime, d = v.duration;
+    if (fill && isFinite(d) && d > 0) fill.style.width = Math.min(100, t / d * 100) + '%';
+    var i = -1;
+    while (i + 1 < rows.length && rows[i + 1].t <= t + 0.05) i++;
+    if (i === cur) return;
+    if (cur >= 0) {
+      rows[cur].el.classList.remove('now');
+      if (ticks[cur]) ticks[cur].classList.remove('now');
+    }
+    cur = i;
+    if (i < 0) { cap.textContent = ''; return; }
+    rows[i].el.classList.add('now');
+    if (ticks[i]) ticks[i].classList.add('now');
+    cap.textContent = rows[i].l;
+    // Follow along only beside the steps: in the stacked layout the video
+    // sits above them, so scrolling to a row would hide the video.
+    if (!v.paused && sidebar() && !visible(rows[i].el)) {
+      rows[i].el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+  function seek(t, reveal) {
+    v.currentTime = t;
+    if (reveal && !visible(v)) v.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+  }
+  window.seekTo = function (t) { seek(t, true); return false; };
+  if (bar) bar.addEventListener('click', function (e) {
+    var r = bar.getBoundingClientRect(), d = v.duration;
+    if (isFinite(d) && d > 0) seek(Math.max(0, (e.clientX - r.left) / r.width) * d, false);
+  });
+  v.addEventListener('loadedmetadata', layout);
+  v.addEventListener('durationchange', layout);
+  v.addEventListener('timeupdate', sync);
+  v.addEventListener('seeked', sync);
+  if (v.readyState >= 1) layout();
 })();
 """
 
@@ -1104,23 +1246,27 @@ def write_html(
         )
     parts.append("</div>")  # .hero
 
-    if recording:
-        parts.append(
-            f"<video controls src='{_esc(recording)}'></video>"
-            "<script>function seekTo(t){const v=document.querySelector('video');"
-            "if(!v)return false;v.currentTime=t;"
-            "v.scrollIntoView({behavior:'smooth',block:'center'});v.play();"
-            "return false;}</script>"
-        )
-    elif record_error:
-        parts.append(f"<div class='notice'>⚠ {_esc(record_error)}</div>")
-
     # A step's offset into the video, as a link that seeks it, only when
     # the video is seekable. Without one, an offset from the run start would
     # only restate the clock time beside it. Entries from runs predating the
     # "ts" field just leave the time cell empty.
     seekable = bool(recording) and recording_start > 0
     default_tier = _split_label(tier)[0] or _DEFAULT_TIER
+
+    if recording:
+        # The player and the step sections share .media so a portrait
+        # recording can become a sticky column beside the steps (_PLAYER_JS
+        # picks the layout from the video's real size). The step-marker
+        # strip needs step offsets, so it exists only when seekable.
+        ticks = "<div class='ticks'><div class='tkfill'></div></div>" if seekable else ""
+        parts.append(
+            "<div class='media'><div class='player'><div class='pbox'>"
+            f"<video controls preload='metadata' src='{_esc(recording)}'></video>{ticks}"
+            "<div class='pcap'><b>Recording</b><span class='now'></span></div>"
+            "</div></div><div class='main'>"
+        )
+    elif record_error:
+        parts.append(f"<div class='notice'>⚠ {_esc(record_error)}</div>")
 
     # Sections. Every step with a thumbnail also becomes a lightbox "shot" so the
     # viewer can page across all screenshots regardless of which section they're in.
@@ -1174,9 +1320,17 @@ def write_html(
         )
         for i, e in enumerate(entries, 1):
             detail = ""
+            # The table clamps a long decision (models sometimes think aloud
+            # in it for a page); the lightbox renders the unclamped `detail`.
+            # _PAGE_JS unhides the toggle only where the clamp actually cut.
+            row_detail = ""
             decision = e.get("decision") or ""
             if decision:
                 detail += f"<div class='dec'>{_esc(decision)}</div>"
+                row_detail += (
+                    f"<div class='dec clip'>{_esc(decision)}</div>"
+                    "<button type='button' class='more' hidden>Show more</button>"
+                )
             params = dict(e.get("params") or {})
             output = e.get("output") or ""
             if e.get("action_type") == "done":
@@ -1186,10 +1340,13 @@ def write_html(
                 if str(params.get("result", "")).strip() == output.strip():
                     params.pop("result", None)
             summary = _summarize_params(params)
+            rest = ""
             if summary:
-                detail += f"<div class='det mono'>{_esc(summary)}</div>"
+                rest += f"<div class='det mono'>{_esc(summary)}</div>"
             if output:
-                detail += _output_html(output)
+                rest += _output_html(output)
+            detail += rest
+            row_detail += rest
             # A step explicitly recorded as failed gets a ✗ and a red row —
             # unless it's marked warn (max-steps truncation), which gets ⚠ and
             # amber to match its section badge. The terminal step otherwise
@@ -1253,11 +1410,14 @@ def write_html(
                 if reused:
                     shot += "<span class='reused'>frame from an earlier step</span>"
             cls_attr = f" class='{row_cls}'" if row_cls else ""
+            if seekable and ts and ts >= recording_start:
+                label = f"{heading} · {i} {e.get('action_type') or ''}".rstrip()
+                cls_attr += f" data-t='{ts - recording_start:.1f}' data-l='{_esc(label)}'"
             parts.append(
                 f"<tr{cls_attr}><td class='idx'>{i}</td>"
                 f"<td class='when mono'>{when_cell}</td>"
                 f"<td class='act mono'>{act_html}</td>"
-                f"<td>{detail}</td>"
+                f"<td>{row_detail}</td>"
                 + _model_cell(e, default_model, default_tier)
                 + _duration_cell(e)
                 + _waits_cell(e)
@@ -1265,9 +1425,13 @@ def write_html(
             )
         parts.append("</tbody></table></div></section>")
 
+    if recording:
+        parts.append("</div></div>")  # .main, .media
     parts.append("</div>")  # .wrap
     parts.append(_lightbox(shots))
     parts.append(f"<script>{_PAGE_JS}</script>")
+    if recording:
+        parts.append(f"<script>{_PLAYER_JS}</script>")
     parts.append("</body></html>")
     out.write_text("".join(parts), encoding="utf-8")
     return out

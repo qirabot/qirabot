@@ -588,6 +588,59 @@ class TestStepTimestamps:
         assert "<td class='when mono'></td>" in rows
 
 
+class TestLongDecision:
+    def test_table_clamps_decision_behind_toggle(self, tmp_path):
+        html = _render(tmp_path, [_entry("a", decision="很长的推理" * 200)])
+        rows = _rows(html)
+        assert "<div class='dec clip'>" in rows
+        # Hidden until the page script measures that the clamp actually cut.
+        assert "<button type='button' class='more' hidden>Show more</button>" in rows
+
+    def test_lightbox_keeps_full_unclamped_decision(self, tmp_path):
+        html = _render(
+            tmp_path, [_entry("a", decision="很长的推理" * 200, thumb="data:image/jpeg;base64,x")]
+        )
+        lightbox = html[html.rindex("</table>"):]
+        assert "很长的推理" * 200 in lightbox
+        assert "dec clip" not in lightbox
+
+    def test_no_decision_no_toggle(self, tmp_path):
+        assert "class='more'" not in _rows(_render(tmp_path, [_entry("a", decision="")]))
+
+
+class TestRecordingPlayer:
+    def test_player_wraps_steps_for_side_by_side_layout(self, tmp_path):
+        html = _render(
+            tmp_path, [_entry("a", ts=1005.5)], recording="recording.mp4", recording_start=1000.0
+        )
+        # One wrapper holding the player then the steps, closed before the
+        # lightbox, so a portrait video can sit in a column beside them.
+        media = html.index("<div class='media'>")
+        assert media < html.index("<video") < html.index("<div class='main'>") < html.index("<section")
+        # Last section, then .main, .media, .wrap.
+        assert "</table></div></section></div></div></div>" in html
+        assert "class='ticks'" in html
+        assert "window.seekTo" in html
+
+    def test_seekable_rows_carry_offset_and_label(self, tmp_path):
+        log = [_entry("a", ts=1005.5, action_type="tap"), _entry("a", ts=999.0)]
+        html = _render(tmp_path, log, recording="recording.mp4", recording_start=1000.0)
+        assert "data-t='5.5' data-l='Steps · 1 tap'" in html
+        # A step from before the recording started has no place on its timeline.
+        assert html.count("data-t=") == 1
+
+    def test_recording_without_start_ts_has_no_markers(self, tmp_path):
+        html = _render(tmp_path, [_entry("a", ts=1000.0)], recording="recording.mp4")
+        assert "<video" in html
+        assert "class='ticks'" not in html
+        assert "data-t=" not in html
+
+    def test_no_recording_no_player(self, tmp_path):
+        html = _render(tmp_path, [_entry("a", ts=1000.0)])
+        assert "<div class='media'>" not in html
+        assert "window.seekTo" not in html
+
+
 class TestStatusVocabulary:
     def test_badge_map_covers_run_status_exactly(self):
         # qirabot.client.RunStatus is the single status vocabulary; the

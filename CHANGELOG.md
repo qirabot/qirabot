@@ -1,5 +1,44 @@
 # Changelog
 
+## 3.5.2 (2026-10-29)
+
+### Desktop: multiple displays
+
+- The desktop backend can drive a display other than the primary one:
+  `Qirabot(display=N)`, `QIRA_DISPLAY=N` or `qirabot desktop --display N`
+  (macOS and Windows). Screenshots capture only that display, action
+  coordinates stay relative to its screenshot (the adapter adds the
+  display's origin), and `--record` and the progress overlay follow it.
+  Numbering is 1-based and 1 is always the primary display, so omitting
+  the option changes nothing.
+- New `qirabot displays` command lists the displays and their numbers
+  (`--json` for scripts); `Display` and `list_displays` are exported from
+  `qirabot`.
+- An explicit `display=` / `--display` is strict: an unknown number fails at
+  construction, and a non-desktop target raises instead of ignoring it.
+  `--display` can't be combined with `--window-title` / `--hwnd`.
+  `QIRA_DISPLAY` is best-effort: a bad value warns and falls back to the
+  primary display.
+- `QIRA_SCREEN_INDEX` (raw avfoundation index) is deprecated in favor of
+  `QIRA_DISPLAY`; it is still honored, with a one-time warning, when no
+  display is selected.
+
+### Fixes
+
+- On multi-monitor Macs the overlay's glow bands and corner panel could
+  land mid-screen: they were sized from `mainScreen()` (the display with
+  the key window) but positioned in primary-display coordinates. They now
+  use the driven display (the primary by default).
+- A desktop screenshot refused by macOS for lack of the Screen Recording
+  permission now raises an error that says so, instead of a bare
+  `CalledProcessError` naming a temp file.
+
+### CLI
+
+- Task commands accept `--settle-seconds` (pause after each
+  screen-changing action; default `QIRA_SETTLE_SECONDS`, else per
+  platform).
+
 ## 3.5.1 (2026-10-28)
 
 ### iOS recording (WDA MJPEG stream)

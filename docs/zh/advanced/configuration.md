@@ -78,7 +78,6 @@ us-east5 browser "..."`。
 |---|---|
 | `GOOGLE_APPLICATION_CREDENTIALS` | Google 标准变量:ADC 使用的服务账号 JSON 路径 |
 | `QIRA_ADB_PATH` | Android 后端显式指定 adb 可执行文件 |
-| `QIRA_SCREEN_INDEX` | 已废弃,改用 `QIRA_DISPLAY`。macOS 录屏用的 avfoundation 原始设备号,仅在未选择显示器时生效 |
 | `QIRA_AUDIO_DEVICE` | 录音的音频设备(Windows) |
 | `QIRA_DOTENV` | `load_dotenv()` 读取的路径,替代 `./.env` |
 | `QIRA_RECORD_WINDOW_NATIVE` | Windows:强制旧式 gdigrab 逐窗口采集,替代默认的桌面裁剪方案 |

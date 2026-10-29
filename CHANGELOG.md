@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- `QIRA_SCREEN_INDEX` is removed. Select the recorded (and driven) screen
+  with `QIRA_DISPLAY` / `--display` / `Qirabot(display=N)` instead; run
+  `qirabot displays` for the numbers.
+
 ## 3.5.2 (2026-10-29)
 
 ### Desktop: multiple displays

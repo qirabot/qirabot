@@ -180,9 +180,6 @@ def _detect_audio_device(ffmpeg: str) -> str | None:
     return None
 
 
-_screen_index_warned = False
-
-
 def _detect_screen_index(ffmpeg: str, display: int | None = None) -> str:
     """Resolve the avfoundation screen device index (macOS only).
 
@@ -193,22 +190,9 @@ def _detect_screen_index(ffmpeg: str, display: int | None = None) -> str:
     "Capture screen N-1"; we return the ``[idx]`` in front of that line
     (cameras come first, so idx != K). ``display=None`` means display 1.
 
-    ``QIRA_SCREEN_INDEX`` (a raw avfoundation index) is the deprecated
-    pre-``display`` override: still honored when no display was selected,
-    with a one-time warning. Probe failures fall back to
-    :data:`_DEFAULT_SCREEN_INDEX` shifted by the display offset.
+    Probe failures fall back to :data:`_DEFAULT_SCREEN_INDEX` shifted by the
+    display offset.
     """
-    global _screen_index_warned
-    override = os.environ.get("QIRA_SCREEN_INDEX")
-    if override and display is None:
-        if not _screen_index_warned:
-            _screen_index_warned = True
-            logger.warning(
-                "QIRA_SCREEN_INDEX is deprecated: use QIRA_DISPLAY / "
-                "--display / Qirabot(display=N) (run `qirabot displays` for "
-                "the numbers) — it selects the recorded AND the driven screen"
-            )
-        return override
     screen = (display or 1) - 1
     fallback = str(int(_DEFAULT_SCREEN_INDEX) + screen)
     try:

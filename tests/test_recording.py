@@ -138,12 +138,7 @@ class _FakeCompleted:
 
 
 class TestDetectScreenIndex:
-    def test_env_override_wins(self, monkeypatch):
-        monkeypatch.setenv("QIRA_SCREEN_INDEX", "7")
-        assert _detect_screen_index("ffmpeg") == "7"
-
     def test_parses_capture_screen_line(self, monkeypatch):
-        monkeypatch.delenv("QIRA_SCREEN_INDEX", raising=False)
         stderr = (
             "[AVFoundation] AVFoundation video devices:\n"
             "[AVFoundation] [0] FaceTime HD Camera\n"
@@ -153,8 +148,6 @@ class TestDetectScreenIndex:
         assert _detect_screen_index("ffmpeg") == "3"
 
     def test_falls_back_on_error(self, monkeypatch):
-        monkeypatch.delenv("QIRA_SCREEN_INDEX", raising=False)
-
         def boom(*a, **k):
             raise OSError("no ffmpeg")
 
@@ -171,25 +164,13 @@ class TestDetectScreenIndex:
     )
 
     def test_display_maps_to_capture_screen_n_minus_1(self, monkeypatch):
-        monkeypatch.delenv("QIRA_SCREEN_INDEX", raising=False)
         monkeypatch.setattr(
             recording.subprocess, "run", lambda *a, **k: _FakeCompleted(self._TWO_SCREENS)
         )
         assert _detect_screen_index("ffmpeg", 1) == "1"
         assert _detect_screen_index("ffmpeg", 2) == "2"
 
-    def test_display_wins_over_deprecated_env(self, monkeypatch):
-        # QIRA_SCREEN_INDEX is the legacy raw-index override; an explicit
-        # display selection must not be silently redirected by it.
-        monkeypatch.setenv("QIRA_SCREEN_INDEX", "7")
-        monkeypatch.setattr(
-            recording.subprocess, "run", lambda *a, **k: _FakeCompleted(self._TWO_SCREENS)
-        )
-        assert _detect_screen_index("ffmpeg", 2) == "2"
-
     def test_display_fallback_offsets_default(self, monkeypatch):
-        monkeypatch.delenv("QIRA_SCREEN_INDEX", raising=False)
-
         def boom(*a, **k):
             raise OSError("no ffmpeg")
 

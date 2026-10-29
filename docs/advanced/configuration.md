@@ -83,7 +83,6 @@ Env-only overrides with no constructor equivalent:
 |---|---|
 | `GOOGLE_APPLICATION_CREDENTIALS` | Standard Google variable: path to a service-account JSON for ADC |
 | `QIRA_ADB_PATH` | Explicit adb binary for the Android backend |
-| `QIRA_SCREEN_INDEX` | Deprecated — use `QIRA_DISPLAY`. Raw macOS avfoundation device index for recording; honored only when no display is selected |
 | `QIRA_AUDIO_DEVICE` | Recording audio device (Windows) |
 | `QIRA_DOTENV` | Path `load_dotenv()` reads instead of `./.env` |
 | `QIRA_RECORD_WINDOW_NATIVE` | Windows: force legacy gdigrab per-window capture instead of the crop-from-desktop default |

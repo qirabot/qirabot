@@ -69,13 +69,45 @@ Held inputs are auto-released at the end of an `ai()` run and on `close()`.
 Exact semantics of each primitive are in the
 [platform support matrix](/reference/api#platform-support-matrix).
 
+## Multiple displays
+
+By default the backend drives the **primary** display, the one with the menu
+bar on macOS or the primary monitor on Windows. To drive another one, list
+the displays and pick one by number:
+
+```bash
+qirabot displays
+# 1*  1920x1080  @ (0, 0)  DELL P3223QE  [primary]
+# 2   1710x1112  @ (-1710, 0)  Built-in Retina Display
+
+qirabot desktop "Is this a code editor?" --display 2
+```
+
+```python
+bot = Qirabot(display=2)          # or export QIRA_DISPLAY=2
+bot.ai(pyautogui, "...")
+```
+
+Everything follows the selected display: screenshots capture only that
+display, coordinates stay relative to its screenshot (the adapter adds the
+display's offset), and `record=True` and the progress overlay go there too.
+Numbering is 1-based, and 1 is always the primary display.
+
+- An explicit `display=` / `--display` is strict: an unknown number fails
+  at construction, and a non-desktop target (browser, mobile, a Windows
+  `Window`) raises instead of silently ignoring it. `--display` cannot be
+  combined with `--window-title` / `--hwnd`.
+- `QIRA_DISPLAY` is best-effort: a bad value logs a warning and falls back
+  to the primary display, and non-desktop targets ignore it.
+- macOS and Windows only; on Linux only display 1 exists.
+
 ## Screen recording
 
 `Qirabot(record=True)` records the full screen with ffmpeg for the whole run
-and embeds `recording.mp4` in the HTML report. macOS: grant the terminal/IDE
-"Screen Recording" permission, and pick a monitor with `QIRA_SCREEN_INDEX` if
-you have several. Recording is best-effort: a missing ffmpeg produces a
-warning and never fails the task.
+and embeds `recording.mp4` in the HTML report. It records the
+[selected display](#multiple-displays) (the primary one by default). macOS:
+grant the terminal/IDE "Screen Recording" permission. Recording is
+best-effort: a missing ffmpeg produces a warning and never fails the task.
 
 ## When to use which desktop backend
 

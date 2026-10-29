@@ -57,6 +57,7 @@ qirabot models
 | `ios INSTRUCTION` | Run an AI task on an iOS device ([WDA direct](/backends/ios), built in; `--appium-url`/`--device` for Appium) |
 | `desktop INSTRUCTION` | Run an AI task on the [desktop screen](/backends/desktop) (pyautogui; `--window-title`/`--hwnd` binds [one Windows window](/backends/windows-games), built in) |
 | `install-browser` | One-time Chromium download for the browser backend |
+| `displays` | List this machine's displays and the numbers `desktop --display N` accepts (`--json` for scripts) |
 | `open-browser` | Open a browser to log in to websites by hand; the session persists in `--user-data-dir` for later runs |
 | `doctor` | Check Python, Google Cloud credentials (ADC + project), and per-backend dependencies |
 | `models` | Print the built-in Vertex providers with their default models, the session default model, and whether the configured auth (API key and/or ADC) resolves |
@@ -195,6 +196,7 @@ sees one terminal line.
 | `-l, --language` | instruction's language | Response language: a tag (`zh`, `ja`, `de`, …) or any language name |
 | `--max-steps` | `20` | Step budget for the AI task |
 | `--max-duration` | no limit | Time budget: seconds (`300`) or `90s` / `5m` / `1h30m`. Checked between steps, so a run can overshoot by up to one step; ends with `Failed: max duration reached (5m03s/5m)` |
+| `--settle-seconds` | `QIRA_SETTLE_SECONDS`, else per platform | Pause after each screen-changing action so the next screenshot sees the repainted frame. Fractions are fine (`0.5`); `0` disables. Platform defaults: desktop / adb `1.0`, mobile / browser `0.6` |
 | `-k, --knowledge` | — | Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total). Same rules as `bot.ai(knowledge=...)`: files only, no URLs; fetch remote sources yourself first |
 | `--report / --no-report` | on | Write an HTML run report |
 | `--report-dir` | `./qira_runs/...` | Report output root (env `QIRA_REPORT_DIR`) |
@@ -245,6 +247,7 @@ Options for **`desktop`** (see [Desktop](/backends/desktop) and
 |---|---|---|
 | `--app` | — | Launch/activate an app first (macOS: name or bundle id; Windows: exe/registered name/UWP id; Linux: executable) |
 | `--app-wait` | `2.0` | Seconds to wait for the window after `--app` |
+| `--display N` | `QIRA_DISPLAY`, else `1` (primary) | Drive another display: screenshots, clicks, `--record` and the overlay all follow it. Numbers from `qirabot displays`; macOS/Windows. Not combinable with `--window-title`/`--hwnd` ([Multiple displays](/backends/desktop#multiple-displays)) |
 | `--window-title` | — | Bind to the window matching this title regex (Windows window backend) |
 | `--hwnd` | — | Bind to a window handle, decimal (Windows window backend) |
 | `--ambiguous` | `error` | When several windows match `--window-title`: `error` fails listing them; `largest` picks the biggest matching window |
@@ -267,7 +270,7 @@ report. What gets recorded differs per target:
 
 - `browser` / `desktop` record the host screen via ffmpeg (ffmpeg must be on
   PATH). With a window bound (`--window-title`/`--hwnd`), the recording
-  follows that window.
+  follows that window; with `--display N`, it records that display.
 - `android` records the device screen: `adb screenrecord` on the default
   engine, or Appium's recording API on the Appium engine.
 - `ios` records the device screen: WDA's MJPEG stream on the default engine

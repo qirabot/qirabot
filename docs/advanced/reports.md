@@ -86,8 +86,10 @@ finally:
 ```
 
 Needs the `ffmpeg` binary on PATH. macOS: grant "Screen Recording"
-permission (or you get black frames), and pick a monitor with
-`QIRA_SCREEN_INDEX` if you have several. Recording is best-effort: a missing
+permission (or you get black frames). With several monitors it records the
+display the desktop backend drives: `Qirabot(display=N)` / `--display N` /
+`QIRA_DISPLAY` ([Multiple displays](/backends/desktop#multiple-displays)),
+the primary one by default. Recording is best-effort: a missing
 ffmpeg or denied permission logs a warning and does not fail the task (check
 `recording.ffmpeg.log` in the run dir).
 

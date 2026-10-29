@@ -16,6 +16,8 @@ import sys
 import threading
 from typing import Any, Callable
 
+from qirabot.displays import Display
+
 logger = logging.getLogger("qirabot")
 
 # Character budgets, sized to the fixed helper window. Instructions, locate
@@ -77,9 +79,11 @@ class Overlay:
     or let the client drive it: ``Qirabot(overlay=True)``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, display: Display | None = None) -> None:
         self._proc: subprocess.Popen[bytes] | None = None
         self._failed = False
+        # Which host display the window/glow/pill go on; None = primary.
+        self._display = display
         # Set by the helper's {"event": "abort"} (user held ESC during
         # desktop control); read by the client between steps.
         self._abort_event = threading.Event()
@@ -94,6 +98,33 @@ class Overlay:
     @staticmethod
     def supported() -> bool:
         return sys.platform in ("darwin", "win32")
+
+    def set_display(self, display: Display | None) -> None:
+        """Put the overlay on ``display`` (``None`` = primary).
+
+        Takes effect when the helper spawns, i.e. before the first update;
+        the client calls it as soon as it knows the run drives that display.
+        A later call (helper already up) is ignored — moving a live window
+        mid-run is not worth the protocol surface.
+        """
+        if self._proc is None:
+            self._display = display
+
+    def _helper_args(self) -> list[str]:
+        """argv for the helper: the target display, if any, as one JSON arg
+        (macOS finds its NSScreen by ``id``; Windows uses the rect, which is
+        in the per-monitor-DPI physical pixels the helper itself runs in)."""
+        args = [sys.executable, "-m", "qirabot._overlay_helper"]
+        d = self._display
+        if d is not None:
+            args += [
+                "--display",
+                json.dumps({
+                    "index": d.index, "id": d.id,
+                    "x": d.x, "y": d.y, "w": d.width, "h": d.height,
+                }),
+            ]
+        return args
 
     def start(self) -> None:
         """Spawn the helper window process. Idempotent; safe to skip — every
@@ -111,7 +142,7 @@ class Overlay:
             # stdout carries helper->parent events (ESC-hold abort); a
             # daemon thread drains it so the pipe can never fill up.
             self._proc = subprocess.Popen(
-                [sys.executable, "-m", "qirabot._overlay_helper"],
+                self._helper_args(),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=None if debug else subprocess.DEVNULL,

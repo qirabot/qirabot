@@ -507,6 +507,59 @@ def _fake_pyautogui(*, screenshot_w: int, logical_w: int, logical_h: int | None 
     return pag
 
 
+class TestPyAutoGuiCapturePermission:
+    """macOS screencapture without Screen Recording permission exits 1; the
+    adapter must say what to fix instead of echoing a temp-file command."""
+
+    @pytest.fixture(autouse=True)
+    def _no_permission(self, monkeypatch):
+        # The hint is only given when macOS confirms the permission is
+        # missing; pin that answer instead of asking the real machine.
+        from qirabot.adapters import pyautogui_adapter
+
+        monkeypatch.setattr(pyautogui_adapter, "_macos_capture_permitted", lambda: False)
+
+    def _failing_adapter(self):
+        import subprocess
+
+        from qirabot.adapters.pyautogui_adapter import PyAutoGuiAdapter
+
+        pag = _fake_pyautogui(screenshot_w=1440, logical_w=1440)
+        pag.screenshot.side_effect = subprocess.CalledProcessError(
+            1, ["screencapture", "-x", "/tmp/x.png"]
+        )
+        return PyAutoGuiAdapter(pag)
+
+    def test_macos_failure_names_the_permission(self, monkeypatch):
+        import subprocess
+
+        from qirabot.adapters import pyautogui_adapter
+
+        monkeypatch.setattr(pyautogui_adapter.platform, "system", lambda: "Darwin")
+        a = self._failing_adapter()
+        with pytest.raises(RuntimeError, match="Screen Recording") as exc:
+            a.screenshot()
+        assert isinstance(exc.value.__cause__, subprocess.CalledProcessError)
+
+    def test_scale_probe_gets_the_same_message(self, monkeypatch):
+        from qirabot.adapters import pyautogui_adapter
+
+        monkeypatch.setattr(pyautogui_adapter.platform, "system", lambda: "Darwin")
+        a = self._failing_adapter()
+        with pytest.raises(RuntimeError, match="Screen Recording"):
+            a.click(10, 10)
+
+    def test_other_platforms_reraise_unchanged(self, monkeypatch):
+        import subprocess
+
+        from qirabot.adapters import pyautogui_adapter
+
+        monkeypatch.setattr(pyautogui_adapter.platform, "system", lambda: "Linux")
+        a = self._failing_adapter()
+        with pytest.raises(subprocess.CalledProcessError):
+            a.screenshot()
+
+
 class TestPyAutoGuiScaling:
     def _adapter(self, **kw):
         from qirabot.adapters.pyautogui_adapter import PyAutoGuiAdapter

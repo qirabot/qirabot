@@ -28,6 +28,9 @@ _EXTRA_FOR_PACKAGE = {
     "playwright": "browser",
     "pyautogui": "desktop",
     "pyperclip": "desktop",
+    # pyobjc-framework-quartz: pulled in by pyautogui on macOS; display
+    # enumeration (qirabot.displays) talks to CoreGraphics through it.
+    "Quartz": "desktop",
     "appium": "appium",
 }
 

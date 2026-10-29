@@ -57,6 +57,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import IO, Any, Callable, Protocol
 
+from qirabot.displays import Display
+
 logger = logging.getLogger("qirabot")
 
 
@@ -178,17 +180,37 @@ def _detect_audio_device(ffmpeg: str) -> str | None:
     return None
 
 
-def _detect_screen_index(ffmpeg: str) -> str:
+_screen_index_warned = False
+
+
+def _detect_screen_index(ffmpeg: str, display: int | None = None) -> str:
     """Resolve the avfoundation screen device index (macOS only).
 
     ``ffmpeg -f avfoundation -list_devices true -i ""`` writes lines like
-    ``[1] Capture screen 0`` to stderr; we take the ``[N]`` in front of the
-    first "Capture screen" line. ``QIRA_SCREEN_INDEX`` overrides the probe;
-    probe failures fall back to :data:`_DEFAULT_SCREEN_INDEX`.
+    ``[1] Capture screen 0`` to stderr. avfoundation numbers its "Capture
+    screen K" devices in the active-display order with the main display
+    first — the order :mod:`qirabot.displays` numbers by — so display N is
+    "Capture screen N-1"; we return the ``[idx]`` in front of that line
+    (cameras come first, so idx != K). ``display=None`` means display 1.
+
+    ``QIRA_SCREEN_INDEX`` (a raw avfoundation index) is the deprecated
+    pre-``display`` override: still honored when no display was selected,
+    with a one-time warning. Probe failures fall back to
+    :data:`_DEFAULT_SCREEN_INDEX` shifted by the display offset.
     """
+    global _screen_index_warned
     override = os.environ.get("QIRA_SCREEN_INDEX")
-    if override:
+    if override and display is None:
+        if not _screen_index_warned:
+            _screen_index_warned = True
+            logger.warning(
+                "QIRA_SCREEN_INDEX is deprecated: use QIRA_DISPLAY / "
+                "--display / Qirabot(display=N) (run `qirabot displays` for "
+                "the numbers) — it selects the recorded AND the driven screen"
+            )
         return override
+    screen = (display or 1) - 1
+    fallback = str(int(_DEFAULT_SCREEN_INDEX) + screen)
     try:
         proc = subprocess.run(
             [ffmpeg, "-f", "avfoundation", "-list_devices", "true", "-i", ""],
@@ -200,13 +222,12 @@ def _detect_screen_index(ffmpeg: str) -> str:
             timeout=15,
         )
     except (OSError, subprocess.SubprocessError):
-        return _DEFAULT_SCREEN_INDEX
+        return fallback
     for line in (proc.stderr or "").splitlines():
-        if "Capture screen" in line:
-            m = re.search(r"\[(\d+)\]\s*Capture screen", line)
-            if m:
-                return m.group(1)
-    return _DEFAULT_SCREEN_INDEX
+        m = re.search(r"\[(\d+)\]\s*Capture screen (\d+)", line)
+        if m and int(m.group(2)) == screen:
+            return m.group(1)
+    return fallback
 
 
 def _win_video_target(window: str | None) -> str:
@@ -307,6 +328,7 @@ class ScreenRecorder:
         region: tuple[int, int, int, int] | None = None,
         audio: bool | str = False,
         audio_offset: float | None = None,
+        display: Display | None = None,
     ):
         self.output = output
         self.fps = fps
@@ -322,12 +344,24 @@ class ScreenRecorder:
         self.region = region
         self.audio = audio
         self.audio_offset = audio_offset
+        # The display to record (qirabot.displays numbering); None = primary.
+        # macOS maps it to the avfoundation screen device, Windows to a
+        # desktop-crop region; an explicit window/region still wins.
+        self.display = display
         self._proc: subprocess.Popen[bytes] | None = None
         self._log: IO[bytes] | None = None
 
     @property
     def active(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
+
+    def _display_region(self) -> tuple[int, int, int, int] | None:
+        """Windows desktop-crop rect for the selected display (physical px,
+        even-sized for yuv420p), or None when no display was selected."""
+        d = self.display
+        if d is None or sys.platform != "win32":
+            return None
+        return d.x, d.y, d.width - (d.width % 2), d.height - (d.height % 2)
 
     def _build_cmd(self, ffmpeg: str) -> tuple[list[str], str] | None:
         """Full ffmpeg command plus a human description for the start log line.
@@ -336,7 +370,14 @@ class ScreenRecorder:
         subclasses override this to record a different source with the same
         start/stop lifecycle.
         """
-        index = _detect_screen_index(ffmpeg) if sys.platform == "darwin" else _DEFAULT_SCREEN_INDEX
+        index = (
+            _detect_screen_index(ffmpeg, self.display.index if self.display else None)
+            if sys.platform == "darwin"
+            else _DEFAULT_SCREEN_INDEX
+        )
+        region = self.region
+        if region is None and not self.window:
+            region = self._display_region()
 
         # Resolve system-audio device (Windows only). True -> probe; str -> use
         # as-is. A requested-but-missing device degrades to a silent recording.
@@ -356,7 +397,7 @@ class ScreenRecorder:
             sys.platform, self.fps, self.capture_cursor,
             screen_index=index,
             window=self.window,
-            region=self.region,
+            region=region,
             audio_device=audio_device,
             audio_offset=self.audio_offset,
         )
@@ -379,6 +420,8 @@ class ScreenRecorder:
             scope = f"region {self.region}"
         elif self.window:
             scope = f"window {self.window!r}"
+        elif self.display is not None:
+            scope = f"display {self.display.index}"
         else:
             scope = "full screen"
         sound = f"audio={audio_device}" if audio_device else "no audio"
@@ -922,12 +965,15 @@ class RecordingManager:
         want_recording: bool = True,
         output_dir: "Callable[[], str]",
         window_info: "Callable[[Any], dict[str, Any] | None] | None" = None,
+        display: Display | None = None,
     ) -> None:
         """``output_dir`` is called lazily (the run directory is created on
         first use); ``window_info`` resolves an action target to the client's
         window metadata (title/hwnd) for window-following — any exception it
-        raises degrades to full-screen."""
+        raises degrades to full-screen. ``display`` selects which host
+        display a full-screen recording captures (``None`` = primary)."""
         self.cfg = cfg
+        self.display = display
         self.recorder: Recorder | None = None
         # Epoch time the current recording started; anchors the report's
         # per-step video-seek offsets. 0.0 = no recording started this run.
@@ -1017,6 +1063,9 @@ class RecordingManager:
                 if region is None:
                     window = self._resolve_window_target(target)
             audio_spec = audio if audio is not None else self.cfg.audio
+            extra: dict[str, Any] = {}
+            if self.display is not None:
+                extra["display"] = self.display
             recorder = ScreenRecorder(
                 output,
                 fps=fps if fps is not None else self.cfg.fps,
@@ -1024,6 +1073,7 @@ class RecordingManager:
                 region=region,
                 audio=audio_spec,
                 audio_offset=self.cfg.audio_offset,
+                **extra,
             )
         started = recorder.start()
         self.recorder = recorder if started else None

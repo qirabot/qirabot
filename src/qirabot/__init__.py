@@ -19,6 +19,7 @@ from qirabot.client import (
     StepResult,
     VerifyResult,
 )
+from qirabot.displays import Display, list_displays
 from qirabot.overlay import Overlay
 from qirabot.exceptions import (
     ActionError,
@@ -50,6 +51,7 @@ __all__ = [
     "AuthenticationError",
     "DeviceAdapter",
     "DeviceInfo",
+    "Display",
     "ExtractResult",
     "ScreenshotConfig",
     "LocateResult",
@@ -68,6 +70,7 @@ __all__ = [
     "WdaClient",
     "Window",
     "launch_app",
+    "list_displays",
     "load_dotenv",
     "record",
     "register_adapter",

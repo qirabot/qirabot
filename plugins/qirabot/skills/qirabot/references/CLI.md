@@ -41,6 +41,7 @@ All four take the instruction as the positional argument and share:
 | `-l/--language` | engine default | e.g. `zh`, `en` |
 | `--max-steps` | `20` | AI step budget |
 | `--max-duration` | no limit | time budget: `300` (seconds) / `90s` / `5m` / `1h30m`; checked between steps, so it can overshoot by one step |
+| `--settle-seconds` | env `QIRA_SETTLE_SECONDS`, else per platform (desktop/adb `1.0`, mobile/browser `0.6`) | pause after each screen-changing action before the next screenshot; fractions OK (`0.5`), `0` disables. Raise it for animation-heavy apps/games |
 | `--report/--no-report` | report | HTML run report |
 | `--report-dir` | env `QIRA_REPORT_DIR`, else `./qira_runs/<date>/<run>/` | output root |
 | `--annotate/--no-annotate` | annotate | crosshair on saved screenshots |
@@ -139,8 +140,9 @@ window-relative screenshots).
 | `--hwnd` | explicit window handle — selects the Windows window backend. **Windows only.** |
 | `--app` | launch/activate an app first. macOS: app name or bundle id; Windows: exe path / registered name / UWP AppUserModelID; Linux: executable |
 | `--app-wait` | `2.0` — seconds to wait for the window after `--app` |
+| `--display N` | drive display N instead of the primary (`qirabot displays` lists the numbers; env `QIRA_DISPLAY`). Screenshots, clicks, `--record` and the overlay follow it. macOS/Windows; not combinable with `--window-title`/`--hwnd` |
 
-`--record` = host screen via ffmpeg.
+`--record` = host screen via ffmpeg (the `--display` one when given).
 
 ## Utility commands (useful on the SDK path too)
 
@@ -149,6 +151,7 @@ window-relative screenshots).
 | `qirabot install-browser` | One-time Chromium download for the browser backend (wraps `playwright install chromium`; required form in isolated `uv tool` installs, where playwright's own CLI is not on PATH). |
 | `qirabot doctor` | Environment check: Python, Google Cloud credentials (ADC + project), each backend's deps, ffmpeg. Exit `0` when at least one backend can run end-to-end — gate setup scripts/CI on it. |
 | `qirabot models` | List the built-in providers (`gemini-vertex` / `gemini`), their default models, the session default, and whether the configured auth resolves — the valid `-m`/`QIRA_MODEL` values. |
+| `qirabot displays` | List the host displays with the numbers `desktop --display N` / `Qirabot(display=N)` accept (1 = primary); `--json` for scripts. |
 
 ## When the CLI is the wrong tool → use the SDK
 

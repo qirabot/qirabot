@@ -5,6 +5,9 @@ Runs as ``python -m qirabot._overlay_helper``, spawned by
 the GUI to own the process main thread, which the user's script already
 occupies — a thread cannot host AppKit, a child process can.
 
+argv: an optional ``--display <json>`` puts the window, glow and hint pill
+on that display (``Qirabot(display=N)``); without it they go on the primary.
+
 Protocol: one JSON object per stdin line; keys combine freely.
     {"title": "..."}                 the headline (the running instruction)
     {"state": "run" | "ok" | "fail"} status glyph; "run" (re)starts the
@@ -206,7 +209,7 @@ def _emit_abort() -> None:
         pass
 
 
-def _run_macos() -> int:
+def _run_macos(display: dict[str, Any] | None = None) -> int:
     try:
         import AppKit
     except ImportError:
@@ -215,10 +218,28 @@ def _run_macos() -> int:
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
 
-    screen = AppKit.NSScreen.mainScreen().frame()
+    # The display the bot drives: the one the parent selected (matched by
+    # CGDirectDisplayID), else the PRIMARY display (screens()[0], the one
+    # with the menu bar and the global-coordinate origin) — NOT
+    # mainScreen(): mainScreen() is whichever display holds the key window,
+    # so with two monitors it can be the secondary one — its size combined
+    # with primary-display coordinates put the glow bands and the corner
+    # panel mid-screen instead of at the edges.
+    screens = list(AppKit.NSScreen.screens())
+    target_screen = screens[0] if screens else AppKit.NSScreen.mainScreen()
+    want_id = int((display or {}).get("id") or 0)
+    if want_id:
+        for s in screens:
+            if int(s.deviceDescription().get("NSScreenNumber") or 0) == want_id:
+                target_screen = s
+                break
+    screen = target_screen.frame()
+    # Global NSWindow coordinates of that screen's bottom-left: (0, 0) for
+    # the primary, negative/offset for the others — every rect below adds it.
+    ox, oy = screen.origin.x, screen.origin.y
     # NSWindow origin is bottom-left: this is the bottom-right corner.
     rect = AppKit.NSMakeRect(
-        screen.size.width - _WIDTH - _MARGIN, _MARGIN, _WIDTH, _HEIGHT
+        ox + screen.size.width - _WIDTH - _MARGIN, oy + _MARGIN, _WIDTH, _HEIGHT
     )
     style = (
         AppKit.NSWindowStyleMaskBorderless
@@ -351,19 +372,19 @@ def _run_macos() -> int:
         P = AppKit.NSMakePoint
         edges = [
             _glow_band(  # top: outer edge at local y=span
-                AppKit.NSMakeRect(0, sh - span, sw, span), 90.0, False,
+                AppKit.NSMakeRect(ox, oy + sh - span, sw, span), 90.0, False,
                 [P(0, span), P(sw, span), P(sw - span, 0), P(span, 0)],
             ),
             _glow_band(  # bottom: outer edge at local y=0
-                AppKit.NSMakeRect(0, 0, sw, span), 90.0, True,
+                AppKit.NSMakeRect(ox, oy, sw, span), 90.0, True,
                 [P(0, 0), P(sw, 0), P(sw - span, span), P(span, span)],
             ),
             _glow_band(  # left: outer edge at local x=0
-                AppKit.NSMakeRect(0, 0, span, sh), 0.0, True,
+                AppKit.NSMakeRect(ox, oy, span, sh), 0.0, True,
                 [P(0, 0), P(0, sh), P(span, sh - span), P(span, span)],
             ),
             _glow_band(  # right: outer edge at local x=span
-                AppKit.NSMakeRect(sw - span, 0, span, sh), 0.0, False,
+                AppKit.NSMakeRect(ox + sw - span, oy, span, sh), 0.0, False,
                 [P(span, 0), P(span, sh), P(0, sh - span), P(0, span)],
             ),
         ]
@@ -382,11 +403,11 @@ def _run_macos() -> int:
         # full frame's top-center is exactly where the camera notch sits on
         # notched MacBooks (a hint hidden behind the notch is no hint), and
         # visibleFrame's top also clears the menu bar on every Mac.
-        vf = AppKit.NSScreen.mainScreen().visibleFrame()
+        vf = target_screen.visibleFrame()
         pill_top = vf.origin.y + vf.size.height
         pill = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             AppKit.NSMakeRect(
-                (scr_w - hint_w) / 2, pill_top - hint_h - 8, hint_w, hint_h
+                ox + (scr_w - hint_w) / 2, pill_top - hint_h - 8, hint_w, hint_h
             ),
             style, AppKit.NSBackingStoreBuffered, False,
         )
@@ -535,7 +556,7 @@ def _run_macos() -> int:
     return 0
 
 
-def _run_windows() -> int:
+def _run_windows(display: dict[str, Any] | None = None) -> int:
     import ctypes
     import queue
 
@@ -560,6 +581,18 @@ def _run_windows() -> int:
     root.attributes("-alpha", 0.88)  # also makes the window WS_EX_LAYERED,
     # which WDA_EXCLUDEFROMCAPTURE requires
     root.configure(bg=BG)
+
+    # Target display rect in virtual-desktop physical pixels — the parent
+    # enumerated it per-monitor-DPI aware, the same space this process now
+    # runs in. Without a selection: the primary monitor at (0, 0). Tk
+    # geometry takes negative offsets ("+-1920+0") for monitors left of /
+    # above the primary.
+    if display:
+        dx, dy = int(display["x"]), int(display["y"])
+        sw, sh = int(display["w"]), int(display["h"])
+    else:
+        dx = dy = 0
+        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
 
     # The process is per-monitor DPI aware (above), so window geometry is in
     # physical pixels — but Tk still sizes point-based fonts by the real DPI.
@@ -594,8 +627,8 @@ def _run_windows() -> int:
     )
     body.pack(fill="both", expand=True, padx=px(12), pady=(px(2), px(8)))
     # Extra bottom margin keeps the window clear of the taskbar.
-    x = root.winfo_screenwidth() - px(_WIDTH) - px(_MARGIN)
-    y = root.winfo_screenheight() - px(_HEIGHT) - px(_MARGIN) - px(48)
+    x = dx + sw - px(_WIDTH) - px(_MARGIN)
+    y = dy + sh - px(_HEIGHT) - px(_MARGIN) - px(48)
     root.geometry(f"{px(_WIDTH)}x{px(_HEIGHT)}+{x}+{y}")
     root.update_idletasks()
 
@@ -668,7 +701,7 @@ def _run_windows() -> int:
     # display affinity requires). Any failure — including a pre-2004
     # Windows refusing WDA_EXCLUDEFROMCAPTURE — drops the strips, never
     # the window.
-    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    # sw/sh/dx/dy: the target display, resolved above.
     span = max(20, sh // 36)  # ~30px at 1080p, scales with physical pixels
     edges: list[tuple[tk.Toplevel, float]] = []  # (strip, falloff 0..1)
     try:
@@ -690,7 +723,7 @@ def _run_windows() -> int:
                 strip.attributes("-topmost", True)
                 strip.attributes("-alpha", 0.0)
                 strip.configure(bg=_EDGE_COLOR)
-                strip.geometry(f"{w}x{h}+{x0}+{y0}")
+                strip.geometry(f"{w}x{h}+{dx + x0}+{dy + y0}")
                 edges.append((strip, falloff))
         root.update_idletasks()
         for strip, _falloff in edges:
@@ -724,7 +757,7 @@ def _run_windows() -> int:
         )
         pill_label.pack(padx=px(2), pady=px(2))
         pill.update_idletasks()
-        pill.geometry(f"+{(sw - pill.winfo_reqwidth()) // 2}+{px(10)}")
+        pill.geometry(f"+{dx + (sw - pill.winfo_reqwidth()) // 2}+{dy + px(10)}")
         if _shield(pill, require_exclude=True):
             hint_win, hint_label = pill, pill_label
         else:
@@ -802,7 +835,9 @@ def _run_windows() -> int:
             if want and msg.get("hint") and hint_win is not None and hint_label is not None:
                 hint_label.config(text=str(msg["hint"]))
                 hint_win.update_idletasks()  # re-center: the text sets the width
-                hint_win.geometry(f"+{(sw - hint_win.winfo_reqwidth()) // 2}+10")
+                hint_win.geometry(
+                    f"+{dx + (sw - hint_win.winfo_reqwidth()) // 2}+{dy + px(10)}"
+                )
             if want and not edge_state.on:
                 edge_state.on = True
                 edge_state.tick = 0
@@ -860,11 +895,31 @@ def _run_windows() -> int:
     return 0
 
 
+def _parse_display(argv: list[str]) -> dict[str, Any] | None:
+    """``--display <json>`` from the parent (see Overlay._helper_args):
+    ``{"index", "id", "x", "y", "w", "h"}``. Anything malformed means "no
+    selection" — the window then goes on the primary display, never fails."""
+    try:
+        i = argv.index("--display")
+        value = json.loads(argv[i + 1])
+    except (ValueError, IndexError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    try:
+        for key in ("x", "y", "w", "h"):
+            int(value[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value
+
+
 def main() -> int:
+    display = _parse_display(sys.argv[1:])
     if sys.platform == "darwin":
-        return _run_macos()
+        return _run_macos(display)
     if sys.platform == "win32":
-        return _run_windows()
+        return _run_windows(display)
     return 3
 
 

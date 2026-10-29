@@ -921,6 +921,41 @@ class TestRunOptionWiring:
         assert captured["thinking_level"] == ""
         assert captured["language"] == ""
 
+    def test_settle_seconds_threaded_as_float(self, monkeypatch):
+        captured = self._capture_make_bot(monkeypatch)
+
+        result = _invoke(["browser", "do it", "--settle-seconds", "0.5"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["settle_seconds"] == 0.5
+
+    def test_settle_seconds_zero_is_explicit(self, monkeypatch):
+        # 0 disables the pause — it must reach the Client as 0.0, not be
+        # collapsed into None (which would mean "platform default").
+        captured = self._capture_make_bot(monkeypatch)
+
+        result = _invoke(["browser", "do it", "--settle-seconds", "0"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["settle_seconds"] == 0.0
+
+    def test_settle_seconds_omitted_leaves_it_to_the_client(self, monkeypatch):
+        # None lets the Client apply QIRA_SETTLE_SECONDS / the platform default.
+        captured = self._capture_make_bot(monkeypatch)
+
+        result = _invoke(["browser", "do it"])
+
+        assert result.exit_code == 0, result.output
+        assert captured["settle_seconds"] is None
+
+    def test_settle_seconds_rejects_negative(self, monkeypatch):
+        self._capture_make_bot(monkeypatch)
+
+        result = _invoke(["browser", "do it", "--settle-seconds", "-1"])
+
+        assert result.exit_code == 2
+        assert "--settle-seconds" in result.output
+
     def test_vertex_project_and_location_reach_ctx(self, monkeypatch):
         captured = self._capture_make_bot(monkeypatch)
 

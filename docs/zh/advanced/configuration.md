@@ -58,6 +58,7 @@ load_dotenv; load_dotenv()` 会读取 `$QIRA_DOTENV` 或 `./.env`,且从不
 | `retry_delay` | — | `1.0` | 重试间隔(秒) |
 | `settle_seconds` | `QIRA_SETTLE_SECONDS` | 按平台 | 每个动作后等 UI 重绘的暂停 |
 | `overlay` | — | `False` | 置顶进度悬浮窗 + ESC 中止开关([详情](/zh/advanced/overlay)) |
+| `display` | `QIRA_DISPLAY` | 主显示器 | 桌面:驱动哪块显示器(1 = 主显示器,`qirabot displays` 列出编号)。截图、点击、`record` 和悬浮窗都跟随它([详情](/zh/backends/desktop#多显示器)) |
 
 `record*` 各开关实际产出什么(格式、各平台机制、文件落在哪)见
 [报告与录屏](/zh/advanced/reports)。
@@ -77,7 +78,7 @@ us-east5 browser "..."`。
 |---|---|
 | `GOOGLE_APPLICATION_CREDENTIALS` | Google 标准变量:ADC 使用的服务账号 JSON 路径 |
 | `QIRA_ADB_PATH` | Android 后端显式指定 adb 可执行文件 |
-| `QIRA_SCREEN_INDEX` | 多显示器机器上录哪块屏 |
+| `QIRA_SCREEN_INDEX` | 已废弃,改用 `QIRA_DISPLAY`。macOS 录屏用的 avfoundation 原始设备号,仅在未选择显示器时生效 |
 | `QIRA_AUDIO_DEVICE` | 录音的音频设备(Windows) |
 | `QIRA_DOTENV` | `load_dotenv()` 读取的路径,替代 `./.env` |
 | `QIRA_RECORD_WINDOW_NATIVE` | Windows:强制旧式 gdigrab 逐窗口采集,替代默认的桌面裁剪方案 |

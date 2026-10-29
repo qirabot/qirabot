@@ -161,6 +161,41 @@ class TestDetectScreenIndex:
         monkeypatch.setattr(recording.subprocess, "run", boom)
         assert _detect_screen_index("ffmpeg") == "1"
 
+    _TWO_SCREENS = (
+        "[AVFoundation] AVFoundation video devices:\n"
+        "[AVFoundation] [0] FaceTime HD Camera\n"
+        "[AVFoundation] [1] Capture screen 0\n"
+        "[AVFoundation] [2] Capture screen 1\n"
+        "[AVFoundation] AVFoundation audio devices:\n"
+        "[AVFoundation] [0] MacBook Air Microphone\n"
+    )
+
+    def test_display_maps_to_capture_screen_n_minus_1(self, monkeypatch):
+        monkeypatch.delenv("QIRA_SCREEN_INDEX", raising=False)
+        monkeypatch.setattr(
+            recording.subprocess, "run", lambda *a, **k: _FakeCompleted(self._TWO_SCREENS)
+        )
+        assert _detect_screen_index("ffmpeg", 1) == "1"
+        assert _detect_screen_index("ffmpeg", 2) == "2"
+
+    def test_display_wins_over_deprecated_env(self, monkeypatch):
+        # QIRA_SCREEN_INDEX is the legacy raw-index override; an explicit
+        # display selection must not be silently redirected by it.
+        monkeypatch.setenv("QIRA_SCREEN_INDEX", "7")
+        monkeypatch.setattr(
+            recording.subprocess, "run", lambda *a, **k: _FakeCompleted(self._TWO_SCREENS)
+        )
+        assert _detect_screen_index("ffmpeg", 2) == "2"
+
+    def test_display_fallback_offsets_default(self, monkeypatch):
+        monkeypatch.delenv("QIRA_SCREEN_INDEX", raising=False)
+
+        def boom(*a, **k):
+            raise OSError("no ffmpeg")
+
+        monkeypatch.setattr(recording.subprocess, "run", boom)
+        assert _detect_screen_index("ffmpeg", 2) == "2"
+
 
 # --------------------------------------------------------------------------- #
 # _detect_audio_device (Windows dshow system-audio probe)
@@ -287,7 +322,7 @@ class TestScreenRecorder:
 
         monkeypatch.setattr(recording.sys, "platform", "darwin")
         monkeypatch.setattr(recording, "_find_ffmpeg", lambda: "ffmpeg")
-        monkeypatch.setattr(recording, "_detect_screen_index", lambda f: "1")
+        monkeypatch.setattr(recording, "_detect_screen_index", lambda f, d=None: "1")
         monkeypatch.setattr(recording.subprocess, "Popen", _FakePopen)
 
         out = str(tmp_path / "recording.mp4")

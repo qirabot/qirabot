@@ -33,6 +33,15 @@ from qirabot.engine.types import TokenUsage
 from qirabot.recording import RecordConfig, RecordingManager
 from qirabot.adapters import auto
 from qirabot.adapters.base import DeviceAdapter, ScreenshotConfig
+from qirabot.adapters.pyautogui_adapter import PyAutoGuiAdapter
+from qirabot.displays import (
+    DISPLAY_ENV,
+    Display,
+    display_from_env,
+    get_display,
+    parse_display,
+    supports_multi_display,
+)
 from qirabot.bound import _BoundQirabot
 from qirabot.exceptions import (
     ActionError,
@@ -418,6 +427,7 @@ class Qirabot:
         record_mjpeg_url: str | None = None,
         record_device: bool = False,
         overlay: bool = False,
+        display: int | None = None,
     ):
         # ADC + project resolution and the provider handshake happen here so a
         # bad credential setup fails at construction, not mid-run. Config
@@ -456,8 +466,19 @@ class Qirabot:
         # tool calling bot.click inside ai()) are not folded in twice.
         self._ledger_open = False
         self._closed = False
+        # Host display the desktop backend drives, records and overlays
+        # (qirabot.displays numbering: 1-based, 1 = primary). An explicit
+        # argument is a hard requirement — a bad number fails here, and a
+        # non-desktop target fails at first use (_get_adapter). QIRA_DISPLAY
+        # is ambient (often exported shell-wide), so it is best-effort: an
+        # unresolvable value warns and falls back to the primary, and
+        # non-desktop targets ignore it.
+        self._display_explicit = display is not None
+        self._display: Display | None = self._resolve_display(display)
         # On-screen progress window (capture-excluded, click-through); a no-op
-        # on unsupported platforms, so gating here is on intent alone.
+        # on unsupported platforms, so gating here is on intent alone. Its
+        # display is set once a desktop target is known (see _get_adapter),
+        # so a mobile/web run keeps the window on the primary display.
         self._overlay: Overlay | None = Overlay() if overlay else None
         # Latched by the first fail()/cancel() (and by close()): the run's
         # terminal-outcome log record is first-wins — later calls log nothing,
@@ -537,9 +558,42 @@ class Qirabot:
             want_recording=self._timeline.enabled,
             output_dir=lambda: self.report_dir,
             window_info=lambda t: self._get_adapter(t).window_info(),
+            display=self._display,
         )
         atexit.register(self.close)
         self._recording.maybe_start()
+
+    @staticmethod
+    def _resolve_display(display: int | None) -> Display | None:
+        """``display`` arg, else ``QIRA_DISPLAY``, resolved to a :class:`Display`.
+
+        Explicit: a bad value raises (``ValueError`` for a non-number,
+        :class:`QirabotError` for a missing/unsupported display). From the
+        environment: any problem warns and yields ``None`` (primary).
+        """
+        if display is not None:
+            n = parse_display(display, "display")
+            assert n is not None
+            if n != 1 and not supports_multi_display():
+                raise QirabotError(
+                    f"display={n}: selecting a display is supported on macOS "
+                    "and Windows only",
+                    code="display.unsupported",
+                )
+            return get_display(n)
+        try:
+            n = display_from_env()
+            if n is None:
+                return None
+            if n != 1 and not supports_multi_display():
+                raise QirabotError(
+                    "selecting a display is supported on macOS and Windows only",
+                    code="display.unsupported",
+                )
+            return get_display(n)
+        except (ValueError, QirabotError) as e:
+            logger.warning("%s ignored, using the primary display: %s", DISPLAY_ENV, e)
+            return None
 
     @property
     def report_dir(self) -> str:
@@ -1799,6 +1853,7 @@ class Qirabot:
         adapter = self._adapters.get(id(target))
         if adapter is None:
             adapter = auto.detect(target)
+            self._apply_display(adapter)
             if self._settle_seconds is not None:
                 adapter._settle_override = self._settle_seconds
             self._cache_adapter(target, adapter)
@@ -1808,6 +1863,31 @@ class Qirabot:
         if self._recording.pending:
             self._recording.maybe_start(target)
         return adapter
+
+    def _apply_display(self, adapter: DeviceAdapter) -> None:
+        """Point a freshly detected adapter (and the overlay) at the
+        selected display.
+
+        Only the pyautogui backend drives a host display. Any other backend
+        with an EXPLICIT ``display=`` is a configuration error — silently
+        ignoring a requested display would leave the user guessing; an
+        ambient ``QIRA_DISPLAY`` is ignored there instead.
+        """
+        if self._display is None:
+            return
+        if isinstance(adapter, PyAutoGuiAdapter):
+            adapter.use_display(self._display)
+            if self._overlay is not None:
+                self._overlay.set_display(self._display)
+            return
+        if self._display_explicit:
+            raise QirabotError(
+                f"display={self._display.index} only applies to the desktop "
+                f"(pyautogui) backend, not {type(adapter).__name__}: drop "
+                "display= for this target (a Window target already names "
+                "its own window)",
+                code="config.invalid",
+            )
 
     def _cache_adapter(self, target: Any, adapter: DeviceAdapter) -> None:
         """Cache ``adapter`` under ``id(target)``, evicting the entry when the

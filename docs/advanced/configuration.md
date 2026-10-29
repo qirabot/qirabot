@@ -61,6 +61,7 @@ loads `.env` automatically; the SDK never reads it on its own. Typical
 | `retry_delay` | — | `1.0` | Seconds between retries |
 | `settle_seconds` | `QIRA_SETTLE_SECONDS` | per-platform | Pause after each action before the next screenshot |
 | `overlay` | — | `False` | Always-on-top progress window + ESC kill switch ([details](/advanced/overlay)) |
+| `display` | `QIRA_DISPLAY` | primary | Desktop: which display to drive (1 = primary; `qirabot displays` lists them). Screenshots, clicks, `record` and the overlay all follow it ([details](/backends/desktop#multiple-displays)) |
 
 What the `record*` knobs actually produce (formats, per-platform mechanics,
 where the file lands) is covered in [Reports & Recording](/advanced/reports).
@@ -82,7 +83,7 @@ Env-only overrides with no constructor equivalent:
 |---|---|
 | `GOOGLE_APPLICATION_CREDENTIALS` | Standard Google variable: path to a service-account JSON for ADC |
 | `QIRA_ADB_PATH` | Explicit adb binary for the Android backend |
-| `QIRA_SCREEN_INDEX` | Which monitor to record on multi-display machines |
+| `QIRA_SCREEN_INDEX` | Deprecated — use `QIRA_DISPLAY`. Raw macOS avfoundation device index for recording; honored only when no display is selected |
 | `QIRA_AUDIO_DEVICE` | Recording audio device (Windows) |
 | `QIRA_DOTENV` | Path `load_dotenv()` reads instead of `./.env` |
 | `QIRA_RECORD_WINDOW_NATIVE` | Windows: force legacy gdigrab per-window capture instead of the crop-from-desktop default |

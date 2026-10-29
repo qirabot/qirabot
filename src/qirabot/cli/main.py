@@ -40,6 +40,8 @@ def _make_bot(
     task_name: str = "",
     overlay: bool = False,
     output_format: str = "text",
+    settle_seconds: float | None = None,
+    display: int | None = None,
 ) -> Any:
     from qirabot import Qirabot
 
@@ -60,11 +62,13 @@ def _make_bot(
             report=report,
             report_dir=report_dir,
             screenshot_annotate=annotate,
+            settle_seconds=settle_seconds,
             record=record,
             record_mjpeg_url=record_mjpeg_url or None,
             record_device=record_device,
             record_window=record_window,
             overlay=overlay,
+            display=display,
         )
     except Exception as e:
         # Engine construction already produces actionable messages (missing
@@ -462,8 +466,8 @@ def _duration_option(ctx: click.Context, param: click.Parameter, value: str) -> 
 def _task_options(f: _FC) -> _FC:
     """Task options shared by browser/android/ios/desktop. Applied in reverse so
     --help lists them in reading order (name, model, thinking-level,
-    media-resolution, language, max-steps, max-duration, knowledge,
-    output-format)."""
+    media-resolution, language, max-steps, max-duration, settle-seconds,
+    knowledge, output-format)."""
     f = _option(
         "--output-format", group=_TASK_GROUP, default="text",
         type=click.Choice(["text", "json", "stream-json"]),
@@ -479,6 +483,17 @@ def _task_options(f: _FC) -> _FC:
         type=click.Path(exists=True, dir_okay=False, path_type=Path),
         callback=_resolve_knowledge_cb,
         help="Knowledge file the AI consults during the task (UTF-8 text; repeatable, 32KB total)",
+    )(f)
+    # default=None (not 0): omitting the flag must leave the choice to the
+    # Client — QIRA_SETTLE_SECONDS, else each platform's built-in default —
+    # while an explicit 0 disables the pause.
+    f = _option(
+        "--settle-seconds", group=_TASK_GROUP, default=None,
+        type=click.FloatRange(min=0), metavar="SECONDS",
+        help="Pause after each screen-changing action so the next screenshot "
+        "sees the repainted frame, e.g. 0.5; 0 disables (env "
+        "QIRA_SETTLE_SECONDS; default per platform: desktop/adb 1.0, "
+        "mobile/browser 0.6)",
     )(f)
     f = _option(
         "--max-duration", group=_TASK_GROUP, default="", callback=_duration_option,
@@ -713,6 +728,29 @@ def install_browser() -> None:
     if rc != 0:
         raise click.ClickException(f"Chromium download failed (exit {rc})")
     click.echo('Chromium installed — you\'re ready: qirabot browser "..."')
+
+
+@cli.command()
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def displays(as_json: bool) -> None:
+    """List this machine's displays and the numbers `desktop --display N`
+    (QIRA_DISPLAY, Qirabot(display=N)) accepts; 1 is the primary display.
+
+    Positions are in the desktop backend's input coordinates: points on
+    macOS, physical pixels on Windows.
+    """
+    from qirabot.displays import list_displays, supports_multi_display
+
+    found = list_displays()
+    if as_json:
+        click.echo(json.dumps([dataclasses.asdict(d) for d in found], ensure_ascii=False))
+        return
+    for d in found:
+        click.echo(d.describe())
+    if len(found) > 1:
+        click.echo('\nUse one with: qirabot desktop "..." --display N')
+    elif not supports_multi_display():
+        click.echo("\n(display selection is supported on macOS and Windows only)")
 
 
 # `qirabot skill install/uninstall/list` — lives in cli/skill.py.
@@ -1030,6 +1068,7 @@ def browser(
     language: str,
     max_steps: int,
     max_duration: float | None,
+    settle_seconds: float | None,
     knowledge: str,
     output_format: str,
     url: str,
@@ -1056,7 +1095,7 @@ def browser(
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
         language=language, max_steps=max_steps, max_duration=max_duration,
-        knowledge=knowledge,
+        settle_seconds=settle_seconds, knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )
@@ -1114,6 +1153,10 @@ class _TaskOpts:
     report_dir: str
     annotate: bool
     max_duration: float | None = None
+    # None = Client decides (QIRA_SETTLE_SECONDS, else the platform default).
+    settle_seconds: float | None = None
+    # desktop --display N; None = Client decides (QIRA_DISPLAY, else primary).
+    display: int | None = None
 
 
 def _task_bot(opts: _TaskOpts, **record_kwargs: Any) -> Any:
@@ -1127,6 +1170,7 @@ def _task_bot(opts: _TaskOpts, **record_kwargs: Any) -> Any:
         # No --name: the report titles the run from its instruction itself.
         task_name=opts.name,
         overlay=opts.overlay, output_format=opts.output_format,
+        settle_seconds=opts.settle_seconds, display=opts.display,
         **record_kwargs,
     )
 
@@ -1244,7 +1288,7 @@ def _adb_launch_app(dev: Any, package: str, activity: str) -> None:
 @_option("--record", group="Android options", is_flag=True, help="Record the device screen to report-dir/recording.mp4 (direct engine: adb screenrecord, ffmpeg merges runs over 3 min; Appium engine: Appium's recording API)")
 @_debug_options(record=False)
 @click.pass_context
-def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, knowledge: str, output_format: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def android(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, settle_seconds: float | None, knowledge: str, output_format: str, device: str, appium_url: str, app_package: str, app_activity: str, record: bool, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an Android device (direct over adb; --appium-url for Appium).
 
     \b
@@ -1266,7 +1310,7 @@ def android(ctx: click.Context, instruction: str, name: str, model: str, thinkin
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
         language=language, max_steps=max_steps, max_duration=max_duration,
-        knowledge=knowledge,
+        settle_seconds=settle_seconds, knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )
@@ -1363,7 +1407,7 @@ def _check_mjpeg_ready(mjpeg_url: str) -> None:
 @_option("--mjpeg-url", group="iOS options", default="", help="WDA MJPEG stream URL for --record (default: --wda-url's host on port 9100; direct engine only)")
 @_debug_options(record=False)
 @click.pass_context
-def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, knowledge: str, output_format: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
+def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, settle_seconds: float | None, knowledge: str, output_format: str, wda_url: str, device: str, appium_url: str, bundle_id: str, record: bool, mjpeg_url: str, overlay: bool, report: bool, report_dir: str, annotate: bool) -> None:
     """Run an AI task on an iOS device (direct via WDA; --appium-url/--device for Appium).
 
     \b
@@ -1386,7 +1430,7 @@ def ios(ctx: click.Context, instruction: str, name: str, model: str, thinking_le
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
         language=language, max_steps=max_steps, max_duration=max_duration,
-        knowledge=knowledge,
+        settle_seconds=settle_seconds, knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
         report_dir=report_dir, annotate=annotate,
     )
@@ -1441,6 +1485,7 @@ def _launch_desktop_app(app: str, app_wait: float) -> None:
 @cli.command(cls=_GroupedCommand)
 @click.argument("instruction")
 @_task_options
+@_option("--display", group="Desktop options", default=None, type=click.IntRange(min=1), metavar="N", help="Drive display N instead of the primary: screenshots, clicks, --record and the overlay all follow it. 1 = primary; list them with `qirabot displays` (env QIRA_DISPLAY). macOS/Windows.")
 @_option("--window-title", group="Desktop options", default="", help="Bind to the window whose title matches this regex — selects the built-in Windows window backend (screenshots/coords become window-relative, input is game-readable scancodes, recording follows the window). Windows only.")
 @_option("--hwnd", group="Desktop options", default=0, type=int, help="Bind to a specific window handle — selects the built-in Windows window backend. Windows only.")
 @_option("--ambiguous", group="Desktop options", default="error", type=click.Choice(["error", "largest"]), help="What to do when several windows match --window-title: 'error' fails listing the candidates; 'largest' picks the biggest matching window — for games whose launcher/overlay windows share the main window's title.")
@@ -1449,12 +1494,15 @@ def _launch_desktop_app(app: str, app_wait: float) -> None:
 @_option("--app-wait", group="Desktop options", default=2.0, type=float, help="Seconds to wait after --app launch for the window to appear")
 @_debug_options()
 @click.pass_context
-def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, knowledge: str, output_format: str, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
+def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinking_level: str, media_resolution: str, language: str, max_steps: int, max_duration: float | None, settle_seconds: float | None, knowledge: str, output_format: str, display: int | None, window_title: str, hwnd: int, ambiguous: str, app: str, app_wait: float, overlay: bool, report: bool, report_dir: str, annotate: bool, record: bool) -> None:
     """Run an AI task on the desktop (pyautogui; --window-title/--hwnd for one Windows window).
 
     \b
     Default — pyautogui, drives the whole screen (macOS/Windows/Linux):
       qirabot desktop "Create a note titled Groceries" --app Notes
+    \b
+    Multiple monitors — drive another display (see `qirabot displays`):
+      qirabot desktop "..." --display 2
     \b
     Windows window backend (built in, zero extra installs) — passing
     --window-title or --hwnd binds to one window: screenshots and clicks are
@@ -1468,13 +1516,20 @@ def desktop(ctx: click.Context, instruction: str, name: str, model: str, thinkin
             "--ambiguous largest only applies with --window-title "
             "(--hwnd already names one window)"
         )
+    if display is not None and (window_title or hwnd):
+        # A bound window already fixes what is captured and where input
+        # lands; a display on top would be either redundant or contradictory.
+        raise click.UsageError(
+            "--display drives a whole display; it can't be combined with "
+            "--window-title/--hwnd, which bind to one window"
+        )
     opts = _TaskOpts(
         ctx=ctx, instruction=instruction, name=name, model=model,
         thinking_level=thinking_level, media_resolution=media_resolution,
         language=language, max_steps=max_steps, max_duration=max_duration,
-        knowledge=knowledge,
+        settle_seconds=settle_seconds, knowledge=knowledge,
         output_format=output_format, overlay=overlay, report=report,
-        report_dir=report_dir, annotate=annotate,
+        report_dir=report_dir, annotate=annotate, display=display,
     )
     if window_title or hwnd:
         if window_title and hwnd:

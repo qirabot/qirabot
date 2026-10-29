@@ -43,6 +43,7 @@ Common constructor options (all keyword):
 | `screenshot_annotate` | `True` | red crosshair at click/type point |
 | `retry` / `retry_delay` | `1` / `1.0` | per-action retry on transient failure |
 | `settle_seconds` / env `QIRA_SETTLE_SECONDS` | per-platform | fixed pause after each action |
+| `display` / env `QIRA_DISPLAY` | primary | **pyautogui desktop only.** Drive display N (1-based, 1 = primary; `qirabot displays` lists them): screenshots capture only that display, coordinates stay screenshot-relative (the offset is added for you), and `record` + `overlay` follow it. Explicit `display=` with a non-desktop target raises; the env var is ignored there. macOS/Windows. |
 
 ## Default: hand the task to `bot.ai`
 

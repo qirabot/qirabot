@@ -78,7 +78,8 @@ def main() -> None:
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
 
-    screen = AppKit.NSScreen.mainScreen().frame()
+    # Primary display (origin 0,0), not mainScreen() — see _overlay_helper.
+    screen = AppKit.NSScreen.screens()[0].frame()
     # NSWindow coordinates: origin is bottom-left, so this is the
     # bottom-right corner of the main display.
     rect = AppKit.NSMakeRect(

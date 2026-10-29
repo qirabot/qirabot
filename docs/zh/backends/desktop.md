@@ -66,12 +66,41 @@ bot.mouse_up(pyautogui)                                   # 在当前光标处�
 每个原语的确切语义见
 [平台支持矩阵](/zh/reference/api#平台支持矩阵)。
 
+## 多显示器
+
+默认驱动**主显示器**:macOS 上是带菜单栏的那块,Windows 上是主显示器。
+要驱动其他显示器,先列出编号再按编号选择:
+
+```bash
+qirabot displays
+# 1*  1920x1080  @ (0, 0)  DELL P3223QE  [primary]
+# 2   1710x1112  @ (-1710, 0)  Built-in Retina Display
+
+qirabot desktop "当前画面是编程 IDE 吗" --display 2
+```
+
+```python
+bot = Qirabot(display=2)          # 或 export QIRA_DISPLAY=2
+bot.ai(pyautogui, "...")
+```
+
+选中后一切都跟随这块显示器:截图只截它,坐标仍相对于它的截图(偏移由
+adapter 自动加上),`record=True` 录屏和进度悬浮窗也在这块屏上。编号从 1
+开始,1 永远是主显示器。
+
+- 显式传 `display=` / `--display` 是严格的:编号不存在会在构造时报错;
+  目标不是桌面后端(浏览器、移动端、Windows `Window`)时直接报错,不会
+  静默忽略。`--display` 不能和 `--window-title` / `--hwnd` 同时使用。
+- `QIRA_DISPLAY` 是尽力而为的:值无效时记一条警告并回退到主显示器,
+  非桌面目标直接忽略它。
+- 仅支持 macOS 和 Windows;Linux 上只有显示器 1。
+
 ## 录屏
 
 `Qirabot(record=True)` 用 ffmpeg 录制整个运行过程的全屏画面,
-`recording.mp4` 嵌入 HTML 报告。macOS:给终端/IDE 授予"屏幕录制"权限,
-多显示器用 `QIRA_SCREEN_INDEX` 选择。录制是尽力而为的:缺 ffmpeg 只会
-警告,不会导致任务失败。
+`recording.mp4` 嵌入 HTML 报告。录的是[选中的显示器](#多显示器)(默认
+主显示器)。macOS:给终端/IDE 授予"屏幕录制"权限。录制是尽力而为的:
+缺 ffmpeg 只会警告,不会导致任务失败。
 
 ## 两个桌面后端怎么选
 

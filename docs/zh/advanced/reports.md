@@ -78,7 +78,9 @@ finally:
 ```
 
 需要 PATH 里有 `ffmpeg`。macOS:给终端/IDE 授予"屏幕录制"权限(否则录出
-黑屏),多显示器用 `QIRA_SCREEN_INDEX` 选择。录制是尽力而为:缺 ffmpeg 或
+黑屏)。多显示器时录的是桌面后端驱动的那块屏:`Qirabot(display=N)` /
+`--display N` / `QIRA_DISPLAY`([多显示器](/zh/backends/desktop#多显示器)),
+默认主显示器。录制是尽力而为:缺 ffmpeg 或
 权限被拒只警告,不会导致任务失败(排查看运行目录里的
 `recording.ffmpeg.log`)。
 

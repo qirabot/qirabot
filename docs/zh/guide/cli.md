@@ -56,6 +56,7 @@ qirabot models
 | `ios 指令` | 在 iOS 设备运行 AI 任务([WDA 直连](/zh/backends/ios),内置;`--appium-url`/`--device` 走 Appium) |
 | `desktop 指令` | 在[桌面](/zh/backends/desktop)运行 AI 任务(pyautogui;`--window-title`/`--hwnd` 绑定[单个 Windows 窗口](/zh/backends/windows-games),内置) |
 | `install-browser` | 一次性下载浏览器后端所需的 Chromium |
+| `displays` | 列出本机显示器及 `desktop --display N` 可用的编号(脚本用 `--json`) |
 | `open-browser` | 打开浏览器手动登录网站;登录态保存在 `--user-data-dir`,供后续运行复用 |
 | `doctor` | 检查 Python、Google Cloud 凭据(ADC + 项目)与各后端依赖 |
 | `models` | 打印内置的 Vertex provider 及其默认模型、本次会话的默认模型,以及所配置的认证方式(API key 和/或 ADC)能否解析 |
@@ -186,6 +187,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方�
 | `-l, --language` | 跟随指令语言 | 响应语言:语言标签(`zh`、`ja`、`de` 等)或任意语言名称 |
 | `--max-steps` | `20` | AI 任务的步数预算 |
 | `--max-duration` | 不限 | 时间预算:秒数(`300`)或 `90s` / `5m` / `1h30m`。在步与步之间检查,最多可能超出一步;结束时显示 `Failed: max duration reached (5m03s/5m)` |
+| `--settle-seconds` | `QIRA_SETTLE_SECONDS`,否则按平台 | 每次改变画面的操作后停顿多久再截下一张图,确保截到重绘后的画面。支持小数(`0.5`);`0` 关闭。平台默认:desktop / adb `1.0`,移动端 / 浏览器 `0.6` |
 | `-k, --knowledge` | — | 任务期间供 AI 参考的知识文件(UTF-8 文本;可重复,合计 32KB)。规则与 `bot.ai(knowledge=...)` 一致:只收文件、不收 URL,远程内容请先自行下载 |
 | `--report / --no-report` | 开 | 写 HTML 运行报告 |
 | `--report-dir` | `./qira_runs/...` | 报告输出根目录(环境变量 `QIRA_REPORT_DIR`) |
@@ -236,6 +238,7 @@ setup 阶段失败)同样以 `result` 对象结束(`status: "error"`),消费方�
 |---|---|---|
 | `--app` | — | 先启动/激活应用(macOS:名称或 bundle id;Windows:exe/注册名/UWP id;Linux:可执行文件) |
 | `--app-wait` | `2.0` | `--app` 之后等窗口出现的秒数 |
+| `--display N` | `QIRA_DISPLAY`,否则 `1`(主显示器) | 驱动另一块显示器:截图、点击、`--record` 和悬浮窗都跟随它。编号见 `qirabot displays`;macOS/Windows。不能与 `--window-title`/`--hwnd` 同用([多显示器](/zh/backends/desktop#多显示器)) |
 | `--window-title` | — | 绑定标题匹配该正则的窗口(Windows 窗口后端) |
 | `--hwnd` | — | 绑定窗口句柄,十进制(Windows 窗口后端) |
 | `--ambiguous` | `error` | 多个窗口匹配 `--window-title` 时:`error` 报错并列出候选;`largest` 选面积最大的窗口 |
@@ -254,7 +257,7 @@ plugin marketplace 安装(可自动更新)。`skill uninstall` 接受同样的�
 平台而异:
 
 - `browser` / `desktop`:用 ffmpeg 录制宿主机屏幕(ffmpeg 需在 PATH)。
-  绑定窗口时(`--window-title`/`--hwnd`)只录该窗口。
+  绑定窗口时(`--window-title`/`--hwnd`)只录该窗口;指定 `--display N` 时录该显示器。
 - `android`:录制设备屏幕。默认引擎用 `adb screenrecord`,Appium 引擎
   用其录屏 API。
 - `ios`:录制设备屏幕。默认引擎用 WDA 的 MJPEG 流(需要 ffmpeg;USB
